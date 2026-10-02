@@ -84,7 +84,7 @@ describe('mechanics', () => {
     const geo = g.s.nations.findIndex((n) => n.id === 'GEO');
     expect(declareWar(g, rus, geo)).toBeNull();
     const target = g.s.nations[geo].capital;
-    const units = g.unitsOf(rus).filter((u) => isLand(u) && u.loc >= 0 && u.type !== 'antiair').sort((a, b) => g.dist(a.loc, target) - g.dist(b.loc, target)).slice(0, 10);
+    const units = g.unitsOf(rus).filter((u) => isLand(u) && u.loc >= 0).sort((a, b) => g.dist(a.loc, target) - g.dist(b.loc, target)).slice(0, 10);
     const { ok } = orderMove(g, units, target);
     expect(ok).toBeGreaterThan(3);
     let sawBattle = false;

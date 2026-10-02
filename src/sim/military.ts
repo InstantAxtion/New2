@@ -211,9 +211,9 @@ function support(g: Game, p: number, side: number, enemy: number): number {
   for (const q of g.w.provs[p].nb) for (const u of g.unitsAt(q)) {
     if (u.type === 'artillery' && !u.path.length && g.allied(u.owner, side) && !g.rt.battleAt.has(q)) v += UNITS.artillery.atk * 0.5 * (u.hp / 100);
   }
-  // warships and carriers off the coast
+  // warships off the coast
   for (const c of g.w.provs[p].sea) for (const u of g.unitsAt(seaLoc(c))) {
-    if ((u.type === 'warship' || u.type === 'carrier') && g.allied(u.owner, side)) v += UNITS[u.type].atk * 0.6 * (u.hp / 100);
+    if (u.type === 'warship' && g.allied(u.owner, side)) v += UNITS[u.type].atk * 0.6 * (u.hp / 100);
   }
   // planes assigned to this region
   let mine = 0, theirs = 0, ground = 0;
@@ -407,7 +407,7 @@ export function cleanupDead(g: Game) {
 function enemyAirDefence(g: Game, p: number, owner: number) {
   let aa = 0;
   for (const q of [p, ...g.w.provs[p].nb]) for (const u of g.unitsAt(q)) {
-    if (u.type === 'antiair' && g.atWar(u.owner, owner)) aa += UNITS.antiair.aa * (u.hp / 100) * (q === p ? 1 : 0.5);
+    if (UNITS[u.type].domain === 'land' && g.atWar(u.owner, owner)) aa += UNITS[u.type].aa * (u.hp / 100) * (q === p ? 1 : 0.5);
   }
   for (const u of g.s.units) if (u.type === 'fighter' && u.target === p && g.atWar(u.owner, owner)) aa += UNITS.fighter.aa * (u.hp / 100);
   return aa;

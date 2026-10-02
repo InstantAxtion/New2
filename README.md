@@ -7,7 +7,7 @@ It is single-player and fully offline, with no in-game purchases.
 ## Features
 
 **World map**
-- About 470 broad regions built from real states (Natural Earth data), named after their main city, plus a grid of sea zones.
+- About 470 broad regions built from real states (Natural Earth data), named after their main city, plus a grid of sea zones. Neighbouring regions are shaded differently so each one stands out.
 - Terrain (plains, forest, hills, mountains, desert, jungle, marsh, arctic) affects movement and defence.
 - River crossings, narrow straits and naval chokepoints (Suez, Panama, Bosphorus, Malacca, Hormuz...).
 - Map views: countries, terrain, resources and alliances, plus a rotating 3D globe.
@@ -22,10 +22,11 @@ It is single-player and fully offline, with no in-game purchases.
 
 **Buildings**
 - Mine (more resources to sell), factory (more taxes), barracks, airbase, port and fort, several with up to three levels.
+- Mines and factories show exactly what they earn: per region on the map while placing them, in the build menu and region panel (with payback time), and when they finish.
 - Build mode: pick a building, valid regions light up green, tap to place. Progress shows on the map.
 
 **Military**
-- Infantry, tanks, artillery, anti-air, fighters, bombers, warships and aircraft carriers.
+- Six unit types: infantry, tanks, artillery, fighters, bombers and warships.
 - One counter per army per region. Drag it onto a region to move or attack, or tap then tap. "🪖 All troops" selects every land unit at once.
 - Units glide smoothly between regions.
 - Battles show a tug-of-war bar, explosions and damage; tap a battle to see who is winning and why (terrain, forts, rivers, air support, dug-in defenders).

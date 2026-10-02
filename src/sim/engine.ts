@@ -94,7 +94,7 @@ export function catchUp(g: Game, hours: number): string[] {
 }
 
 // ------------------------------------------------------------------ save/load
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export function serialize(g: Game): string {
   return JSON.stringify(g.s);

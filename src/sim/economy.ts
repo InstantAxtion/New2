@@ -34,6 +34,45 @@ export function regionResources(g: Game, i: number): number {
   return v * (1 - p.dmg * 0.5);
 }
 
+/** Money a month ($B) a region's resources sell for. */
+export function regionExports(g: Game, i: number): number {
+  const n = g.s.nations[g.s.provinces[i].ctrl];
+  return regionResources(g, i) * RES_VALUE * g.s.price * (n?.access ?? 1) * 30;
+}
+
+/** Extra money a month ($B) the next level of a mine or factory would bring in here (0 for other buildings). */
+export function buildingGain(g: Game, type: BuildingType, i: number): number {
+  const p = g.s.provinces[i];
+  if (type === 'mine') {
+    let extra = 1.5 * Math.max(1, p.res);
+    if (p.ctrl !== p.owner) extra *= 0.5;
+    extra *= 1 - p.dmg * 0.5;
+    const n = g.s.nations[p.ctrl];
+    return extra * RES_VALUE * g.s.price * (n?.access ?? 1) * 30;
+  }
+  if (type === 'factory') return (regionTaxes(g, i) / (1 + 0.25 * (p.b.factory ?? 0))) * 0.25 * 30;
+  return 0;
+}
+
+/** buildingGain as if the region had `lvl` levels of the building. */
+function buildingGainAt(g: Game, type: BuildingType, i: number, lvl: number) {
+  const p = g.s.provinces[i];
+  const had = p.b[type];
+  p.b[type] = lvl;
+  const v = buildingGain(g, type, i);
+  p.b[type] = had;
+  return v;
+}
+
+function money(v: number) {
+  return '$' + (v >= 10 ? v.toFixed(0) + 'B' : v >= 1 ? v.toFixed(1) + 'B' : Math.round(v * 1000) + 'M');
+}
+
+/** Months until a building pays for itself (Infinity if it earns nothing). */
+export function paybackMonths(cost: number, gainPerMonth: number) {
+  return gainPerMonth > 0 ? cost / gainPerMonth : Infinity;
+}
+
 /** Enemy warships next to this coastal region cut its trade. */
 export function blockaded(g: Game, i: number): boolean {
   const p = g.s.provinces[i];
@@ -194,7 +233,9 @@ function finishBuilding(g: Game, i: number) {
   g.rt.dirtyBuildings = true;
   g.fx('built', i, p.owner);
   const lvl = p.b[t]!;
-  g.notify([p.owner], `${BUILDINGS[t].icon} ${BUILDINGS[t].name}${BUILDINGS[t].max > 1 ? ' level ' + lvl : ''} finished in ${g.w.provs[i].name}.`, 'good', i);
+  const before = t === 'mine' || t === 'factory' ? buildingGainAt(g, t, i, lvl - 1) : 0;
+  const extra = before > 0 ? ` It earns +${money(before)} a month.` : '';
+  g.notify([p.owner], `${BUILDINGS[t].icon} ${BUILDINGS[t].name}${BUILDINGS[t].max > 1 ? ' level ' + lvl : ''} finished in ${g.w.provs[i].name}.${extra}`, 'good', i);
 }
 
 // ------------------------------------------------------------------ recruitment

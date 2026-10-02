@@ -1,6 +1,6 @@
 import { SCENARIO_BY_ID } from '../../data/scenarios';
 import { regionCount } from '../../sim/diplomacy';
-import { RES_VALUE } from '../../sim/economy';
+import { buildCost, buildingGain, canConstruct, paybackMonths } from '../../sim/economy';
 import { continentShare, incomeRank, scores, worldShare } from '../../sim/victory';
 import { Bar, fmt, Help, NationDot, Sheet, Spark } from '../common';
 import { useCtl } from '../controller';
@@ -13,6 +13,17 @@ export function CountryPanel() {
   const net = n.income - n.upkeep;
   const blockers = g.s.nations.filter((m) => m.alive && m.idx !== me && (g.atWar(m.idx, me) || g.s.embargo.includes(m.idx + '>' + me)));
   const price = g.s.price;
+  // what mines already earn, and the best place for the next one
+  let mineIncome = 0;
+  let best: { i: number; gain: number; cost: number } | null = null as { i: number; gain: number; cost: number } | null;
+  for (let i = 0; i < g.s.provinces.length; i++) {
+    const p = g.s.provinces[i];
+    if (p.ctrl !== me) continue;
+    const gain = buildingGain(g, 'mine', i); // every mine level adds the same amount
+    mineIncome += gain * (p.b.mine ?? 0);
+    const err = canConstruct(g, me, 'mine', i);
+    if (p.owner === me && (!err || err === 'Not enough money') && (!best || gain > best.gain)) best = { i, gain, cost: buildCost('mine', p.b.mine ?? 0).money };
+  }
   return (
     <Sheet title={`🏛 ${n.name}`} onClose={() => c.open(null)} tall>
       <div class="grid3">
@@ -37,12 +48,22 @@ export function CountryPanel() {
           <span style={{ fontSize: '22px' }}>⛏</span>
           <div class="grow">
             <div class="spread small"><b>Resource exports</b><b class="good">+{fmt.money(n.exports * 30)}/mo</b></div>
-            <div class="tiny muted">You dig up {n.mined.toFixed(1)} a day and sell it automatically at {fmt.money(RES_VALUE * price)} each. Build ⛏ mines to dig more.</div>
+            <div class="tiny muted">Your regions dig up resources and sell them to the world automatically.{mineIncome > 0 ? ` Your mines bring in ${fmt.money(mineIncome)} of this.` : ''}</div>
             <div class="spread tiny" style={{ marginTop: '4px' }}><span>Countries buying from you</span><b class={n.access < 0.8 ? 'warn' : 'good'}>{Math.round(n.access * 100)}%</b></div>
             <Bar v={n.access} color={n.access < 0.8 ? 'var(--warn)' : 'var(--good)'} />
           </div>
         </div>
       </div>
+      {best && (
+        <div class="card small row" style={{ marginTop: '8px', gap: '10px' }}>
+          <span style={{ fontSize: '22px' }}>💡</span>
+          <div class="grow">
+            Best spot for a new mine: <b>{g.w.provs[best.i].name}</b>
+            <div class="good"><b>+{fmt.money(best.gain)} a month</b> for {fmt.money(best.cost)} · pays for itself in {Math.ceil(paybackMonths(best.cost, best.gain))} months</div>
+          </div>
+          <button class="btn sm primary" onClick={() => c.startBuild('mine')}>Build</button>
+        </div>
+      )}
       {blockers.length > 0 && (
         <div class="card small" style={{ marginTop: '8px' }}>
           🚫 <b>Not buying from you:</b>{' '}

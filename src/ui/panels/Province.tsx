@@ -1,5 +1,5 @@
 import { BUILDING_TYPES, BUILDINGS, TERRAIN, UNIT_TYPES, UNITS } from '../../data/units';
-import { blockaded, buildCost, canConstruct, canRecruit, cancelConstruction, construct, RES_VALUE, recruit, regionResources, regionTaxes, unitAvailable } from '../../sim/economy';
+import { blockaded, buildCost, buildingGain, canConstruct, canRecruit, cancelConstruction, construct, paybackMonths, recruit, regionExports, regionTaxes, unitAvailable } from '../../sim/economy';
 import { unitVisible } from '../../sim/fog';
 import type { UnitType } from '../../sim/types';
 import { Bar, Cost, fmt, HpBar, NationDot, Sheet, UnitIcon } from '../common';
@@ -19,6 +19,8 @@ export function ProvincePanel() {
   const seen = g.rt.visible[i] === 1 || mine;
   const units = g.unitsAt(i).filter((u) => unitVisible(g, u.owner, u.loc) && UNITS[u.type].domain !== 'air');
   const planes = g.s.units.filter((u) => UNITS[u.type].domain === 'air' && u.base === i && (u.owner === me || seen));
+  const taxes = regionTaxes(g, i) * 30;
+  const exports = regionExports(g, i);
   const trainable = UNIT_TYPES.filter((t) => unitAvailable(g, t) && g.level(i, UNITS[t].needs) > 0);
   const train = (t: UnitType) => {
     const e = recruit(g, me, t, i);
@@ -34,10 +36,12 @@ export function ProvincePanel() {
         {blockaded(g, i) && <span class="chip warn">🚢 Blockaded</span>}
       </div>
       <div class="tiny muted" style={{ marginTop: '4px' }}>{TERRAIN[sp.terrain].note}</div>
-      <div class="grid3" style={{ marginTop: '8px' }}>
-        <div class="stat"><div class="l">🏛 Taxes</div><div class="v">{fmt.money(regionTaxes(g, i) * 30)}</div><div class="tiny muted">a month</div></div>
-        <div class="stat"><div class="l">⛏ Resources</div><div class="v">{regionResources(g, i).toFixed(1)}</div><div class="tiny muted">a day</div></div>
-        <div class="stat"><div class="l">💹 Sold for</div><div class="v">{fmt.money(regionResources(g, i) * RES_VALUE * g.s.price * owner.access * 30)}</div><div class="tiny muted">a month</div></div>
+      <div class="card row earn" style={{ marginTop: '8px' }}>
+        <span style={{ fontSize: '24px' }}>💰</span>
+        <div class="grow">
+          <div><b>Earns {fmt.money(taxes + exports)} a month</b></div>
+          <div class="tiny muted">🏛 taxes {fmt.money(taxes)} · ⛏ resources sold {fmt.money(exports)}</div>
+        </div>
       </div>
       {p.cap > 0 && p.capBy >= 0 && (
         <div class="card small" style={{ marginTop: '8px' }}>
@@ -66,12 +70,15 @@ export function ProvincePanel() {
               const err = canConstruct(g, me, t, i);
               const maxed = lvl >= d.max;
               const cost = buildCost(t, lvl);
+              const gain = buildingGain(g, t, i); // each mine/factory level adds the same amount
               return (
                 <div class={'item bitem' + (lvl ? ' have' : '')}>
                   <span class="bicon">{d.icon}</span>
                   <div class="grow">
                     <div class="small"><b>{d.name}</b> {lvl > 0 && <span class="chip good">{d.max > 1 ? `level ${lvl}/${d.max}` : 'built'}</span>}</div>
                     <div class="tiny muted">{d.short}</div>
+                    {gain > 0 && lvl > 0 && <div class="tiny">Earning now: <b class="good">+{fmt.money(gain * lvl)} a month</b></div>}
+                    {gain > 0 && !maxed && <div class="tiny">{lvl ? 'Next level' : 'Build one'}: <b class="good">+{fmt.money(gain)} a month</b> · pays for itself in {Math.ceil(paybackMonths(cost.money, gain))} months</div>}
                     {!maxed && <Cost money={cost.money} days={cost.days} have={n.money} />}
                   </div>
                   {!maxed && (

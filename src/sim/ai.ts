@@ -73,8 +73,8 @@ function embargoAI(g: Game, n: Nation) {
 }
 
 const MIX: [UnitType, number][] = [
-  ['infantry', 0.36], ['tank', 0.18], ['artillery', 0.12], ['antiair', 0.06],
-  ['fighter', 0.12], ['bomber', 0.05], ['warship', 0.08], ['carrier', 0.03],
+  ['infantry', 0.4], ['tank', 0.2], ['artillery', 0.12],
+  ['fighter', 0.13], ['bomber', 0.05], ['warship', 0.1],
 ];
 
 function recruitAI(g: Game, n: Nation) {
@@ -227,7 +227,7 @@ function tactical(g: Game, n: Nation, atWar: boolean) {
     return { t, def: (enemyStr.get(t) || 0) * 1.6 * TERRAIN[w.provs[t].terrain].def * (1 + 0.3 * g.level(t, 'fort')), value: 1 + pr.pop / 3000 + (isCap ? 4 : 0) + (pr.owner === idx ? 3 : 0) };
   }).sort((a, b) => b.value / (b.def + 1) - a.value / (a.def + 1));
   for (const tg of targetList) {
-    const cands = idle.filter((u) => !busy.has(u) && w.provs[u.loc].nb.includes(tg.t) && u.hp > 45 && u.type !== 'antiair');
+    const cands = idle.filter((u) => !busy.has(u) && w.provs[u.loc].nb.includes(tg.t) && u.hp > 45);
     if (!cands.length) continue;
     const chosen: Unit[] = [];
     let pow = 0;

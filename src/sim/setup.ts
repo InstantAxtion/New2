@@ -157,7 +157,7 @@ export function newGame(w: WorldData, opts: NewGameOptions): Game {
   };
 
   const s: GameState = {
-    version: 3,
+    version: 4,
     seed,
     rng: seed >>> 0,
     scenario: sc.id,
@@ -344,10 +344,8 @@ function setupMilitary(g: Game, sc: ScenarioDef) {
     counts.artillery = Math.round(counts.infantry / 4);
     counts.fighter = avail('fighter') ? Math.round(air / 150) : 0;
     counts.bomber = avail('bomber') ? Math.round(bombers / 30) : 0;
-    counts.antiair = avail('antiair') ? Math.round(air / 500) + (pers > 150 ? 1 : 0) : 0;
     if (coast.length) {
-      counts.carrier = avail('carrier') ? Math.min(11, Math.round(carriers)) : 0;
-      counts.warship = Math.round(surface / 6) + (avail('carrier') ? 0 : Math.round(carriers)) + Math.round(bbs / 2);
+      counts.warship = Math.round(surface / 6) + Math.round(carriers * 2) + Math.round(bbs / 2);
       counts.warship += Math.round(subs / 12);
     }
 
@@ -368,7 +366,7 @@ function setupMilitary(g: Game, sc: ScenarioDef) {
       const nb = Math.max(1, Math.min(provs.length, Math.ceil(airCount / 6)));
       for (const p of [cap, ...byPop.filter((x) => x !== cap)].slice(0, nb)) { set(p, 'airbase', 1); bases.push(p); }
     }
-    const shipCount = (counts.warship ?? 0) + (counts.carrier ?? 0);
+    const shipCount = counts.warship ?? 0;
     const ports: number[] = [];
     if (coast.length) {
       const np = shipCount > 0 ? Math.max(1, Math.min(coast.length, Math.ceil(shipCount / 8))) : 1;
@@ -399,7 +397,7 @@ function setupMilitary(g: Game, sc: ScenarioDef) {
       for (let k = 0; k < (c || 0); k++) {
         const d = UNITS[type].domain;
         let loc: number;
-        if (d === 'land') loc = type === 'antiair' ? byPop[k % Math.min(3, byPop.length)] : pickW();
+        if (d === 'land') loc = pickW();
         else if (d === 'air') { if (!bases.length) continue; loc = bases[k % bases.length]; }
         else {
           if (!ports.length) continue;

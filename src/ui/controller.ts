@@ -8,7 +8,7 @@ import { GlobeRenderer } from '../render/globe';
 import { attachGestures } from '../render/input';
 import { MapRenderer, type Layer } from '../render/renderer';
 import type { Game } from '../sim/ctx';
-import { canConstruct, construct } from '../sim/economy';
+import { buildingGain, canConstruct, construct } from '../sim/economy';
 import { catchUp, createGame, deserialize, loadGame, serialize, SPEEDS, tickHour } from '../sim/engine';
 import { updateVisibility } from '../sim/fog';
 import { inAirRange, isAir, orderMove, retreat, stop } from '../sim/military';
@@ -16,6 +16,7 @@ import { pathFor } from '../sim/path';
 import type { NewGameOptions } from '../sim/setup';
 import type { BuildingType, Loc, Unit } from '../sim/types';
 import { seaLoc } from '../sim/types';
+import { fmt } from './common';
 import type { WorldData } from '../sim/world';
 
 export type Panel = null | 'country' | 'army' | 'world' | 'news' | 'menu' | 'province' | 'battle' | 'build';
@@ -231,7 +232,7 @@ class Controller {
     this.renderer?.setGame(g);
     if (this.renderer) {
       this.renderer.showUnits = true;
-      this.renderer.highlight = [];
+      this.renderer.highlight = []; this.renderer.highlightLabels = null;
       this.home();
     }
     this.emit();
@@ -364,11 +365,16 @@ class Controller {
     const t = this.building;
     r.highlight = t ? g.s.provinces.map((_, i) => (canConstruct(g, g.s.player, t, i) ? -1 : i)).filter((i) => i >= 0) : [];
     r.highlightColor = '34,197,94';
+    // mines and factories: show what each spot would earn, best first
+    if (t === 'mine' || t === 'factory') {
+      const gains = r.highlight.map((i) => [i, buildingGain(g, t, i)] as const).sort((a, b) => b[1] - a[1]);
+      r.highlightLabels = new Map(gains.map(([i, v]) => [i, `+${fmt.money(v)}/mo`]));
+    } else r.highlightLabels = null;
     r.touch();
   }
   cancelBuild() {
     this.building = null;
-    if (this.renderer) { this.renderer.highlight = []; this.renderer.touch(); }
+    if (this.renderer) { this.renderer.highlight = []; this.renderer.highlightLabels = null; this.renderer.touch(); }
     if (this.panel === 'build') this.panel = null;
     this.emit();
   }

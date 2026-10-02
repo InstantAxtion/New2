@@ -22,14 +22,12 @@ export interface UnitDef {
 const U = (d: UnitDef) => d;
 
 export const UNITS: Record<UnitType, UnitDef> = {
-  infantry: U({ type: 'infantry', name: 'Infantry', short: 'INF', domain: 'land', role: 'Cheap and tough. Best at holding ground.', atk: 7, def: 10, aa: 1, sea: 0, speed: 5, range: 0, cost: 2.5, days: 12, upkeep: 0.6, needs: 'barracks', year: 0 }),
+  infantry: U({ type: 'infantry', name: 'Infantry', short: 'INF', domain: 'land', role: 'Cheap and tough. Best at holding ground, and shoots at enemy planes.', atk: 7, def: 10, aa: 3, sea: 0, speed: 5, range: 0, cost: 2.5, days: 12, upkeep: 0.6, needs: 'barracks', year: 0 }),
   tank: U({ type: 'tank', name: 'Tanks', short: 'TNK', domain: 'land', role: 'Fast and hits hard. Weak in mountains, jungle and marsh.', atk: 15, def: 8, aa: 1, sea: 0, speed: 9, range: 0, cost: 7, days: 25, upkeep: 1.8, needs: 'barracks', year: 1917 }),
   artillery: U({ type: 'artillery', name: 'Artillery', short: 'ART', domain: 'land', role: 'Big guns. Also shells battles in neighbouring regions.', atk: 12, def: 5, aa: 0, sea: 0, speed: 4, range: 0, cost: 3.5, days: 15, upkeep: 0.9, needs: 'barracks', year: 0 }),
-  antiair: U({ type: 'antiair', name: 'Anti-Air', short: 'AA', domain: 'land', role: 'Shoots down enemy planes over its region and next door.', atk: 2, def: 5, aa: 14, sea: 0, speed: 5, range: 0, cost: 3.5, days: 15, upkeep: 0.9, needs: 'barracks', year: 1925 }),
   fighter: U({ type: 'fighter', name: 'Fighters', short: 'FTR', domain: 'air', role: 'Controls the sky over a region and helps battles there.', atk: 4, def: 0, aa: 14, sea: 2, speed: 700, range: 1400, cost: 8, days: 25, upkeep: 2, needs: 'airbase', year: 1915 }),
   bomber: U({ type: 'bomber', name: 'Bombers', short: 'BMB', domain: 'air', role: 'Bombs enemy troops and buildings far behind the front.', atk: 16, def: 0, aa: 2, sea: 6, speed: 600, range: 3000, cost: 10, days: 30, upkeep: 2.6, needs: 'airbase', year: 1918 }),
-  warship: U({ type: 'warship', name: 'Warships', short: 'WAR', domain: 'sea', role: 'Fights other ships, shells coasts and escorts troops at sea.', atk: 6, def: 0, aa: 6, sea: 12, speed: 50, range: 0, cost: 9, days: 40, upkeep: 2.4, needs: 'port', year: 0 }),
-  carrier: U({ type: 'carrier', name: 'Aircraft Carrier', short: 'CV', domain: 'sea', role: 'A floating airbase: strikes coasts and guards the fleet.', atk: 10, def: 0, aa: 16, sea: 10, speed: 45, range: 0, cost: 30, days: 90, upkeep: 9, needs: 'port', year: 1922 }),
+  warship: U({ type: 'warship', name: 'Warships', short: 'WAR', domain: 'sea', role: 'Rules the waves: fights ships, shells coasts and guards troops at sea.', atk: 6, def: 0, aa: 6, sea: 12, speed: 50, range: 0, cost: 9, days: 40, upkeep: 2.4, needs: 'port', year: 0 }),
 };
 
 export const UNIT_TYPES = Object.keys(UNITS) as UnitType[];
@@ -47,9 +45,9 @@ export interface BuildingDef {
 }
 
 export const BUILDINGS: Record<BuildingType, BuildingDef> = {
-  mine: { type: 'mine', name: 'Mine', icon: '⛏️', max: 3, cost: 6, days: 15, short: 'Digs up more resources, which your country sells automatically. Best in hills and mountains.', year: 0 },
-  factory: { type: 'factory', name: 'Factory', icon: '🏭', max: 3, cost: 6, days: 20, short: '+25% taxes from this region per level.', year: 0 },
-  barracks: { type: 'barracks', name: 'Barracks', icon: '🪖', max: 3, cost: 3, days: 10, short: 'Trains infantry, tanks, artillery and anti-air. Each level trains one more unit at a time.', year: 0 },
+  mine: { type: 'mine', name: 'Mine', icon: '⛏️', max: 3, cost: 6, days: 15, short: 'More resources to sell = more money every month. Best in hills, mountains and big regions.', year: 0 },
+  factory: { type: 'factory', name: 'Factory', icon: '🏭', max: 3, cost: 6, days: 20, short: 'Each level adds +25% to this region\'s taxes. Best in big cities.', year: 0 },
+  barracks: { type: 'barracks', name: 'Barracks', icon: '🪖', max: 3, cost: 3, days: 10, short: 'Trains infantry, tanks and artillery. Each level trains one more unit at a time.', year: 0 },
   airbase: { type: 'airbase', name: 'Airbase', icon: '✈️', max: 1, cost: 6, days: 20, short: 'Builds and houses planes. Planes can only reach targets within range of a base.', year: 1915 },
   port: { type: 'port', name: 'Port', icon: '⚓', max: 1, cost: 6, days: 20, short: 'Builds ships, repairs them, and lets troops sail from here.', year: 0 },
   fort: { type: 'fort', name: 'Fort', icon: '🏰', max: 3, cost: 3, days: 15, short: '+30% defence per level for your troops in this region.', year: 0 },

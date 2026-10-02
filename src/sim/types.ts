@@ -6,7 +6,7 @@ export type Terrain = 'plains' | 'forest' | 'hills' | 'mountain' | 'desert' | 'j
 export type Gov = 'democracy' | 'authoritarian' | 'monarchy' | 'communist' | 'theocracy';
 export type Personality = 'expansionist' | 'isolationist' | 'opportunist' | 'defensive' | 'mercantile';
 
-export type UnitType = 'infantry' | 'tank' | 'artillery' | 'antiair' | 'fighter' | 'bomber' | 'warship' | 'carrier';
+export type UnitType = 'infantry' | 'tank' | 'artillery' | 'fighter' | 'bomber' | 'warship';
 export type Domain = 'land' | 'air' | 'sea';
 export type BuildingType = 'mine' | 'factory' | 'barracks' | 'airbase' | 'port' | 'fort';
 

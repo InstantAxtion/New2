@@ -127,9 +127,8 @@ function Hud() {
         </div>
       </div>
       <div class="resbar" onClick={() => c.open('country')}>
-        <span title="Resources dug up and sold every day">⛏ <b>{n.mined.toFixed(1)}</b>/day → <i class="good">+{fmt.money(n.exports)}</i></span>
-        <span title="Your troops">🪖 <b>{g.s.units.reduce((a, u) => a + (u.owner === g.s.player ? 1 : 0), 0)}</b></span>
-        <span title="Money"><b>💰 {fmt.money(n.money)}</b> <i class={net >= 0 ? 'good' : 'bad'}>{net >= 0 ? '+' : ''}{fmt.money(net)}/day</i></span>
+        <span><b>💰 {fmt.money(n.money)}</b> <i class={net >= 0 ? 'good' : 'bad'}>{net >= 0 ? '+' : ''}{fmt.money(net * 30)} a month</i></span>
+        <span>🪖 <b>{g.s.units.reduce((a, u) => a + (u.owner === g.s.player ? 1 : 0), 0)}</b> units</span>
       </div>
     </div>
   );

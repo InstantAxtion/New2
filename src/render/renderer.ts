@@ -50,6 +50,8 @@ export class MapRenderer {
   /** Regions to glow (e.g. where a building can go). */
   highlight: number[] = [];
   highlightColor = '34,197,94';
+  /** Small labels over highlighted regions (e.g. how much a mine would earn there). */
+  highlightLabels: Map<number, string> | null = null;
   /** Regions selected planes can reach (faint blue tint). */
   airRange: number[] = [];
   previewPath: Loc[] = [];
@@ -72,6 +74,8 @@ export class MapRenderer {
   private lastOverlay = 0;
   private cssView: View | null = null;
   private fills: Map<string, Path2D> | null = null;
+  /** Neighbouring regions get different shades so each region stands out. */
+  private shades: Path2D[] | null = null;
   private fillStyles = new Map<string, Fill>();
   private fog: Path2D | null = null;
   private visKey = '';
@@ -117,6 +121,7 @@ export class MapRenderer {
 
   setGame(g: Game | null) {
     this.game = g;
+    this.shades = null;
     this.effects = [];
     this.fxSeen = g ? g.rt.fx.length : 0;
     this.invalidate(true);
@@ -456,6 +461,26 @@ export class MapRenderer {
     this.fills = fills;
   }
 
+  private buildShades() {
+    const g = this.game;
+    const n = this.geo.paths.length;
+    const bucket = new Int8Array(n).fill(-1);
+    if (g) {
+      // greedy colouring: biggest regions first, pick the first shade no neighbour uses
+      const order = [...Array(n).keys()].sort((a, b) => g.w.provs[b].nb.length - g.w.provs[a].nb.length);
+      for (const i of order) {
+        const used = new Set<number>();
+        for (const q of g.w.provs[i].nb) if (bucket[q] >= 0) used.add(bucket[q]);
+        let b = 0;
+        while (used.has(b) && b < 3) b++;
+        bucket[i] = b;
+      }
+    }
+    const shades = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+    for (let i = 0; i < n; i++) if (bucket[i] >= 0) shades[bucket[i]].addPath(this.geo.paths[i]);
+    this.shades = shades;
+  }
+
   private buildFog() {
     const g = this.game;
     const fog = new Path2D();
@@ -525,6 +550,13 @@ export class MapRenderer {
       ctx.fillStyle = st && typeof st !== 'string' ? this.stripe(st.a, st.b, ctx) : typeof st === 'string' ? st : key;
       ctx.fill(path, 'evenodd');
     }
+    if (!this.shades) this.buildShades();
+    // shade 0 stays as is; the others are a touch lighter or darker
+    const tint = ['', 'rgba(255,255,255,0.1)', 'rgba(0,0,0,0.12)', 'rgba(255,255,255,0.05)'];
+    for (let b = 1; b < 4; b++) {
+      ctx.fillStyle = tint[b];
+      ctx.fill(this.shades![b], 'evenodd');
+    }
     const lw = 1 / px;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
@@ -543,8 +575,13 @@ export class MapRenderer {
       ctx.fill(this.fog!, 'evenodd');
     }
     // region borders (faint), coast, country borders (strong), our border (gold)
-    if (detail && px > 1.2) {
-      ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+    if (detail) {
+      // a dark line with a light edge reads on every country colour; fades a bit when zoomed far out
+      const a = Math.max(0.35, Math.min(1, (px - 0.25) / 1.2));
+      ctx.strokeStyle = `rgba(0,0,0,${0.6 * a})`;
+      ctx.lineWidth = lw * (px > 1.5 ? 2.6 : 1.9);
+      ctx.stroke(this.provBorders);
+      ctx.strokeStyle = `rgba(255,255,255,${0.42 * a})`;
       ctx.lineWidth = lw * 0.9;
       ctx.stroke(this.provBorders);
     }
@@ -637,6 +674,7 @@ export class MapRenderer {
     ctx.restore();
     if (!g) return;
     this.drawLabels(ctx);
+    if (this.highlightLabels && this.highlight.length) this.drawHighlightLabels(ctx);
     if (!this.showUnits) return;
     this.drawBuildings(ctx);
     this.drawCaptures(ctx);
@@ -668,6 +706,46 @@ export class MapRenderer {
     });
     this.nationLabels.sort((a, b) => b.size - a.size);
     this.labelsDirty = false;
+  }
+
+  private drawHighlightLabels(ctx: CanvasRenderingContext2D) {
+    const placed: [number, number, number, number][] = [];
+    ctx.font = '800 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // best spots first, so they win when labels overlap
+    const items = [...this.highlightLabels!.entries()].filter(([p]) => this.highlight.includes(p));
+    for (const [p, text] of items) {
+      const [wx, wy] = this.locXY(p);
+      const [sx, sy0] = this.toScreen(wx, wy);
+      const sy = sy0 - 24;
+      if (sx < -40 || sy < -20 || sx > this.w + 40 || sy > this.h + 20) continue;
+      const tw = ctx.measureText(text).width + 12;
+      const box: [number, number, number, number] = [sx - tw / 2, sy - 10, sx + tw / 2, sy + 10];
+      if (placed.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
+      placed.push(box);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      this.roundRect(ctx, box[0], box[1] + 1.5, tw, 20, 10);
+      ctx.fill();
+      ctx.fillStyle = '#15803d';
+      this.roundRect(ctx, box[0], box[1], tw, 20, 10);
+      ctx.fill();
+      ctx.strokeStyle = '#86efac';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(text, sx, sy + 0.5);
+    }
+  }
+
+  private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
   }
 
   private drawLabels(ctx: CanvasRenderingContext2D) {
@@ -1403,20 +1481,6 @@ export function drawIcon(ctx: CanvasRenderingContext2D, type: UnitType, x: numbe
       C(-1.5, 5.5, 4.4);
       holes(() => C(-1.5, 5.5, 1.6));
       break;
-    case 'antiair': // truck with twin barrels aimed at the sky
-      R(-11, 3, 22, 4.5, 1.5);
-      C(-6.5, 8.5, 2.3);
-      C(6.5, 8.5, 2.3);
-      ctx.beginPath();
-      ctx.arc(-1, 3, 4.8, Math.PI, 0);
-      ctx.fill();
-      ctx.save();
-      ctx.translate(-1, 0.5);
-      ctx.rotate(-0.95);
-      R(0, -3.4, 13, 1.9, 0.9);
-      R(0, 0.6, 13, 1.9, 0.9);
-      ctx.restore();
-      break;
     case 'fighter': // swept-wing jet, nose up
       P([0, -12, 2.2, -5, 2.4, -1.5, 11, 4.5, 11, 6.5, 2.4, 4, 2.2, 7.5, 5.5, 10.5, 5.5, 11.8, 0, 10.3, -5.5, 11.8, -5.5, 10.5, -2.2, 7.5, -2.4, 4, -11, 6.5, -11, 4.5, -2.4, -1.5, -2.2, -5]);
       break;
@@ -1431,12 +1495,6 @@ export function drawIcon(ctx: CanvasRenderingContext2D, type: UnitType, x: numbe
       R(-1.9, -11, 1.4, 5, 0.5);
       R(3, -1.2, 8.5, 1.6, 0.8);
       R(-11, 0, 4.5, 1.4, 0.7);
-      break;
-    case 'carrier': // flat-top with an island
-      P([-13.5, -0.5, 13.5, -0.5, 13.5, 2.5, 10, 8.5, -10, 8.5, -13.5, 2.5]);
-      R(5.5, -7.5, 4, 7, 0.8);
-      R(6.8, -10.5, 1.3, 3.5, 0.5);
-      holes(() => R(-11, 0.6, 14, 0.9));
       break;
   }
   ctx.restore();
