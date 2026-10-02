@@ -134,8 +134,24 @@ export interface PathOpts {
 }
 
 /** A* path for a land unit from province `from` to province `to`. Returns list of Locs (excluding start). */
+const landFail = new WeakMap<Game, Map<string, number>>();
+
+/** A* path for a land unit, with a short-lived cache of failed searches (they are the expensive ones). */
 export function landPath(g: Game, n: number, from: number, to: number, opts: PathOpts = {}): Loc[] | null {
   if (from === to) return [];
+  let fails = landFail.get(g);
+  if (!fails) landFail.set(g, (fails = new Map()));
+  const key = g.rt.dipVersion + ':' + n + ':' + from + ':' + to + ':' + (opts.sea ? 1 : 0) + (opts.avoidEnemy ? 1 : 0);
+  if ((fails.get(key) ?? -1) > g.s.hour) return null;
+  const res = landPathRaw(g, n, from, to, opts);
+  if (!res) {
+    if (fails.size > 20000) fails.clear();
+    fails.set(key, g.s.hour + 48);
+  }
+  return res;
+}
+
+function landPathRaw(g: Game, n: number, from: number, to: number, opts: PathOpts): Loc[] | null {
   const P = g.w.provs.length;
   const target = g.w.provs[to];
   const h = (node: number) => {
@@ -192,10 +208,13 @@ const seaFail = new WeakMap<Game, Map<string, number>>();
 export function seaPath(g: Game, n: number, fromCell: number, to: Loc): Loc[] | null {
   let fails = seaFail.get(g);
   if (!fails) seaFail.set(g, (fails = new Map()));
-  const fkey = n + ':' + fromCell + ':' + to;
+  const fkey = g.rt.dipVersion + ':' + n + ':' + fromCell + ':' + to;
   if ((fails.get(fkey) ?? -1) > g.s.hour) return null;
   const res = seaPathRaw(g, n, fromCell, to);
-  if (!res) fails.set(fkey, g.s.hour + 72);
+  if (!res) {
+    if (fails.size > 20000) fails.clear();
+    fails.set(fkey, g.s.hour + 72);
+  }
   return res;
 }
 

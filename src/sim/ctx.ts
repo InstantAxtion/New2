@@ -22,6 +22,7 @@ export interface Runtime {
   power: Float64Array; // military power per nation (cached)
   powerHour: number;
   genById: Map<number, import('./types').General>;
+  dipVersion: number; // bumps whenever wars/alliances/access change (invalidates path caches)
   battles: Map<number, { att: number; def: number }>; // province -> nations fighting (for rendering)
   dirtyOwners: boolean;
   dirtyUnits: boolean;
@@ -48,6 +49,7 @@ export class Game {
       power: new Float64Array(0),
       powerHour: -1,
       genById: new Map(),
+      dipVersion: 0,
       battles: new Map(),
       dirtyOwners: true,
       dirtyUnits: true,
@@ -100,6 +102,7 @@ export class Game {
   // ------------------------------------------------------------ diplomacy queries
   rebuildDiplomacy() {
     const N = this.N;
+    this.rt.dipVersion++;
     this.rt.war.clear();
     for (const w of this.s.wars)
       for (const a of w.att)

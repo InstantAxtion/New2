@@ -452,6 +452,7 @@ export function tactical(g: Game, n: Nation) {
       if (u.loc === n.capital && g.unitsAt(n.capital).filter((x) => x.owner === idx).length <= 1) continue;
       const tgt = need[k % Math.max(1, Math.min(need.length, 6))];
       if (!tgt) break;
+      if (g.dist(u.loc, tgt.p) > 3000) { k++; continue; } // overseas garrisons stay put
       if (tgt.gap <= 0 && k > need.length) break;
       if (!orderMove(g, u, tgt.p)) { busy.add(u); ownStr.set(tgt.p, (ownStr.get(tgt.p) || 0) + landValue(u)); }
       k++;
