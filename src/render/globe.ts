@@ -6,6 +6,7 @@
 import { geoArea, geoEquirectangular, geoGraticule10, geoOrthographic, geoPath, type GeoPermissibleObjects } from 'd3-geo';
 import * as topojson from 'topojson-client';
 import type { Game } from '../sim/ctx';
+import { cartoon } from './renderer';
 import type { WorldData } from '../sim/world';
 
 /** Copy of a quantized topology keeping roughly every `step`-th point of each arc. */
@@ -197,7 +198,7 @@ export class GlobeRenderer {
     this.nations = [];
     for (const [c, list] of groups) {
       const n = game?.s.nations[c];
-      this.nations.push({ color: !game ? '#7a8a6a' : n?.active ? n.color : '#2f3640', f: fixWinding(topojson.merge(this.topo, list)) as GeoPermissibleObjects });
+      this.nations.push({ color: !game ? '#7a8a6a' : n?.active ? cartoon(n.color) : '#2f3640', f: fixWinding(topojson.merge(this.topo, list)) as GeoPermissibleObjects });
     }
     const at = new Map<any, number>(geoms.map((gm, i) => [gm, i]));
     this.borders = game ? topojson.mesh(this.topo, this.obj, (a: any, b: any) => a !== b && ctrl[at.get(a)!] !== ctrl[at.get(b)!]) : null;
@@ -212,7 +213,7 @@ export class GlobeRenderer {
     cv.width = W;
     cv.height = H;
     const ctx = cv.getContext('2d')!;
-    ctx.fillStyle = '#1b4d86';
+    ctx.fillStyle = '#2a5f9e';
     ctx.fillRect(0, 0, W, H);
     const proj = geoEquirectangular().scale(W / (2 * Math.PI)).translate([W / 2, H / 2]);
     const path = geoPath(proj, ctx);
@@ -229,8 +230,8 @@ export class GlobeRenderer {
     }
     ctx.lineJoin = 'round';
     if (this.borders) {
-      ctx.strokeStyle = 'rgba(10,10,15,0.85)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#0f1f3a';
+      ctx.lineWidth = 2.6;
       ctx.beginPath();
       path(this.borders);
       ctx.stroke();
@@ -307,7 +308,7 @@ export class GlobeRenderer {
     const proj = this.proj();
     const path = geoPath(proj, ctx);
     const [cx, cy] = proj.translate();
-    ctx.fillStyle = '#123a6b';
+    ctx.fillStyle = '#2a5f9e';
     ctx.beginPath();
     ctx.arc(cx, cy, proj.scale(), 0, Math.PI * 2);
     ctx.fill();

@@ -50,7 +50,14 @@ It is single-player and fully offline, with no in-game purchases.
 | Challenges | Everyone vs You, Island Empire, Unify Africa, Survive as Taiwan, Microstate Rising, Restore the Union |
 | Quick Match | Regional maps of Europe, Asia, Africa, the Americas and the Middle East, played over about 3 in-game years |
 
+**Look and feel**
+- Cartoon style: a rounded font, chunky outlined "candy" buttons that squish when tapped, bouncy panels and pop-ups.
+- A bright map with ink outlines, foamy coastlines and punchy country colours.
+
 **Mobile-friendly**
+- Big touch targets, a one-thumb Play/Pause button and a speed button, and map buttons in the thumb zone (bottom right).
+- Panels slide up from the bottom; swipe them down to close.
+- Short vibrations when you select, give orders, build, capture land or get attacked (can be turned off).
 - Local notifications when you're attacked while the app is in the background.
 - Offline progress: the world moves on while the app is closed (1 real minute = 1 game day, up to 30 days), and you get a report when you return.
 - Autosave and three save slots.

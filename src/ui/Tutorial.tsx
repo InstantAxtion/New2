@@ -19,7 +19,7 @@ export function Tutorial({ onDone }: { onDone: () => void }) {
         <>
           <p>Your country has a <b class="gold">gold border</b>. Swipe to look around (flick it — the map glides!), pinch or double-tap to zoom.</p>
           <p>The darker, striped areas are covered by <b>fog of war</b>: you can't see enemy troops there until your own units get close.</p>
-          <p>Time is <b>paused</b>. Press <b>▶</b> (top right) to start. ▶▶ and ▶▶▶ go faster.</p>
+          <p>Time is <b>paused</b>. Press the big green <b>▶</b> (top right) to start. Tap <b>1×</b> next to it to go faster. Swipe a panel down to close it.</p>
         </>
       ),
     },

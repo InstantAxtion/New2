@@ -6,6 +6,7 @@
 //
 // The world and base layers are moved with CSS transforms during gestures, so panning
 // and pinching cost almost nothing; they are re-rendered after the gesture ends.
+import { buzz } from '../platform/mobile';
 import { BUILDINGS, BUILDING_TYPES, TERRAIN, UNITS } from '../data/units';
 import type { Fx, Game } from '../sim/ctx';
 import { locVisible, unitVisible } from '../sim/fog';
@@ -26,7 +27,7 @@ export interface BadgeHit {
   owner: number;
 }
 
-const OCEAN = '#0f2747';
+const OCEAN = '#2a5f9e';
 const WORLD_SCALE = 1.024; // world layer pixels per map unit (2048 px wide)
 const PAD = 140; // base layer margin around the screen (CSS px)
 
@@ -395,7 +396,7 @@ export class MapRenderer {
       const [x, y] = this.locXY(e.loc);
       const color = g.s.nations[e.owner]?.color;
       const dur = { hit: 900, boom: 1300, capture: 1800, bomb: 1100, sunk: 1500, built: 1500 }[e.kind];
-      if (e.kind === 'capture' && e.owner === g.s.player) this.effects.push({ kind: 'confetti', x, y, t0: now, dur: 2200, seed: Math.random() });
+      if (e.kind === 'capture' && e.owner === g.s.player) { this.effects.push({ kind: 'confetti', x, y, t0: now, dur: 2200, seed: Math.random() }); buzz([15, 40, 25]); }
       if (e.kind === 'hit') {
         // one explosion burst and one damage number per place at a time: add up the rest
         const live = this.effects.find((x2) => x2.kind === 'hit' && x2.x === x && x2.y === y && now - x2.t0 < 450);
@@ -422,7 +423,7 @@ export class MapRenderer {
         return TERRAIN[g.w.provs[i].terrain].color;
       case 'alliances': {
         const bloc = g.blocOf(p.ctrl);
-        return bloc ? bloc.color : '#4b5563';
+        return bloc ? cartoon(bloc.color) : '#4b5563';
       }
       case 'resources': {
         const m = Math.min(1, p.res / 3);
@@ -432,11 +433,12 @@ export class MapRenderer {
         const owner = g.s.nations[p.owner];
         if (!owner?.active) return '#2f3640';
         if (p.ctrl !== p.owner) {
-          const key = 'stripe:' + owner.color + ':' + g.s.nations[p.ctrl].color;
-          this.fillStyles.set(key, { a: owner.color, b: g.s.nations[p.ctrl].color });
+          const a = cartoon(owner.color), b = cartoon(g.s.nations[p.ctrl].color);
+          const key = 'stripe:' + a + ':' + b;
+          this.fillStyles.set(key, { a, b });
           return key;
         }
-        return owner.color;
+        return cartoon(owner.color);
       }
     }
   }
@@ -539,11 +541,12 @@ export class MapRenderer {
     if (!this.fog) this.buildFog();
     // shallow water glow around every coast
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'rgba(96,165,250,0.16)';
-    ctx.lineWidth = 9 / px;
+    // cartoon shallows: a pale band and a white foam line around every coast
+    ctx.strokeStyle = 'rgba(125,200,255,0.28)';
+    ctx.lineWidth = 12 / px;
     ctx.stroke(this.coast);
-    ctx.strokeStyle = 'rgba(147,197,253,0.14)';
-    ctx.lineWidth = 4 / px;
+    ctx.strokeStyle = 'rgba(225,245,255,0.5)';
+    ctx.lineWidth = 4.5 / px;
     ctx.stroke(this.coast);
     for (const [key, path] of this.fills!) {
       const st = this.fillStyles.get(key);
@@ -585,16 +588,16 @@ export class MapRenderer {
       ctx.lineWidth = lw * 0.9;
       ctx.stroke(this.provBorders);
     }
-    ctx.strokeStyle = 'rgba(190,220,250,0.55)';
-    ctx.lineWidth = lw * 1.2;
+    ctx.strokeStyle = '#0f1f3a';
+    ctx.lineWidth = lw * (detail ? 2.2 : 1.6);
     ctx.stroke(this.coast);
     if (detail) {
       ctx.strokeStyle = 'rgba(0,0,0,0.35)';
       ctx.lineWidth = lw * 4;
       ctx.stroke(this.borders!);
     }
-    ctx.strokeStyle = 'rgba(12,14,20,0.95)';
-    ctx.lineWidth = lw * (detail ? 1.7 : 1.4);
+    ctx.strokeStyle = '#0f1f3a';
+    ctx.lineWidth = lw * (detail ? 2.8 : 1.8);
     ctx.stroke(this.borders!);
     if (this.game) {
       if (detail) {
@@ -710,7 +713,7 @@ export class MapRenderer {
 
   private drawHighlightLabels(ctx: CanvasRenderingContext2D) {
     const placed: [number, number, number, number][] = [];
-    ctx.font = '800 12px system-ui, sans-serif';
+    ctx.font = '800 12px Fredoka, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     // best spots first, so they win when labels overlap
@@ -768,7 +771,7 @@ export class MapRenderer {
       if (overlaps(box)) continue;
       placed.push(box);
       ctx.globalAlpha = nationAlpha;
-      ctx.font = `800 ${fs}px system-ui, sans-serif`;
+      ctx.font = `800 ${fs}px Fredoka, system-ui, sans-serif`;
       ctx.lineWidth = Math.max(2, fs / 6);
       ctx.strokeStyle = 'rgba(0,0,0,0.6)';
       ctx.strokeText(l.name, sx, sy);
@@ -779,7 +782,7 @@ export class MapRenderer {
     try { (ctx as unknown as { letterSpacing: string }).letterSpacing = '0px'; } catch { /* old webview */ }
     // region names when zoomed in
     if (k > 2.6) {
-      ctx.font = `600 11px system-ui, sans-serif`;
+      ctx.font = `600 11px Fredoka, system-ui, sans-serif`;
       const geo = this.geo;
       for (let i = 0; i < geo.paths.length; i++) {
         const b = i * 4;
@@ -799,7 +802,7 @@ export class MapRenderer {
         ctx.fillText(name, sx, sy - 28);
       }
     } else if (k > 1.4) {
-      ctx.font = '12px system-ui, sans-serif';
+      ctx.font = '12px Fredoka, system-ui, sans-serif';
       ctx.fillStyle = '#ffd34d';
       ctx.strokeStyle = 'rgba(0,0,0,0.6)';
       ctx.lineWidth = 3;
@@ -840,7 +843,7 @@ export class MapRenderer {
         ctx.drawImage(this.emoji(BUILDINGS[t].icon, 13), x - 7, y - 7, 14, 14);
         const lvl = p.b[t] ?? 0;
         if (BUILDINGS[t].max > 1 && lvl > 1) {
-          ctx.font = '700 8px system-ui';
+          ctx.font = '700 8px Fredoka, system-ui';
           ctx.fillStyle = '#fff';
           ctx.textAlign = 'center';
           ctx.fillText(String(lvl), x + 6, y + 6);
@@ -971,7 +974,7 @@ export class MapRenderer {
   }
 
   private pill(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, bg: string) {
-    ctx.font = '700 11px system-ui, sans-serif';
+    ctx.font = '700 11px Fredoka, system-ui, sans-serif';
     const w = ctx.measureText(text).width + 10;
     ctx.fillStyle = bg;
     ctx.beginPath();
@@ -1032,7 +1035,7 @@ export class MapRenderer {
     for (const u of units) counts.set(u.type, (counts.get(u.type) || 0) + 1);
     const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || UNITS[b[0]].cost - UNITS[a[0]].cost)[0][0];
     const ring = owner === me ? 'me' : g.atWar(me, owner) ? 'enemy' : g.allied(me, owner) ? 'ally' : 'other';
-    const R = air ? 11 : Math.max(12, Math.min(16, 12 + this.view.k));
+    const R = air ? 12 : Math.max(13, Math.min(17, 13 + this.view.k));
     if (sel) {
       const pulse = 1 + 0.12 * Math.sin(now / 180);
       ctx.fillStyle = 'rgba(74,222,128,0.35)';
@@ -1040,7 +1043,7 @@ export class MapRenderer {
       ctx.arc(x, y, (R + 7) * pulse, 0, Math.PI * 2);
       ctx.fill();
     }
-    const sp = this.counter(top, g.s.nations[owner].color, sel ? 'sel' : ring, R);
+    const sp = this.counter(top, cartoon(g.s.nations[owner].color), sel ? 'sel' : ring, R);
     ctx.drawImage(sp, x - sp.width / this.dpr / 2, y - sp.height / this.dpr / 2, sp.width / this.dpr, sp.height / this.dpr);
     // health bar under the counter
     const hp = units.reduce((a, u) => a + u.hp, 0) / units.length / 100;
@@ -1052,7 +1055,7 @@ export class MapRenderer {
     // unit count
     const n = units.length;
     if (n > 1) {
-      ctx.font = '800 10px system-ui, sans-serif';
+      ctx.font = '800 10px Fredoka, system-ui, sans-serif';
       const label = String(n);
       const w = Math.max(15, label.length * 6 + 8);
       ctx.fillStyle = '#0b1220';
@@ -1067,7 +1070,7 @@ export class MapRenderer {
       ctx.textBaseline = 'middle';
       ctx.fillText(label, x + R - 7 + w / 2, y - R + 1.5);
     }
-    this.badges.push({ x, y, r: R + 8, units: units.map((u) => u.id), loc, owner });
+    this.badges.push({ x, y, r: R + 12, units: units.map((u) => u.id), loc, owner });
   }
 
   /** Pre-rendered counter: round badge in the nation's colour with a white unit icon. */
@@ -1226,7 +1229,7 @@ export class MapRenderer {
           this.explosion(ctx, sx - ox * 0.6, sy - oy + 4, t * 1.6 - 0.15, 8);
           if (e.value && e.value >= 1) {
             ctx.globalAlpha = Math.min(1, 2 * (1 - t));
-            ctx.font = '800 13px system-ui, sans-serif';
+            ctx.font = '800 13px Fredoka, system-ui, sans-serif';
             ctx.lineWidth = 3;
             ctx.strokeStyle = 'rgba(0,0,0,0.85)';
             ctx.strokeText('−' + Math.round(e.value), sx + 16, sy - 20 - t * 22);
@@ -1262,7 +1265,7 @@ export class MapRenderer {
           ctx.beginPath();
           ctx.arc(sx, sy, 10 + t * 70, 0, Math.PI * 2);
           ctx.stroke();
-          ctx.font = '800 15px system-ui, sans-serif';
+          ctx.font = '800 15px Fredoka, system-ui, sans-serif';
           ctx.lineWidth = 4;
           ctx.strokeStyle = 'rgba(0,0,0,0.8)';
           ctx.strokeText('🚩 Captured!', sx, sy - 30 - t * 20);
@@ -1273,7 +1276,7 @@ export class MapRenderer {
         }
         case 'built':
           ctx.globalAlpha = 1 - t;
-          ctx.font = '800 13px system-ui, sans-serif';
+          ctx.font = '800 13px Fredoka, system-ui, sans-serif';
           ctx.fillStyle = '#86efac';
           ctx.strokeStyle = 'rgba(0,0,0,0.8)';
           ctx.lineWidth = 3;
@@ -1354,20 +1357,48 @@ export class MapRenderer {
 
 /** Lighten (amt > 0) or darken a hex colour. */
 /** Washed-out, darker version of a colour for regions hidden by fog of war. */
-function fogColor(c: string) {
+function toRgb(c: string): [number, number, number] {
   let r = 70, g = 80, b = 90;
   if (c.startsWith('#') && c.length === 7) {
     const n = parseInt(c.slice(1), 16);
     r = (n >> 16) & 255; g = (n >> 8) & 255; b = n & 255;
   } else {
     const m = c.match(/\d+(\.\d+)?/g);
-    if (c.startsWith('hsl') && m) {
+    if (c.startsWith('rgb') && m) [r, g, b] = m.slice(0, 3).map(Number);
+    else if (c.startsWith('hsl') && m) {
       const [h, sat, l] = m.map(Number);
       const a = (sat / 100) * Math.min(l / 100, 1 - l / 100);
       const f = (k0: number) => { const k = (k0 + h / 30) % 12; return Math.round(255 * (l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
       r = f(0); g = f(8); b = f(4);
     }
   }
+  return [r, g, b];
+}
+
+const cartoonCache = new Map<string, string>();
+/** Brighter, punchier version of a nation colour for the cartoon map. */
+export function cartoon(c: string): string {
+  let out = cartoonCache.get(c);
+  if (out) return out;
+  const [r0, g0, b0] = toRgb(c).map((v) => v / 255);
+  const max = Math.max(r0, g0, b0), min = Math.min(r0, g0, b0);
+  let h = 0, sat = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    h = max === r0 ? (g0 - b0) / d + (g0 < b0 ? 6 : 0) : max === g0 ? (b0 - r0) / d + 2 : (r0 - g0) / d + 4;
+    h *= 60;
+  }
+  const S = Math.min(0.88, sat * 1.25 + 0.1);
+  const L = Math.max(0.46, Math.min(0.7, l * 1.05 + 0.05));
+  out = `hsl(${h.toFixed(0)}, ${(S * 100).toFixed(0)}%, ${(L * 100).toFixed(0)}%)`;
+  cartoonCache.set(c, out);
+  return out;
+}
+
+function fogColor(c: string) {
+  const [r, g, b] = toRgb(c);
   const grey = 0.3 * r + 0.59 * g + 0.11 * b;
   const mix = (v: number) => Math.round((v * 0.35 + grey * 0.65) * 0.62 + 12);
   return `rgb(${mix(r)},${mix(g)},${mix(b) + 6})`;
@@ -1397,9 +1428,8 @@ function swords(ctx: CanvasRenderingContext2D, x: number, y: number, s: number) 
   ctx.restore();
 }
 
-function shade(hex: string, amt: number) {
-  const n = parseInt(hex.slice(1), 16);
-  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+function shade(color: string, amt: number) {
+  let [r, g, b] = toRgb(color);
   const f = (c: number) => Math.round(amt > 0 ? c + (255 - c) * amt : c * (1 + amt));
   r = f(r); g = f(g); b = f(b);
   return `rgb(${r},${g},${b})`;

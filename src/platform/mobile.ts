@@ -2,6 +2,7 @@
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { pref } from './storage';
 
 export const isNative = Capacitor.isNativePlatform();
 
@@ -60,5 +61,15 @@ export function onLifecycle(onPause: () => void, onResume: () => void, onBack: (
   } else {
     document.addEventListener('visibilitychange', () => (document.hidden ? onPause() : onResume()));
     window.addEventListener('pagehide', onPause);
+  }
+}
+
+/** A short vibration for taps and big moments (Android only; off in Settings). */
+export function buzz(ms: number | number[] = 10) {
+  try {
+    if (!pref('vibration', true)) return;
+    navigator.vibrate?.(ms);
+  } catch {
+    /* not supported */
   }
 }

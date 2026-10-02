@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { BUILDINGS, UNITS } from '../data/units';
+import { buzz } from '../platform/mobile';
 import { pref } from '../platform/storage';
 import type { Layer } from '../render/renderer';
 import { declareWar } from '../sim/diplomacy';
@@ -19,6 +20,8 @@ import { NewsPanel } from './panels/News';
 import { ProvincePanel } from './panels/Province';
 import { WorldPanel } from './panels/World';
 import { Tutorial } from './Tutorial';
+
+const SPEED_STEPS = [1, 2, 5];
 
 const LAYERS: [Layer, string, string][] = [
   ['political', '🗺 Countries', 'Who owns what. Striped = occupied by an enemy.'],
@@ -48,21 +51,23 @@ export function GameScreen() {
   return (
     <>
       <Hud />
-      <div class="fabs">
-        <button class={'fab' + (showLayers ? ' on' : '')} onClick={() => setShowLayers(!showLayers)} aria-label="Map view">
-          🗂<span class="fablabel">View</span>
-        </button>
-        <button class={'fab' + (c.mode === 'globe' ? ' on' : '')} onClick={() => (c.mode === 'globe' ? c.exitGlobe() : c.enterGlobe())} aria-label="Globe">
-          🌐<span class="fablabel">Globe</span>
-        </button>
-        <button class="fab" onClick={() => c.home()} aria-label="My country">
-          🏠<span class="fablabel">Home</span>
-        </button>
-        <button class="fab" onClick={() => c.selectAll('land')} aria-label="Select all troops">
-          🪖<span class="fablabel">All troops</span>
-        </button>
-      </div>
-      {showLayers && (
+      {!c.panel && !c.selected.size && !c.building && (
+        <div class="fabs">
+          <button class={'fab' + (showLayers ? ' on' : '')} onClick={() => { buzz(8); setShowLayers(!showLayers); }} aria-label="Map view">
+            🗂<span class="fablabel">View</span>
+          </button>
+          <button class={'fab' + (c.mode === 'globe' ? ' on' : '')} onClick={() => { buzz(8); c.mode === 'globe' ? c.exitGlobe() : c.enterGlobe(); }} aria-label="Globe">
+            🌐<span class="fablabel">Globe</span>
+          </button>
+          <button class="fab" onClick={() => { buzz(8); c.home(); }} aria-label="My country">
+            🏠<span class="fablabel">Home</span>
+          </button>
+          <button class="fab big" onClick={() => { buzz(15); c.selectAll('land'); }} aria-label="Select all troops">
+            🪖<span class="fablabel">Troops</span>
+          </button>
+        </div>
+      )}
+      {showLayers && !c.panel && (
         <div class="layers">
           {LAYERS.map(([l, label, desc]) => (
             <button class={c.layer === l ? 'on' : ''} onClick={() => { c.setLayer(l); setShowLayers(false); }}>
@@ -86,7 +91,7 @@ export function GameScreen() {
       {c.panel === 'menu' && <GameMenu />}
       <div class="tabbar">
         {tabs.map(([p, ic, label, badge]) => (
-          <button class={c.panel === p || (p === 'build' && c.building) ? 'on' : ''} onClick={() => (p === 'build' && c.building ? c.cancelBuild() : c.open(p))}>
+          <button class={c.panel === p || (p === 'build' && c.building) ? 'on' : ''} onClick={() => { buzz(8); setShowLayers(false); if (p === 'build' && c.building) c.cancelBuild(); else c.open(c.panel === p ? null : p); }}>
             <span class="ic">{ic}</span>
             {label}
             {badge ? <span class="badge">{badge}</span> : null}
@@ -110,7 +115,7 @@ function Hud() {
   return (
     <div class="hud">
       <div class="row" style={{ width: '100%' }}>
-        <button class="btn sm ghost" style={{ padding: '4px 8px' }} onClick={() => c.open('menu')} aria-label="Menu">☰</button>
+        <button class="btn menubtn" onClick={() => { buzz(8); c.open('menu'); }} aria-label="Menu">☰</button>
         <div class="nation grow" onClick={() => c.open('country')}>
           <NationDot color={n.color} />
           <div class="col" style={{ gap: 0, minWidth: 0 }}>
@@ -118,13 +123,12 @@ function Hud() {
             <span class="date">{dateStr(g)}</span>
           </div>
         </div>
-        <div class="speed">
-          {[0, 1, 2, 5].map((s) => (
-            <button class={c.speed === s ? 'on' : ''} onClick={() => c.setSpeed(s)} aria-label={s === 0 ? 'Pause' : `Speed ${s}`}>
-              {s === 0 ? <b style={{ letterSpacing: '-2px' }}>❙❙</b> : s === 1 ? '▶' : s === 2 ? '▶▶' : '▶▶▶'}
-            </button>
-          ))}
-        </div>
+        <button class="btn speedbtn" onClick={() => { buzz(8); const next = SPEED_STEPS[(SPEED_STEPS.indexOf(c.lastSpeed) + 1) % SPEED_STEPS.length]; c.setSpeed(next); }} aria-label="Game speed">
+          {c.lastSpeed}×
+        </button>
+        <button class={'btn play' + (c.speed === 0 ? ' paused' : '')} onClick={() => { buzz(12); c.togglePause(); }} aria-label={c.speed === 0 ? 'Play' : 'Pause'}>
+          {c.speed === 0 ? '▶' : <b style={{ letterSpacing: '-2px' }}>❙❙</b>}
+        </button>
       </div>
       <div class="resbar" onClick={() => c.open('country')}>
         <span><b>💰 {fmt.money(n.money)}</b> <i class={net >= 0 ? 'good' : 'bad'}>{net >= 0 ? '+' : ''}{fmt.money(net * 30)} a month</i></span>

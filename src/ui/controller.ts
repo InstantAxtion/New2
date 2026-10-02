@@ -1,7 +1,7 @@
 // Glue between the simulation, the map renderer and the UI.
 import { useEffect, useState } from 'preact/hooks';
 import { BUILDINGS, UNITS } from '../data/units';
-import { cancelScheduled, notify, onLifecycle } from '../platform/mobile';
+import { buzz, cancelScheduled, notify, onLifecycle } from '../platform/mobile';
 import { listSaves, pref, readSave, setPref, writeSave } from '../platform/storage';
 import { buildGeo, nearestCell, provinceAt, type MapGeo } from '../render/geo';
 import { GlobeRenderer } from '../render/globe';
@@ -172,6 +172,7 @@ class Controller {
     for (const t of g.s.toasts) {
       if (t.id <= this.lastToastId) continue;
       this.lastToastId = t.id;
+      if (t.kind === 'danger' && /declared war on us/.test(t.text)) buzz([60, 80, 60]);
       if (t.kind === 'danger' && document.hidden && g.s.settings.notifications) notify('Sovereign: World Command', t.text);
     }
     if (g.s.over) { this.speed = 0; this.emit(); }
@@ -386,6 +387,7 @@ class Controller {
     else {
       this.toast(`${BUILDINGS[t].icon} ${BUILDINGS[t].name} started in ${g.w.provs[p].name}`, 'good');
       this.renderer?.ping(p);
+      buzz(20);
     }
     this.refreshBuildTargets();
   }
@@ -399,6 +401,7 @@ class Controller {
   select(ids: number[], add = false) {
     if (!add) this.selected.clear();
     for (const id of ids) this.selected.add(id);
+    if (ids.length) buzz(10);
     if (this.selected.size && this.panel && this.panel !== 'army') this.panel = null;
     this.syncSelection();
   }
@@ -497,6 +500,7 @@ class Controller {
     const { ok, err } = orderMove(g, units, loc);
     if (ok) {
       this.renderer?.ping(loc);
+      buzz(18);
       if (loc >= 0 && g.atWar(g.s.player, g.s.provinces[loc].ctrl)) {
         const air = units.every(isAir);
         if (!air) this.toast(`⚔️ ${ok} unit${ok > 1 ? 's' : ''} attacking ${g.w.provs[loc].name}`, 'info');
@@ -593,6 +597,7 @@ class Controller {
   private checkPopups() {
     const m = this.popup();
     if (m && this.speed > 0) {
+      buzz([30, 60, 30]);
       this.resumeSpeed = this.speed;
       this.speed = 0;
       this.emit();

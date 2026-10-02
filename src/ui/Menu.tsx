@@ -111,6 +111,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
       <div class="list">
         <Toggle label="Battery saver" desc="30 fps, lower resolution map and lighter simulation bursts." on={pref('batterySaver', false)} onChange={(v) => set('batterySaver', v)} />
         <Toggle label="Auto-pause when war is declared on you" on={pref('autoPauseWar', true)} onChange={(v) => set('autoPauseWar', v)} />
+        <Toggle label="Vibration" desc="A little buzz when you tap, give orders or capture land." on={pref('vibration', true)} onChange={(v) => set('vibration', v)} />
       </div>
       <div class="tiny muted">Difficulty and fog of war are chosen when you start a new game.</div>
     </>
