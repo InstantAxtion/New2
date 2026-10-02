@@ -383,6 +383,32 @@ export function enqueue(g: Game, n: number, type: UnitType | 'nuke', at?: number
   return null;
 }
 
+export const BUILDINGS = {
+  depot: { name: 'Supply Depot', cost: 2, days: 60, desc: 'A logistics hub: full supply radiates from this province.' },
+  fort: { name: 'Fortification', cost: 1.5, days: 90, desc: '+15% defense per level (max 5).' },
+  infra: { name: 'Infrastructure', cost: 3, days: 120, desc: '+1 infrastructure: better supply and growth.' },
+} as const;
+
+export function canConstruct(g: Game, n: number, type: keyof typeof BUILDINGS, p: number): string | null {
+  const prov = g.s.provinces[p];
+  if (prov.owner !== n || prov.ctrl !== n) return 'Must be your own controlled province';
+  if (g.s.nations[n].queue.some((q) => q.type === type && q.at === p)) return 'Already under construction';
+  if (type === 'depot' && prov.depot) return 'Already has a depot';
+  if (type === 'fort' && prov.fort >= 5) return 'Fortifications at maximum';
+  if (type === 'infra' && prov.infra >= 10) return 'Infrastructure at maximum';
+  return null;
+}
+
+export function construct(g: Game, n: number, type: keyof typeof BUILDINGS, p: number): string | null {
+  const err = canConstruct(g, n, type, p);
+  if (err) return err;
+  const nation = g.s.nations[n];
+  const cl = nationCostLevel(g, nation);
+  nation.stock.steel -= 10;
+  nation.queue.push({ id: g.nextId(), type, progress: 0, cost: BUILDINGS[type].cost * (0.5 + 0.5 * cl), days: BUILDINGS[type].days, at: p });
+  return null;
+}
+
 function defaultSpawn(g: Game, n: number, type: UnitType): number {
   const nation = g.s.nations[n];
   const cap = nation.capital >= 0 && g.s.provinces[nation.capital].ctrl === n ? nation.capital : g.s.provinces.findIndex((p) => p.ctrl === n);
@@ -420,7 +446,15 @@ function completeItem(g: Game, n: Nation, item: ProdItem) {
     g.notify([n.idx], 'A nuclear warhead has been completed.', 'warn');
     return;
   }
-  if (item.type === 'depot' || item.type === 'fort' || item.type === 'infra') return;
+  if (item.type === 'depot' || item.type === 'fort' || item.type === 'infra') {
+    const p = g.s.provinces[item.at];
+    if (!p || p.owner !== n.idx) return;
+    if (item.type === 'depot') p.depot = true;
+    else if (item.type === 'fort') p.fort = Math.min(5, p.fort + 1);
+    else p.infra = Math.min(10, p.infra + 1);
+    g.notify([n.idx], `${BUILDINGS[item.type].name} completed in ${g.w.provs[item.at].name}.`, 'good', item.at);
+    return;
+  }
   const type = item.type as UnitType;
   const def = UNITS[type];
   let loc = item.at;

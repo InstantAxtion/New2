@@ -457,6 +457,7 @@ function resolveBattle(g: Game, p: number, attackers: Unit[], defenders: Unit[])
       g.news('military', `${d.name} of ${g.name(d.owner)} surrendered after being encircled in ${g.w.provs[p].name}.`, [d.owner]);
       g.notify([d.owner], `${d.name} was encircled and surrendered in ${g.w.provs[p].name}!`, 'danger', p);
     } else {
+      g.notify([d.owner], `${d.name} was forced to retreat from ${g.w.provs[p].name}.`, 'warn', dest);
       g.relocate(d, dest);
       d.path = [];
       d.orders = [];

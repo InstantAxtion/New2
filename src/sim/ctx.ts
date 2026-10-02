@@ -264,6 +264,11 @@ export class Game {
     if (this.s.news.length > 400) this.s.news.splice(0, this.s.news.length - 400);
   }
   toast(text: string, kind: Toast['kind'] = 'info', loc?: Loc) {
+    // collapse repeats of the same alert within a few days
+    for (let i = this.s.toasts.length - 1; i >= Math.max(0, this.s.toasts.length - 8); i--) {
+      const t = this.s.toasts[i];
+      if (t.text === text && this.day - t.day <= 7) return;
+    }
     this.s.toasts.push({ id: this.nextId(), day: this.day, text, kind, loc });
     if (this.s.toasts.length > 60) this.s.toasts.splice(0, this.s.toasts.length - 60);
   }
