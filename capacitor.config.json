@@ -1,0 +1,9 @@
+{
+  "appId": "com.sovereign.worldcommand",
+  "appName": "Sovereign: World Command",
+  "webDir": "dist",
+  "android": { "backgroundColor": "#0b1220" },
+  "plugins": {
+    "LocalNotifications": { "smallIcon": "ic_stat_icon", "iconColor": "#3b82f6" }
+  }
+}
