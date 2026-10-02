@@ -50,6 +50,8 @@ export class MapRenderer {
   /** Regions to glow (e.g. where a building can go). */
   highlight: number[] = [];
   highlightColor = '34,197,94';
+  /** Regions selected planes can reach (faint blue tint). */
+  airRange: number[] = [];
   previewPath: Loc[] = [];
   /** Finger-drag order in progress: from a unit stack to the finger. */
   drag: { x0: number; y0: number; x: number; y: number; target: Loc | null; hostile: boolean } | null = null;
@@ -519,6 +521,10 @@ export class MapRenderer {
     ctx.save();
     ctx.translate(-this.view.x * k, -this.view.y * k);
     ctx.scale(k, k);
+    if (this.airRange.length) {
+      ctx.fillStyle = 'rgba(56,189,248,0.16)';
+      for (const p of this.airRange) ctx.fill(this.geo.paths[p], 'evenodd');
+    }
     if (this.highlight.length) {
       const pulse = 0.25 + 0.12 * Math.sin(now / 250);
       ctx.fillStyle = `rgba(${this.highlightColor},${pulse})`;

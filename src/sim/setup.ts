@@ -3,7 +3,7 @@ import { PROFILES, URANIUM } from '../data/countries';
 import { SCENARIO_BY_ID, inRegion, type MilTuple, type ScenarioDef, type Selector } from '../data/scenarios';
 import { TERRAIN, UNITS } from '../data/units';
 import { Game } from './ctx';
-import { BASE_PRICE, makeUnit, regionIncome } from './economy';
+import { BASE_PRICE, makeUnit, regionIncome, regionMaterials, regionUranium } from './economy';
 import type { GameSettings, GameState, Gov, Nation, Personality, Province, ResMap, UnitType } from './types';
 import { seaLoc } from './types';
 import type { WorldData } from './world';
@@ -430,14 +430,19 @@ function setupEconomy(g: Game) {
   const { s } = g;
   for (const n of s.nations) {
     if (!n.alive) continue;
-    let income = 0, regions = 0, units = 0, mat = 0;
+    let income = 0, regions = 0, units = 0, mat = 0, upkeep = 0, factories = 0;
     s.provinces.forEach((p, i) => {
       if (p.ctrl !== n.idx) return;
       income += regionIncome(g, i);
       regions++;
       mat += p.mat;
+      n.made.materials += regionMaterials(g, i);
+      n.made.uranium += regionUranium(g, i);
+      factories += p.b.factory ?? 0;
     });
-    for (const u of s.units) if (u.owner === n.idx) units++;
+    for (const u of s.units) if (u.owner === n.idx) { units++; upkeep += UNITS[u.type].upkeep; }
+    n.made.ammo = factories * 3 + 1;
+    n.upkeep = upkeep / 365;
     n.money = Math.max(10, income * 120);
     n.res.materials = Math.round(60 + mat * 20 + regions * 10);
     n.res.ammo = Math.round(80 + units * 6);

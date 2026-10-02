@@ -4,7 +4,7 @@ import { createGame, tickHour } from '../../src/sim/engine';
 import { SCENARIOS } from '../../src/data/scenarios';
 const w = buildWorld(JSON.parse(fs.readFileSync('public/data/world.json', 'utf8')));
 for (const sc of SCENARIOS) {
-  const player = sc.playerChoices?.[0] ?? (sc.region === 'Africa' ? 'NGA' : sc.region === 'Asia' ? 'CHN' : sc.region === 'Americas' ? 'USA' : sc.region === 'Middle East' ? 'IRN' : 'DEU');
+  const player = sc.playerChoices?.[0] ?? (sc.region === 'Africa' ? 'NGA' : sc.region === 'Asia' ? 'CHN' : sc.region === 'Americas' ? 'USA' : sc.region === 'Middle East' ? 'SAU' : 'DEU');
   try {
     const g = createGame(w, { scenario: sc.id, player, seed: 1 });
     const t = performance.now();

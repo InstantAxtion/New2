@@ -11,7 +11,7 @@ import type { Game } from '../sim/ctx';
 import { canConstruct, construct } from '../sim/economy';
 import { catchUp, createGame, deserialize, loadGame, serialize, SPEEDS, tickHour } from '../sim/engine';
 import { updateVisibility } from '../sim/fog';
-import { isAir, orderMove, retreat, stop } from '../sim/military';
+import { inAirRange, isAir, orderMove, retreat, stop } from '../sim/military';
 import { canNuke, launchNuke } from '../sim/nuclear';
 import { pathFor } from '../sim/path';
 import type { NewGameOptions } from '../sim/setup';
@@ -398,6 +398,9 @@ class Controller {
     if (this.renderer) {
       this.renderer.selectedUnits = new Set(this.selected);
       this.renderer.previewPath = [];
+      const units = this.selectedUnits();
+      const g = this.game;
+      this.renderer.airRange = g && units.length && units.every(isAir) ? g.s.provinces.map((_, i) => (units.every((u) => inAirRange(g, u, i)) ? i : -1)).filter((i) => i >= 0) : [];
       this.renderer.touch();
     }
     this.emit();
@@ -494,8 +497,7 @@ class Controller {
     }
     if (err && !ok) this.toast(err, 'warn');
     else if (err) this.toast(`${ok} units on their way. Some could not go: ${err}`, 'warn');
-    this.renderer?.touch();
-    this.emit();
+    this.syncSelection();
   }
 
   private dragStart(sx: number, sy: number): boolean {
@@ -521,12 +523,15 @@ class Controller {
   }
   private dragEnd(sx: number, sy: number, moved: boolean) {
     const r = this.renderer!;
+    const d = r.drag;
     r.drag = null;
     r.touch();
-    if (!moved) return;
-    const loc = this.locAt(sx, sy);
+    if (!moved || !d) return;
     const g = this.game!;
     const units = this.dragUnits.map((id) => g.rt.unitById.get(id)).filter((u): u is Unit => !!u);
+    // a tiny drag is just a slightly shaky tap: select the stack
+    if (Math.hypot(sx - d.x0, sy - d.y0) < 28) { this.select(units.map((u) => u.id)); return; }
+    const loc = this.locAt(sx, sy);
     if (loc === null || !units.length) return;
     this.select(units.map((u) => u.id));
     this.issueOrder(loc, units);
