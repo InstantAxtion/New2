@@ -84,7 +84,6 @@ export function NewGame() {
                 <div class="row wrap" style={{ marginTop: '8px' }}>
                   <span class="chip">📅 {s.year}</span>
                   {s.wars?.length ? <span class="chip bad">⚔️ {s.wars.length} active war{s.wars.length > 1 ? 's' : ''}</span> : null}
-                  {s.defcon && s.defcon <= 3 ? <span class="chip warn">☢️ DEFCON {s.defcon}</span> : null}
                   {s.region && <span class="chip">🗺 {s.region} only</span>}
                   {s.playerChoices && <span class="chip">👤 {s.playerChoices.length === 1 ? 'Fixed nation' : `${s.playerChoices.length} nations`}</span>}
                 </div>
@@ -119,6 +118,7 @@ export function NewGame() {
             ))}
           </div>
           <div class="section">Rules</div>
+          <Toggle label="🌫 Fog of war" desc="You only see enemy troops near your own land and units." on={!!opts.fog} onChange={(v) => setOpts({ ...opts, fog: v })} />
           <Toggle label="☢️ Nuclear weapons" desc="Turn off to remove nukes from the game." on={!!opts.nukes} onChange={(v) => setOpts({ ...opts, nukes: v })} />
           <button class="btn primary block" style={{ marginTop: '12px' }} disabled={!n} onClick={() => n && start()}>
             ▶ Start as {n?.name}
@@ -173,7 +173,7 @@ function NationSearch({ g, q, allowed, onPick }: { g: Game; q: string; allowed: 
         <div class="item click" onClick={() => onPick(n.idx)}>
           <NationDot color={n.color} />
           <div class="grow">{n.name}</div>
-          <span class="tiny muted">{fmt.money(n.gdp)}</span>
+          <span class="tiny muted">{fmt.money(n.income * 30)}/mo</span>
         </div>
       ))}
       {!res.length && <div class="muted small">No playable nation matches.</div>}
@@ -187,7 +187,7 @@ export function NationCard({ g, idx }: { g: Game; idx: number }) {
     const units = g.unitsOf(idx);
     const count = (d: string) => units.filter((u) => UNITS[u.type].domain === d).length;
     const pop = g.s.provinces.reduce((a, p) => a + (p.owner === idx ? p.pop : 0), 0);
-    const gdpRank = g.s.nations.filter((x) => x.alive).sort((a, b) => b.gdp - a.gdp).findIndex((x) => x.idx === idx) + 1;
+    const gdpRank = g.s.nations.filter((x) => x.alive).sort((a, b) => b.income - a.income).findIndex((x) => x.idx === idx) + 1;
     const milRank = g.s.nations.filter((x) => x.alive).map((x) => ({ i: x.idx, p: militaryPower(g, x.idx) })).sort((a, b) => b.p - a.p).findIndex((x) => x.i === idx) + 1;
     const provinces = g.s.provinces.filter((p) => p.owner === idx).length;
     const diff = gdpRank <= 10 ? ['Easy', 'good'] : gdpRank <= 40 ? ['Normal', ''] : gdpRank <= 100 ? ['Hard', 'warn'] : ['Very hard', 'bad'];
@@ -203,12 +203,12 @@ export function NationCard({ g, idx }: { g: Game; idx: number }) {
         <span class={'chip ' + stats.diff[1]}>{stats.diff[0]}</span>
       </div>
       <div class="grid3" style={{ marginTop: '8px' }}>
-        <div><div class="tiny muted">GDP</div><b>{fmt.money(n.gdp)}</b> <span class="tiny muted">#{stats.gdpRank}</span></div>
+        <div><div class="tiny muted">Income</div><b>{fmt.money(n.income * 30)}</b><span class="tiny muted">/mo #{stats.gdpRank}</span></div>
         <div><div class="tiny muted">Population</div><b>{fmt.pop(stats.pop)}</b></div>
         <div><div class="tiny muted">Military</div><b>#{stats.milRank}</b></div>
-        <div><div class="tiny muted">Army / Air / Navy</div><b>{stats.land}/{stats.air}/{stats.sea}</b></div>
-        <div><div class="tiny muted">Government</div><b style={{ textTransform: 'capitalize' }}>{n.gov}</b></div>
-        <div><div class="tiny muted">Provinces</div><b>{stats.provinces}</b></div>
+        <div><div class="tiny muted">Troops / Planes / Ships</div><b>{stats.land}/{stats.air}/{stats.sea}</b></div>
+        <div><div class="tiny muted">Regions</div><b>{stats.provinces}</b></div>
+        <div><div class="tiny muted">Style</div><b style={{ textTransform: 'capitalize' }}>{n.gov}</b></div>
       </div>
       <div class="row wrap" style={{ marginTop: '8px' }}>
         {n.nukes > 0 && <span class="chip warn">☢️ {n.nukes} warheads</span>}

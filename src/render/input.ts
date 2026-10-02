@@ -10,6 +10,10 @@ export interface GestureHandlers {
   drawEnd?(): void;
   isDrawing(): boolean;
   gestureEnd?(): void;
+  /** Finger went down: return true to start dragging units from here instead of panning. */
+  unitDragStart?(sx: number, sy: number): boolean;
+  unitDragMove?(sx: number, sy: number): void;
+  unitDragEnd?(sx: number, sy: number, moved: boolean): void;
 }
 
 export function attachGestures(el: HTMLElement, h: GestureHandlers) {
@@ -19,6 +23,7 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers) {
   let lastTap = 0;
   let pinchDist = 0;
   let drawing = false;
+  let unitDrag = false;
   const rel = (e: PointerEvent | WheelEvent) => {
     const r = el.getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top] as [number, number];
@@ -38,6 +43,7 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers) {
         h.drawStart?.(x, y);
         return;
       }
+      unitDrag = !!h.unitDragStart?.(x, y);
       clearLong();
       longTimer = window.setTimeout(() => {
         longTimer = null;
@@ -49,6 +55,7 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers) {
     } else if (pts.size === 2) {
       clearLong();
       if (drawing) { drawing = false; h.drawEnd?.(); }
+      if (unitDrag) { unitDrag = false; h.unitDragEnd?.(x, y, false); }
       const [a, b] = [...pts.values()];
       pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
       moved = true;
@@ -64,6 +71,7 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers) {
     p.y = y;
     if (Math.hypot(x - p.sx, y - p.sy) > 8) { moved = true; clearLong(); }
     if (drawing) { h.drawMove?.(x, y); return; }
+    if (unitDrag) { if (moved) h.unitDragMove?.(x, y); return; }
     if (pts.size === 1) {
       if (moved) h.pan(dx, dy);
     } else if (pts.size === 2) {
@@ -86,6 +94,11 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers) {
       return;
     }
     if (!p) return;
+    if (unitDrag && pts.size === 0) {
+      unitDrag = false;
+      h.unitDragEnd?.(p.x, p.y, moved && e.type === 'pointerup');
+      if (moved) { h.gestureEnd?.(); return; }
+    }
     if (pts.size === 0) {
       if (!moved && e.type === 'pointerup') {
         const now = performance.now();

@@ -3,7 +3,7 @@ import type { Terrain } from './types';
 
 export interface RawProvince {
   n: string; o: number; t: string; x: number; y: number; a: number; p: number; g: number;
-  c: string | null; cap: number; tr: Terrain; nb: number[]; rv: number[]; st: number[]; sea: number[];
+  c: string | null; cap: number; tr: Terrain; m: string[]; nb: number[]; rv: number[]; st: number[]; sea: number[];
 }
 export interface RawNation {
   id: string; name: string; long: string; pop: number; gdp: number; cont: string; sub: string; inc: string; eco: string; col: number;
@@ -29,6 +29,7 @@ export interface ProvStatic {
   strait: Set<number>; // neighbours across a narrow strait
   sea: number[]; // adjacent sea cells
   city: string | null;
+  members: string[]; // admin-1 areas merged into this region
   baseCapital: boolean;
   baseOwner: number; // index into raw nations
   basePop: number; // thousands
@@ -65,6 +66,7 @@ export function buildWorld(raw: RawWorld): WorldData {
     strait: new Set(p.st),
     sea: p.sea,
     city: p.c,
+    members: p.m ?? [p.n],
     baseCapital: !!p.cap,
     baseOwner: p.o,
     basePop: p.p,

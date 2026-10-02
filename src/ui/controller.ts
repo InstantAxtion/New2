@@ -1,23 +1,25 @@
 // Glue between the simulation, the map renderer and the UI.
 import { useEffect, useState } from 'preact/hooks';
-import { UNITS } from '../data/units';
+import { BUILDINGS, UNITS } from '../data/units';
 import { cancelScheduled, notify, onLifecycle } from '../platform/mobile';
 import { listSaves, pref, readSave, setPref, writeSave } from '../platform/storage';
 import { buildGeo, nearestCell, provinceAt, type MapGeo } from '../render/geo';
 import { GlobeRenderer } from '../render/globe';
 import { attachGestures } from '../render/input';
 import { MapRenderer, type Layer } from '../render/renderer';
-import { catchUp, createGame, deserialize, loadGame, serialize, SPEEDS, tickHour } from '../sim/engine';
 import type { Game } from '../sim/ctx';
-import { orderEncircle, orderFrontline, orderHold, orderMove, orderRetreat, setAirMission, setNavalMission, fireMissile } from '../sim/military';
+import { canConstruct, construct } from '../sim/economy';
+import { catchUp, createGame, deserialize, loadGame, serialize, SPEEDS, tickHour } from '../sim/engine';
+import { updateVisibility } from '../sim/fog';
+import { isAir, orderMove, retreat, stop } from '../sim/military';
+import { canNuke, launchNuke } from '../sim/nuclear';
 import { pathFor } from '../sim/path';
 import type { NewGameOptions } from '../sim/setup';
-import type { AirMission, Loc, NavalMission, Unit } from '../sim/types';
+import type { BuildingType, Loc, Unit } from '../sim/types';
 import { seaLoc } from '../sim/types';
 import type { WorldData } from '../sim/world';
 
-export type Panel = null | 'country' | 'army' | 'world' | 'news' | 'menu' | 'province';
-export type Tool = 'none' | 'frontline' | 'encircle';
+export type Panel = null | 'country' | 'army' | 'world' | 'news' | 'menu' | 'province' | 'battle' | 'build';
 
 export interface ContextMenu {
   x: number;
@@ -35,30 +37,30 @@ class Controller {
   speed = 0;
   lastSpeed = 1;
   mode: 'map' | 'globe' = 'map';
-  tool: Tool = 'none';
-  queueMode = false;
   panel: Panel = null;
-  panelArg: number | null = null; // e.g. selected nation in diplomacy panel
+  panelArg: number | null = null;
   selected = new Set<number>();
   province = -1;
   menu: ContextMenu | null = null;
   layer: Layer = 'political';
+  /** Build mode: the building being placed. */
+  building: BuildingType | null = null;
+  /** Nuke targeting mode. */
+  nuking = false;
   version = 0;
   screen: 'loading' | 'menu' | 'newgame' | 'game' = 'loading';
   loadError: string | null = null;
+  awayReport: string[] | null = null;
+  onPick: ((province: number) => void) | null = null;
   private listeners = new Set<() => void>();
   private lastEmit = 0;
   private acc = 0;
   private lastFrame = 0;
   private lastToastId = 0;
-  private drawLine: number[] = [];
   private pausedAt = 0;
   private lastAutosaveDay = 0;
   private rafStarted = false;
-  pendingEncircle = false;
-  awayReport: string[] | null = null;
-  /** In the new-game country picker, taps select a nation instead of issuing orders. */
-  onPick: ((province: number) => void) | null = null;
+  private dragUnits: number[] = [];
 
   // ------------------------------------------------------------ reactivity
   subscribe(f: () => void) {
@@ -90,21 +92,19 @@ class Controller {
     this.renderer = new MapRenderer(el, this.geo);
     this.renderer.lowDetail = pref('batterySaver', false);
     this.renderer.layer = this.layer;
-    this.globe = new GlobeRenderer(this.renderer.overCv, this.world);
+    this.globe = new GlobeRenderer(this.renderer.root, this.renderer.overCv, this.world);
     this.renderer.setGame(this.game);
     this.renderer.showUnits = this.screen !== 'newgame';
     this.renderer.resize();
-    if (this.game && this.screen === 'game') {
-      const cap = this.game.player.capital;
-      if (cap >= 0) this.renderer.centerOnProvince(cap, Math.max(this.renderer.minK() * 3, 2.5));
-    } else this.renderer.fitWorld();
+    if (this.game && this.screen === 'game') this.home();
+    else this.renderer.fitWorld();
     const root = this.renderer.root;
     new ResizeObserver(() => { this.renderer?.resize(); this.globe?.touch(); }).observe(root);
     attachGestures(root, {
       pan: (dx, dy) => {
         if (this.mode === 'globe') this.globe!.drag(dx, dy);
         else this.renderer!.pan(dx, dy);
-        this.menu = null;
+        if (this.menu) { this.menu = null; this.emit(); }
       },
       zoom: (x, y, f) => {
         if (this.mode === 'globe') {
@@ -115,11 +115,11 @@ class Controller {
       tap: (x, y) => this.onTap(x, y),
       doubleTap: (x, y) => (this.mode === 'globe' ? this.exitGlobe(x, y) : this.renderer!.zoomAt(x, y, 1.8)),
       longPress: (x, y) => this.onLongPress(x, y),
-      isDrawing: () => this.tool === 'frontline' && this.mode === 'map',
-      drawStart: (x, y) => { this.drawLine = []; this.addDraw(x, y); },
-      drawMove: (x, y) => this.addDraw(x, y),
-      drawEnd: () => this.finishDraw(),
+      isDrawing: () => false,
       gestureEnd: () => this.emit(),
+      unitDragStart: (x, y) => this.dragStart(x, y),
+      unitDragMove: (x, y) => this.dragMove(x, y),
+      unitDragEnd: (x, y, moved) => this.dragEnd(x, y, moved),
     });
     if (!this.rafStarted) {
       this.rafStarted = true;
@@ -138,7 +138,7 @@ class Controller {
     if (g && this.screen === 'game' && this.speed > 0 && !g.s.over && !this.awayReport) {
       this.acc += (dt / 1000) * SPEEDS[this.speed];
       this.acc = Math.min(this.acc, 24);
-      const budget = now + (saver ? 5 : 8);
+      const budget = performance.now() + (saver ? 5 : 8);
       let ticked = false;
       while (this.acc >= 1 && performance.now() < budget) {
         tickHour(g);
@@ -148,32 +148,24 @@ class Controller {
       if (ticked) this.afterTick();
     }
     if (this.screen === 'game' || this.screen === 'newgame') {
-      if (this.mode === 'globe') this.globe?.frame(this.game, dt);
+      if (this.mode === 'globe') this.globe?.frame(this.game, dt, now);
       else this.renderer?.frame(now, this.speed > 0 && this.screen === 'game');
     }
     if (g && performance.now() - this.lastEmit > 300) this.emit();
   }
 
-  private lastLayerDay = -1;
   private afterTick() {
     const g = this.game!;
-    if ((this.layer === 'supply' || this.layer === 'weather') && g.day !== this.lastLayerDay) {
-      this.lastLayerDay = g.day;
-      this.renderer?.invalidate();
-    }
-    // drop selection of dead units
-    for (const id of this.selected) if (!g.rt.unitById.has(id)) this.selected.delete(id);
-    // notifications for important toasts while backgrounded
+    let dropped = false;
+    for (const id of this.selected) if (!g.rt.unitById.has(id)) { this.selected.delete(id); dropped = true; }
+    if (dropped) this.syncSelection();
+    if (this.building && g.s.hour % 24 === 5) this.refreshBuildTargets();
     for (const t of g.s.toasts) {
       if (t.id <= this.lastToastId) continue;
       this.lastToastId = t.id;
       if (t.kind === 'danger' && document.hidden && g.s.settings.notifications) notify('Sovereign: World Command', t.text);
     }
-    if (g.s.over) {
-      this.speed = 0;
-      this.emit();
-    }
-    // autosave every 60 game days
+    if (g.s.over) { this.speed = 0; this.emit(); }
     if (g.day - this.lastAutosaveDay >= 60) {
       this.lastAutosaveDay = g.day;
       this.save('autosave');
@@ -186,12 +178,15 @@ class Controller {
     this.onPick = null;
     this.startGame(g);
   }
-  /** Show a scenario's starting map in the country picker. */
   preview(opts: NewGameOptions) {
     const g = createGame(this.world, opts);
+    g.s.settings.fog = false;
+    updateVisibility(g);
     this.game = g;
     this.screen = 'newgame';
     this.mode = 'map';
+    this.globe?.show(false);
+    this.renderer?.setMapVisible(true);
     this.speed = 0;
     if (this.renderer) {
       this.renderer.setGame(g);
@@ -213,8 +208,11 @@ class Controller {
     this.province = -1;
     this.panel = null;
     this.menu = null;
-    this.tool = 'none';
+    this.building = null;
+    this.nuking = false;
     this.mode = 'map';
+    this.globe?.show(false);
+    this.renderer?.setMapVisible(true);
     this.speed = 0;
     this.lastToastId = g.s.toasts.length ? g.s.toasts[g.s.toasts.length - 1].id : 0;
     this.lastAutosaveDay = g.day;
@@ -222,9 +220,17 @@ class Controller {
     this.renderer?.setGame(g);
     if (this.renderer) {
       this.renderer.showUnits = true;
-      const cap = g.player.capital;
-      if (cap >= 0) this.renderer.centerOnProvince(cap, Math.max(this.renderer.minK() * 3, 2.5));
+      this.renderer.highlight = [];
+      this.home();
     }
+    this.emit();
+  }
+  home() {
+    const g = this.game, r = this.renderer;
+    if (!g || !r) return;
+    const cap = g.player.capital;
+    if (cap >= 0) r.centerOnProvince(cap, Math.max(r.minK() * 3, 2.4));
+    if (this.mode === 'globe') this.exitGlobe();
     this.emit();
   }
   async save(slot: string) {
@@ -240,7 +246,7 @@ class Controller {
       this.startGame(loadGame(this.world, deserialize(r.json)));
       return null;
     } catch (e) {
-      return String(e);
+      return (e as Error).message;
     }
   }
   saves() {
@@ -252,6 +258,7 @@ class Controller {
     this.renderer?.setGame(null);
     this.screen = 'menu';
     this.speed = 0;
+    this.building = null;
     this.emit();
   }
 
@@ -260,6 +267,7 @@ class Controller {
     this.panel = this.panel === p && arg === this.panelArg ? null : p;
     this.panelArg = arg;
     this.menu = null;
+    if (p !== 'build' && this.building) this.cancelBuild();
     this.emit();
   }
 
@@ -279,7 +287,7 @@ class Controller {
     this.save('autosave');
     if (this.game.s.settings.notifications) {
       cancelScheduled();
-      notify('Your nation needs you', `${this.game.player.name} awaits your orders. Your advisors are holding the line.`, new Date(Date.now() + 6 * 3600 * 1000));
+      notify('Your nation needs you', `${this.game.player.name} awaits your orders.`, new Date(Date.now() + 6 * 3600 * 1000));
     }
   }
   private onResume() {
@@ -289,7 +297,6 @@ class Controller {
     const minutes = (Date.now() - this.pausedAt) / 60000;
     this.pausedAt = 0;
     if (!g.s.settings.offlineProgress || minutes < 3 || this.speed === 0) return;
-    // 1 real minute away = 1 game day, capped at 30 days
     const hours = Math.min(30, Math.floor(minutes)) * 24;
     this.awayReport = catchUp(g, hours);
     this.renderer?.invalidate();
@@ -297,6 +304,7 @@ class Controller {
   }
   private onBack(): boolean {
     if (this.menu) { this.menu = null; this.emit(); return true; }
+    if (this.building || this.nuking) { this.cancelBuild(); this.nuking = false; this.emit(); return true; }
     if (this.panel) { this.panel = null; this.emit(); return true; }
     if (this.selected.size) { this.clearSelection(); return true; }
     if (this.screen === 'game') { this.panel = 'menu'; this.setSpeed(0); return true; }
@@ -313,12 +321,13 @@ class Controller {
   enterGlobe() {
     this.mode = 'globe';
     this.renderer?.setMapVisible(false);
-    if (this.globe) { this.globe.zoom = 1; this.globe.spin = true; this.globe.touch(); }
+    if (this.globe) { this.globe.zoom = 1; this.globe.spin = true; this.globe.show(true); }
     this.emit();
   }
   exitGlobe(sx?: number, sy?: number) {
     this.mode = 'map';
     this.renderer?.setMapVisible(true);
+    this.globe?.show(false);
     if (sx !== undefined && sy !== undefined && this.globe && this.renderer) {
       const ll = this.globe.invert(sx, sy);
       if (ll) {
@@ -328,9 +337,40 @@ class Controller {
     }
     this.emit();
   }
-  setTool(t: Tool) {
-    this.tool = this.tool === t ? 'none' : t;
+
+  // ------------------------------------------------------------ build mode
+  startBuild(t: BuildingType) {
+    this.building = t;
+    this.panel = 'build';
+    this.clearSelection();
+    this.refreshBuildTargets();
+    if (this.renderer && !this.renderer.highlight.length) this.toast(`No region can take a ${BUILDINGS[t].name} right now.`, 'warn');
     this.emit();
+  }
+  refreshBuildTargets() {
+    const g = this.game, r = this.renderer;
+    if (!g || !r) return;
+    const t = this.building;
+    r.highlight = t ? g.s.provinces.map((_, i) => (canConstruct(g, g.s.player, t, i) ? -1 : i)).filter((i) => i >= 0) : [];
+    r.highlightColor = '34,197,94';
+    r.touch();
+  }
+  cancelBuild() {
+    this.building = null;
+    if (this.renderer) { this.renderer.highlight = []; this.renderer.touch(); }
+    if (this.panel === 'build') this.panel = null;
+    this.emit();
+  }
+  private placeBuilding(p: number) {
+    const g = this.game!;
+    const t = this.building!;
+    const e = construct(g, g.s.player, t, p);
+    if (e) this.toast(`${g.w.provs[p].name}: ${e}`, 'warn');
+    else {
+      this.toast(`${BUILDINGS[t].icon} ${BUILDINGS[t].name} started in ${g.w.provs[p].name}`, 'good');
+      this.renderer?.ping(p);
+    }
+    this.refreshBuildTargets();
   }
 
   // ------------------------------------------------------------ selection
@@ -342,6 +382,12 @@ class Controller {
   select(ids: number[], add = false) {
     if (!add) this.selected.clear();
     for (const id of ids) this.selected.add(id);
+    if (this.selected.size && this.panel && this.panel !== 'army') this.panel = null;
+    this.syncSelection();
+  }
+  toggleUnit(id: number) {
+    if (this.selected.has(id)) this.selected.delete(id);
+    else this.selected.add(id);
     this.syncSelection();
   }
   clearSelection() {
@@ -362,27 +408,14 @@ class Controller {
     this.panel = p >= 0 ? 'province' : this.panel === 'province' ? null : this.panel;
     this.emit();
   }
-  selectAllInView(domain: 'land' | 'air' | 'sea' = 'land') {
-    const g = this.game, r = this.renderer;
-    if (!g || !r) return;
-    const ids: number[] = [];
-    for (const u of g.s.units) {
-      if (u.owner !== g.s.player || UNITS[u.type].domain !== domain) continue;
-      const [sx, sy] = r.toScreen(...r.unitXY(u));
-      if (sx >= 0 && sy >= 0 && sx <= r.w && sy <= r.h) ids.push(u.id);
-    }
-    this.select(ids);
-    if (!ids.length) this.toast(`No ${domain} units on screen`);
-  }
   focus(l: Loc) {
     if (!this.renderer) return;
+    if (this.mode === 'globe') this.exitGlobe();
     const [x, y] = this.renderer.locXY(l);
     this.renderer.centerOn(x, y, Math.max(this.renderer.view.k, 3));
     this.renderer.ping(l);
-    if (this.mode === 'globe') this.mode = 'map';
     this.emit();
   }
-
   toast(text: string, kind: 'info' | 'warn' | 'danger' | 'good' = 'info') {
     this.game?.toast(text, kind);
     this.emit();
@@ -397,6 +430,16 @@ class Controller {
     return c >= 0 ? seaLoc(c) : null;
   }
 
+  private battleAt(sx: number, sy: number): number {
+    const g = this.game!, r = this.renderer!;
+    for (const b of g.s.battles) {
+      if (!g.rt.visible[b.loc]) continue;
+      const [bx, by] = r.toScreen(...r.locXY(b.loc));
+      if (Math.hypot(bx - sx, by - 50 - sy) < 24) return b.loc;
+    }
+    return -1;
+  }
+
   private onTap(sx: number, sy: number) {
     const g = this.game;
     if (this.mode === 'globe') { this.exitGlobe(sx, sy); return; }
@@ -407,163 +450,145 @@ class Controller {
       if (l !== null && l >= 0) this.onPick?.(l);
       return;
     }
-    const badge = this.renderer.badgeAt(sx, sy);
     const loc = this.locAt(sx, sy);
-    if (this.pendingEncircle && loc !== null && loc >= 0) {
-      this.onTapEncircle(loc);
+    if (this.building) {
+      if (loc !== null && loc >= 0) this.placeBuilding(loc);
       return;
     }
-    if (this.selected.size) {
-      if (badge) {
-        const own = badge.units.filter((id) => g.rt.unitById.get(id)?.owner === g.s.player);
-        if (own.length && !own.every((id) => this.selected.has(id)) && !this.queueMode) {
-          // tapping another of our stacks while units are selected: if it's the same place, switch selection
-          const sel = this.selectedUnits();
-          if (sel.length && sel.every((u) => u.loc === badge.loc)) { this.select(own); return; }
-        }
+    if (this.nuking) {
+      this.nuking = false;
+      if (loc !== null && loc >= 0) {
+        const e = launchNuke(g, g.s.player, loc);
+        if (e) this.toast(e, 'warn');
       }
+      this.renderer.highlight = [];
+      this.emit();
+      return;
+    }
+    const battle = this.battleAt(sx, sy);
+    if (battle >= 0 && !this.selected.size) { this.open('battle', battle); return; }
+    const mine = this.renderer.badgeAt(sx, sy, g.s.player);
+    if (this.selected.size) {
+      // tapping another of our stacks switches the selection
+      if (mine && !mine.units.some((id) => this.selected.has(id))) { this.select(mine.units); return; }
+      if (mine && mine.units.every((id) => this.selected.has(id)) && mine.loc === this.selectedUnits()[0]?.loc) { this.clearSelection(); return; }
       if (loc === null) { this.clearSelection(); return; }
       this.issueOrder(loc);
       return;
     }
-    if (badge) {
-      const own = badge.units.filter((id) => g.rt.unitById.get(id)?.owner === g.s.player);
-      if (own.length) { this.select(own); this.selectProvince(-1); return; }
-    }
+    if (mine) { this.select(mine.units); this.selectProvince(-1); return; }
+    if (battle >= 0) { this.open('battle', battle); return; }
     if (loc !== null && loc >= 0) this.selectProvince(loc);
     else this.selectProvince(-1);
   }
 
-  onTapEncircle(loc: number) {
+  issueOrder(loc: Loc, units = this.selectedUnits()) {
     const g = this.game!;
-    this.pendingEncircle = false;
-    const n = orderEncircle(g, this.selectedUnits(), loc);
-    this.toast(n ? `Encircling ${g.w.provs[loc].name} with ${n} units` : 'Could not encircle that province', n ? 'good' : 'warn');
-    this.renderer?.ping(loc);
-  }
-
-  issueOrder(loc: Loc) {
-    const g = this.game!;
-    const units = this.selectedUnits();
-    let ok = 0;
-    let err: string | null = null;
-    for (const u of units) {
-      const d = UNITS[u.type].domain;
-      let e: string | null;
-      if (d === 'air') {
-        if (loc < 0) { e = 'Air units need a province target'; }
-        else {
-          const ctrl = g.s.provinces[loc].ctrl;
-          const mission: AirMission = u.type === 'transport' ? 'airlift' : g.atWar(g.s.player, ctrl) ? (u.type === 'fighter' ? 'superiority' : 'bomb') : ctrl === g.s.player || g.allied(ctrl, g.s.player) ? (g.rt.battles.has(loc) && u.type !== 'fighter' ? 'cas' : 'superiority') : 'superiority';
-          e = setAirMission(g, u, mission, loc);
-          if (e && e.startsWith('Out of range')) e = orderMove(g, u, loc);
-        }
-      } else if (d === 'land' && loc < 0) e = 'Land units cannot move into open sea';
-      else e = orderMove(g, u, loc, this.queueMode);
-      if (e) err = err ?? e;
-      else ok++;
+    const { ok, err } = orderMove(g, units, loc);
+    if (ok) {
+      this.renderer?.ping(loc);
+      if (loc >= 0 && g.atWar(g.s.player, g.s.provinces[loc].ctrl)) {
+        const air = units.every(isAir);
+        if (!air) this.toast(`⚔️ ${ok} unit${ok > 1 ? 's' : ''} attacking ${g.w.provs[loc].name}`, 'info');
+      }
     }
-    if (ok) this.renderer?.ping(loc);
     if (err && !ok) this.toast(err, 'warn');
-    else if (err) this.toast(`${ok} units ordered. Some could not: ${err}`, 'warn');
+    else if (err) this.toast(`${ok} units on their way. Some could not go: ${err}`, 'warn');
     this.renderer?.touch();
     this.emit();
   }
 
+  private dragStart(sx: number, sy: number): boolean {
+    const g = this.game, r = this.renderer;
+    if (!g || !r || this.mode !== 'map' || this.screen !== 'game' || this.building || this.nuking) return false;
+    const b = r.badgeAt(sx, sy, g.s.player);
+    if (!b) return false;
+    // drag the selected part of this stack if some of it is selected, else the whole stack
+    const sel = b.units.filter((id) => this.selected.has(id));
+    this.dragUnits = sel.length ? sel : b.units;
+    r.drag = { x0: b.x, y0: b.y, x: sx, y: sy, target: null, hostile: false };
+    return true;
+  }
+  private dragMove(sx: number, sy: number) {
+    const g = this.game!, r = this.renderer!;
+    if (!r.drag) return;
+    const loc = this.locAt(sx, sy);
+    r.drag.x = sx;
+    r.drag.y = sy;
+    r.drag.target = loc;
+    r.drag.hostile = loc !== null && loc >= 0 && g.atWar(g.s.player, g.s.provinces[loc].ctrl);
+    r.touch();
+  }
+  private dragEnd(sx: number, sy: number, moved: boolean) {
+    const r = this.renderer!;
+    r.drag = null;
+    r.touch();
+    if (!moved) return;
+    const loc = this.locAt(sx, sy);
+    const g = this.game!;
+    const units = this.dragUnits.map((id) => g.rt.unitById.get(id)).filter((u): u is Unit => !!u);
+    if (loc === null || !units.length) return;
+    this.select(units.map((u) => u.id));
+    this.issueOrder(loc, units);
+  }
+
   private onLongPress(sx: number, sy: number) {
-    if (this.mode === 'globe' || !this.game || this.screen !== 'game') return;
+    if (this.mode === 'globe' || !this.game || this.screen !== 'game' || this.building) return;
     const loc = this.locAt(sx, sy);
     if (loc === null) return;
     this.menu = { x: sx, y: sy, loc };
     if (loc >= 0 && this.renderer) { this.renderer.selectedProvince = loc; this.renderer.touch(); }
     if (this.selected.size && this.renderer) {
-      const u = this.selectedUnits()[0];
-      if (u && UNITS[u.type].domain !== 'air') this.renderer.previewPath = [u.loc, ...(pathFor(this.game, u, loc) || [])];
+      const u = this.selectedUnits().find((x) => !isAir(x));
+      if (u) this.renderer.previewPath = [u.loc, ...(pathFor(this.game, u, loc) || [])];
     }
     this.emit();
   }
 
-  // context-menu actions
-  hold() { for (const u of this.selectedUnits()) orderHold(this.game!, u); this.emit(); }
-  retreat() {
-    let err: string | null = null;
-    for (const u of this.selectedUnits()) err = orderRetreat(this.game!, u) ?? err;
-    if (err) this.toast(err, 'warn');
+  // actions
+  stopSelected() {
+    for (const u of this.selectedUnits()) stop(u);
     this.emit();
   }
-  airMission(m: AirMission, loc: Loc) {
-    const g = this.game!;
+  retreatSelected() {
     let err: string | null = null, ok = 0;
     for (const u of this.selectedUnits()) {
-      if (UNITS[u.type].domain !== 'air') continue;
-      const e = setAirMission(g, u, m, loc);
+      const e = retreat(this.game!, u);
       if (e) err = e; else ok++;
     }
-    this.toast(ok ? `${ok} air wings assigned: ${m}` : err ?? 'No air units selected', ok ? 'good' : 'warn');
-  }
-  navalMission(m: NavalMission, loc: Loc) {
-    const g = this.game!;
-    let err: string | null = null, ok = 0;
-    for (const u of this.selectedUnits()) {
-      if (UNITS[u.type].domain !== 'sea') continue;
-      const e = setNavalMission(g, u, m, loc);
-      if (e) err = e; else ok++;
-    }
-    this.toast(ok ? `${ok} fleets assigned: ${m}` : err ?? 'No ships selected', ok ? 'good' : 'warn');
-  }
-  fire(loc: number) {
-    const g = this.game!;
-    let err: string | null = null, ok = 0;
-    for (const u of this.selectedUnits()) {
-      if (u.type !== 'missile') continue;
-      const e = fireMissile(g, u, loc);
-      if (e) err = e; else ok++;
-    }
-    if (ok) this.renderer?.ping(loc, 'missile');
-    this.toast(ok ? `${ok} missile strikes launched` : err ?? 'No missile batteries selected', ok ? 'good' : 'warn');
-  }
-
-  // front-line drawing
-  private addDraw(sx: number, sy: number) {
-    const [wx, wy] = this.renderer!.toWorld(sx, sy);
-    const p = provinceAt(this.geo, wx, wy);
-    if (p >= 0 && this.drawLine[this.drawLine.length - 1] !== p && !this.drawLine.includes(p)) {
-      this.drawLine.push(p);
-      this.renderer!.highlight = this.drawLine.slice();
-      this.renderer!.touch();
-    }
-  }
-  private finishDraw() {
-    if (!this.drawLine.length) return;
-    this.menu = { x: this.renderer!.w / 2, y: this.renderer!.h / 2, loc: -999 };
+    if (!ok && err) this.toast(err, 'warn');
     this.emit();
   }
-  get frontLine() {
-    return this.drawLine;
-  }
-  applyFrontline(mode: 'hold' | 'advance') {
+  startNuke() {
     const g = this.game!;
-    let units = this.selectedUnits().filter((u) => UNITS[u.type].domain === 'land');
-    if (!units.length) {
-      // use all idle land units near the line
-      const line = this.drawLine;
-      units = g.unitsOf(g.s.player).filter((u) => UNITS[u.type].domain === 'land' && u.loc >= 0 && !u.path.length && u.type !== 'missile' && u.type !== 'airdef' && line.some((p) => g.dist(p, u.loc) < 1500));
+    if (g.player.nukes <= 0) { this.toast('You have no warheads.', 'warn'); return; }
+    this.nuking = true;
+    this.panel = null;
+    if (this.renderer) {
+      this.renderer.highlight = g.s.provinces.map((_, i) => (canNuke(g, g.s.player, i) ? -1 : i)).filter((i) => i >= 0);
+      this.renderer.highlightColor = '239,68,68';
+      this.renderer.touch();
     }
-    const n = orderFrontline(g, units, this.drawLine, mode);
-    this.toast(n ? `${n} units assigned to the front line (${mode})` : 'No units available for this front', n ? 'good' : 'warn');
-    this.cancelDraw();
+    this.toast('☢️ Tap an enemy region to launch. Tap anywhere else to cancel.', 'danger');
   }
-  cancelDraw() {
-    this.drawLine = [];
-    if (this.renderer) { this.renderer.highlight = []; this.renderer.touch(); }
-    this.menu = null;
-    this.tool = 'none';
-    this.emit();
+  /** Select every unit of a kind (on screen first; all if none on screen). */
+  selectAll(domain: 'land' | 'air' | 'sea') {
+    const g = this.game, r = this.renderer;
+    if (!g || !r) return;
+    const all = g.s.units.filter((u) => u.owner === g.s.player && UNITS[u.type].domain === domain);
+    const onScreen = all.filter((u) => {
+      const [sx, sy] = r.toScreen(...r.locXY(isAir(u) ? u.base : u.loc));
+      return sx >= 0 && sy >= 0 && sx <= r.w && sy <= r.h;
+    });
+    const list = onScreen.length ? onScreen : all;
+    this.select(list.map((u) => u.id));
+    if (!list.length) this.toast(`You have no ${domain === 'land' ? 'troops' : domain === 'air' ? 'planes' : 'ships'}.`);
+    else this.toast(`${list.length} selected${onScreen.length ? ' (on screen)' : ''} — tap a region to send them`, 'info');
   }
 
   closeMenu() {
     this.menu = null;
-    if (this.renderer) { this.renderer.previewPath = []; this.renderer.touch(); }
+    if (this.renderer) { this.renderer.previewPath = []; this.renderer.selectedProvince = this.province; this.renderer.touch(); }
     this.emit();
   }
 

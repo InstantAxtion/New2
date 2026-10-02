@@ -107,12 +107,23 @@ const a1 = topojson.feature(t1, obj1).features;
 const a1nb = topojson.neighbors(obj1.geometries);
 
 const sqkm = (f) => geoArea(f) * EARTH_R * EARTH_R;
+// Historical scenarios split some countries along these lines, so regions never cross them.
+const SPLITS = {
+  DEU: (n) => (['Berlin', 'Brandenburg', 'Sachsen', 'Sachsen-Anhalt', 'Thüringen', 'Mecklenburg-Vorpommern'].includes(n) ? 'east' : 'west'),
+  UKR: (n) => (["Donets'k", 'Zaporizhzhya'].includes(n) ? 'occ' : ''),
+  VNM: (_n, lat) => (lat > 17 ? 'north' : 'south'),
+  CHN: (n) => (['Heilongjiang', 'Jilin', 'Liaoning'].includes(n) ? 'manchuria'
+    : ['Beijing', 'Tianjin', 'Hebei', 'Shanghai', 'Jiangsu', 'Shandong', 'Shanxi', 'Inner Mongol'].includes(n) ? 'coast' : ''),
+};
+const KEEP_TERR = new Set(['HKG', 'MAC']);
 const units = a1.map((f, i) => {
   const p = f.properties;
   const nation = adm0ToNation[p.adm0_a3] || SOV_FALLBACK[p.sov_a3];
   if (!nation) throw new Error('no nation for ' + p.adm0_a3 + ' ' + p.name);
   const [lon, lat] = geoCentroid(f);
-  return { i, f, nation, terr: p.adm0_a3, name: p.name || p.region || '?', region: p.region, area: sqkm(f), lon, lat, cityPop: 0, cities: [] };
+  const name = p.name || p.region || '?';
+  const part = (SPLITS[nation]?.(name, lat) ?? '') + (KEEP_TERR.has(p.adm0_a3) ? ':' + p.adm0_a3 : '');
+  return { i, f, nation, terr: p.adm0_a3, name, region: p.region, area: sqkm(f), lon, lat, cityPop: 0, cities: [], part };
 });
 
 // ------------------------------------------------- point in polygon helpers
@@ -195,9 +206,10 @@ function hav(lon1, lat1, lon2, lat2) {
   return 2 * EARTH_R * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 const groupOf = new Array(units.length);
+const usedNames = new Map();
 let groupCount = 0;
 const groupInfo = [];
-const LINK_KM = 250;
+const LINK_KM = 400;
 for (const [nid, us] of byNation) {
   const n = nations.get(nid);
   const idxOf = new Map(us.map((u, k) => [u.i, k]));
@@ -212,7 +224,7 @@ for (const [nid, us] of byNation) {
       const x = stack.pop();
       const linked = new Set(a1nb[us[x].i].map((j) => idxOf.get(j)).filter((k) => k !== undefined));
       for (let y = 0; y < us.length; y++)
-        if (compOf[y] < 0 && (linked.has(y) || hav(us[x].lon, us[x].lat, us[y].lon, us[y].lat) < LINK_KM)) {
+        if (compOf[y] < 0 && us[y].part === us[x].part && (linked.has(y) || hav(us[x].lon, us[x].lat, us[y].lon, us[y].lat) < LINK_KM)) {
           compOf[y] = comps;
           stack.push(y);
         }
@@ -221,13 +233,39 @@ for (const [nid, us] of byNation) {
   }
   const area = us.reduce((s, u) => s + u.area, 0);
   const popAll = us.reduce((s, u) => s + u.cityPop, 0) || 1;
-  const target = Math.max(1, Math.min(60, Math.round(1.5 + Math.sqrt(area) / 130 + n.pop / 12e6)));
+  // broad regions: a large country gets ~8-14, a mid-sized one 2-4, small ones 1
+  const target = Math.max(1, Math.min(14, Math.round(0.6 + Math.sqrt(area) / 400 + n.pop / 90e6)));
+  // tiny remote islands: fold into a nearby region of the same country, or leave them off the map
+  const compInfo = [];
   for (let ci = 0; ci < comps; ci++) {
     const cu = us.filter((_, k) => compOf[k] === ci);
     const cArea = cu.reduce((s, u) => s + u.area, 0);
     const cPop = cu.reduce((s, u) => s + u.cityPop, 0);
+    compInfo.push({ cu, tiny: (cArea < 3000 && cPop < 300e3) || (cArea < 12000 && cPop < 20e3) });
+  }
+  if (compInfo.some((c) => !c.tiny)) {
+    for (const c of compInfo) {
+      if (!c.tiny) continue;
+      let best = null, bd = Infinity;
+      for (const o of compInfo) {
+        if (o.tiny || o.cu[0].part !== c.cu[0].part) continue;
+        for (const a of c.cu) for (const b of o.cu) {
+          const d = hav(a.lon, a.lat, b.lon, b.lat);
+          if (d < bd) { bd = d; best = o; }
+        }
+      }
+      if (best && bd < 900) { for (const u of c.cu) u.attach = true; best.cu.push(...c.cu); }
+      else for (const u of c.cu) u.drop = true;
+      c.cu = [];
+    }
+  }
+  for (const c of compInfo) {
+    const cu = c.cu;
+    if (!cu.length) continue;
+    const cArea = cu.reduce((s, u) => s + u.area, 0);
+    const cPop = cu.reduce((s, u) => s + u.cityPop, 0);
     const share = 0.5 * (cArea / area) + 0.5 * (cPop / popAll);
-    const ctarget = Math.max(1, Math.round(target * share));
+    const ctarget = Math.max(1, Math.round(target * share - (cArea < 20000 && cPop < 2e6 ? 0.5 : 0)));
     clusterUnits(nid, cu, ctarget);
   }
 }
@@ -257,6 +295,17 @@ function clusterUnits(nid, us, target) {
     return [...s];
   };
   const alive = () => clusters.map((c, k) => (c.alive ? k : -1)).filter((k) => k >= 0);
+  // detached islands join the nearest cluster straight away
+  for (let a = 0; a < clusters.length; a++) {
+    if (!us[a].attach || !clusters[a].alive) continue;
+    const near = alive().filter((k) => k !== a && !us[k].attach)
+      .sort((x, y) => hav(clusters[x].lon, clusters[x].lat, us[a].lon, us[a].lat) - hav(clusters[y].lon, clusters[y].lat, us[a].lon, us[a].lat))[0];
+    if (near !== undefined) {
+      const keep = { area: clusters[near].area, lon: clusters[near].lon, lat: clusters[near].lat };
+      merge(near, a);
+      Object.assign(clusters[near], keep); // islands don't drag the centre out to sea
+    }
+  }
   const regions = new Set(us.map((u) => u.region).filter(Boolean));
   if (regions.size >= Math.max(2, target * 0.5) && regions.size < us.length) {
     // pre-group by statistical region (keeps recognisable names)
@@ -299,16 +348,25 @@ function clusterUnits(nid, us, target) {
         hav(clusters[x].lon, clusters[x].lat, clusters[a].lon, clusters[a].lat) -
         hav(clusters[y].lon, clusters[y].lat, clusters[a].lon, clusters[a].lat)).slice(0, 1);
     }
-    nbs.sort((x, y) => size(x) - size(y));
+    // prefer small, close neighbours so regions stay compact
+    const near = (k) => hav(clusters[k].lon, clusters[k].lat, clusters[a].lon, clusters[a].lat) / Math.sqrt(avgA);
+    nbs.sort((x, y) => size(x) + 1.5 * near(x) - (size(y) + 1.5 * near(y)));
     merge(nbs[0], a);
   }
   for (const k of alive()) {
     const c = clusters[k];
     const gid = groupCount++;
     for (const u of c.members) groupOf[u.i] = gid;
-    const whole = c.region && c.members.length > 1 && us.filter((u) => u.region === c.region).length === c.members.length;
+    // name a region after its biggest city (recognisable, and unique within the country)
+    const cities = c.members.flatMap((u) => u.cities).sort((x, y) => y.pop - x.pop).map((x) => x.name);
     const top = c.members.slice().sort((x, y) => y.cityPop - x.cityPop || y.area - x.area)[0];
-    groupInfo.push({ nation: nid, name: whole ? c.region : top.name, members: c.members });
+    const taken = usedNames.get(nid) || new Set();
+    usedNames.set(nid, taken);
+    const capital = c.members.flatMap((u) => u.cities).find((x) => x.cap);
+    const terrName = top.terr !== nid ? adm0.find((r) => r.ADM0_A3 === top.terr)?.NAME : null;
+    const name = [capital?.name, terrName, ...cities, top.name].find((x) => x && !taken.has(x)) || top.name;
+    taken.add(name);
+    groupInfo.push({ nation: nid, name, members: c.members });
   }
 }
 console.log('provinces:', groupCount, 'from admin-1 units:', units.length);
@@ -316,7 +374,7 @@ console.log('provinces:', groupCount, 'from admin-1 units:', units.length);
 // dissolve groups with mapshaper
 const grouped = {
   type: 'FeatureCollection',
-  features: a1.map((f, i) => ({ type: 'Feature', properties: { gid: groupOf[i] }, geometry: f.geometry })),
+  features: a1.map((f, i) => ({ type: 'Feature', properties: { gid: groupOf[i] }, geometry: f.geometry })).filter((f) => f.properties.gid !== undefined),
 };
 const groupedFile = path.join(CACHE, 'grouped.geojson');
 const dissolvedFile = path.join(CACHE, 'dissolved.topo.json');
@@ -400,7 +458,7 @@ const provinces = pfeat.map((f, k) => {
   for (const u of members) terrCount[u.terr] = (terrCount[u.terr] || 0) + u.area;
   const terr = Object.entries(terrCount).sort((a, b) => b[1] - a[1])[0][0];
   return {
-    k, nation: g.nation, terr, name: g.name, lon, lat, area,
+    k, nation: g.nation, terr, name: g.name, lon, lat, area, members: members.map((u) => u.name),
     cityPop: members.reduce((s, u) => s + u.cityPop, 0),
     city: allCities[0]?.name || null,
     capital: allCities.some((c) => c.cap),
@@ -637,6 +695,7 @@ const out = {
     c: p.city,
     cap: p.capital ? 1 : 0,
     tr: p.terrain,
+    m: p.members,
     nb: pnb[k],
     rv: pnb[k].filter((j) => riverPairs.has(Math.min(k, j) + ',' + Math.max(k, j))),
     st: [...straitPairs].map((s) => s.split(',').map(Number)).filter(([a, b]) => a === k || b === k).map(([a, b]) => (a === k ? b : a)),

@@ -1,814 +1,529 @@
-// Land, air and naval operations: movement, combat, supply, attrition, missiles.
+// Movement, battles, captures, air strikes, sea fights and ammo supply.
 import { TERRAIN, UNITS } from '../data/units';
 import type { Game } from './ctx';
-import { amphibCapacity, canEnter, Heap, landPath, pathFor } from './path';
-import type { AirMission, Loc, NavalMission, Unit } from './types';
-import { WEATHER_FX, weatherOf } from './weather';
+import { canEnter, pathFor } from './path';
+import type { Battle, Loc, Unit } from './types';
+import { seaLoc } from './types';
+
+const CAPTURE_HOURS = 20;
+const DEFENDER_EDGE = 1.3; // holding ground is easier than taking it
+const RETREAT_HP = 22;
 
 // ------------------------------------------------------------------ helpers
-export function generalOf(g: Game, u: Unit) {
-  const gen = g.general(u.gen);
-  return gen && gen.alive ? gen : null;
-}
-function hasTrait(g: Game, u: Unit, t: string) {
-  const gen = generalOf(g, u);
-  return !!gen && gen.traits.includes(t);
-}
-function genSkill(g: Game, u: Unit) {
-  const gen = generalOf(g, u);
-  return gen ? 1 + gen.skill * 0.04 : 1;
-}
+export const isLand = (u: Unit) => UNITS[u.type].domain === 'land';
+export const isAir = (u: Unit) => UNITS[u.type].domain === 'air';
+export const isSeaUnit = (u: Unit) => UNITS[u.type].domain === 'sea';
 
 export function edgeLen(g: Game, a: Loc, b: Loc) {
-  if (a >= 0 && b >= 0) return Math.max(30, g.dist(a, b));
-  if (a < 0 && b < 0) return Math.max(30, g.locDist(a, b));
+  if (a >= 0 && b >= 0) return Math.max(60, g.dist(a, b));
+  if (a < 0 && b < 0) return Math.max(60, g.locDist(a, b));
   return 120;
 }
 
-function moveSpeed(g: Game, u: Unit, to: Loc) {
+export function unitSpeed(g: Game, u: Unit, to: Loc) {
   const def = UNITS[u.type];
-  const n = g.s.nations[u.owner];
   if (def.domain === 'air') return def.speed;
-  if (def.domain === 'sea') return def.speed * (0.6 + 0.4 * u.str / 100) * (1 - n.shortage.oil * 0.5);
-  if (to < 0 || u.loc < 0) return 30; // embarked
-  let sp = def.speed * (1 + g.mod(u.owner, 'speed.land'));
-  const t = g.w.provs[to].terrain;
-  let tm = TERRAIN[t].move;
-  if ((t === 'mountain' || t === 'hills') && hasTrait(g, u, 'mountain')) tm = 1;
-  if (t === 'desert' && hasTrait(g, u, 'desert')) tm = 1;
-  if ((t === 'jungle' || t === 'marsh') && hasTrait(g, u, 'jungle')) tm = 1;
-  if (t === 'arctic' && hasTrait(g, u, 'winter')) tm = 1;
-  if (u.type === 'specops') tm = Math.max(tm, 0.8);
-  sp *= tm;
-  const w = weatherOf(g, to);
-  sp *= w === 'snow' && hasTrait(g, u, 'winter') ? 1 : WEATHER_FX[w].move;
-  if (u.type === 'armor' && hasTrait(g, u, 'blitz')) sp *= 1.2;
-  sp *= 0.5 + 0.5 * (u.org / 100);
-  sp *= 1 - n.shortage.oil * (u.type === 'armor' ? 0.7 : 0.3);
-  return Math.max(0.5, sp);
+  const hpF = 0.6 + 0.4 * (u.hp / 100);
+  if (def.domain === 'sea') return def.speed * hpF;
+  if (to < 0 || u.loc < 0) return 30; // sailing
+  const base = u.pace > 0 ? Math.min(u.pace, def.speed) : def.speed;
+  return Math.max(1, base * TERRAIN[g.w.provs[to].terrain].move * hpF);
 }
 
-function flipProvince(g: Game, p: number, by: number) {
-  const prov = g.s.provinces[p];
-  const old = prov.ctrl;
-  if (old === by) return;
-  // liberation: return to a friendly owner
-  const newCtrl = prov.owner !== by && g.friendly(by, prov.owner) && !g.atWar(by, prov.owner) ? prov.owner : by;
-  prov.ctrl = newCtrl;
-  prov.occ = 0;
-  prov.dmg = Math.min(1, prov.dmg + 0.15);
-  g.rt.dirtyOwners = true;
-  const nation = g.s.nations[old];
-  if (nation && p === nation.capital) {
-    g.news('war', `${g.name(by)} forces capture ${g.w.provs[p].name}, capital of ${nation.name}!`, [by, old]);
-    g.notify([old], `Our capital ${g.w.provs[p].name} has fallen!`, 'danger', p);
-    g.notify([by], `We captured the enemy capital ${g.w.provs[p].name}!`, 'good', p);
+/** Hours until a unit reaches the end of its path (rough). */
+export function etaHours(g: Game, u: Unit): number {
+  if (!u.path.length) return 0;
+  let t = 0, from = u.loc;
+  for (let i = 0; i < u.path.length; i++) {
+    const to = u.path[i];
+    const len = edgeLen(g, from, to) - (i === 0 ? u.progress : 0);
+    t += Math.max(0, len) / unitSpeed(g, u, to);
+    from = to;
   }
-  // air units based here relocate
-  for (const u of g.s.units) {
-    if (UNITS[u.type].domain === 'air' && u.base === p && u.owner === old) {
-      const home = g.s.nations[old].capital;
-      u.base = home >= 0 && g.s.provinces[home].ctrl === old ? home : g.s.provinces.findIndex((x) => x.ctrl === old);
-      g.relocate(u, u.base);
-      u.str *= 0.7;
-    }
-  }
+  return t;
 }
 
 // ------------------------------------------------------------------ orders
-export function orderMove(g: Game, u: Unit, to: Loc, queue = false): string | null {
-  const def = UNITS[u.type];
-  if (def.domain === 'air') return rebase(g, u, to);
-  if (queue && (u.path.length || u.orders.length)) {
-    u.orders.push({ kind: 'move', to });
-    return null;
+/** Send a group of units somewhere. Land units travel together at the pace of the slowest. */
+export function orderMove(g: Game, units: Unit[], to: Loc): { ok: number; err: string | null } {
+  let ok = 0, err: string | null = null;
+  const land = units.filter(isLand);
+  const pace = land.length > 1 ? Math.min(...land.map((u) => UNITS[u.type].speed)) : 0;
+  for (const u of units) {
+    const e = isAir(u) ? airOrder(g, u, to) : moveUnit(g, u, to, isLand(u) ? pace : 0);
+    if (e) err = err ?? e;
+    else ok++;
   }
+  return { ok, err };
+}
+
+export function moveUnit(g: Game, u: Unit, to: Loc, pace = 0): string | null {
+  if (isLand(u) && to < 0) return 'Troops cannot stop in open sea';
+  if (u.loc === to) { stop(u); return null; }
   const path = pathFor(g, u, to);
-  if (!path) return def.domain === 'sea' ? 'No sea route (blocked chokepoint or landlocked target)' : 'No route — need military access or amphibious ships';
-  if (def.domain === 'land' && path.some((l) => l < 0)) {
-    const { cap, used } = amphibCapacity(g, u.owner);
-    if (used >= cap) return 'Not enough amphibious transport capacity';
+  if (!path) {
+    if (isSeaUnit(u)) return 'No sea route there';
+    return 'No route there. To cross the sea you need a Port';
   }
-  if (u.path.length && path.length && path[0] === u.path[0]) {
-    // keep progress if continuing in the same direction
-  } else u.progress = 0;
+  if (!(u.path.length && path.length && path[0] === u.path[0])) u.progress = 0;
   u.path = path;
-  u.hold = false;
-  u.orders = [];
-  u.entrench = 0;
+  u.pace = pace;
+  u.dug = 0;
   return null;
 }
 
-export function orderHold(_g: Game, u: Unit) {
+export function stop(u: Unit) {
+  if (u.loc < 0 && isLand(u)) return; // can't stop at sea
   u.path = [];
-  u.orders = [];
   u.progress = 0;
-  u.hold = true;
 }
 
-export function orderRetreat(g: Game, u: Unit): string | null {
-  if (u.loc < 0 || UNITS[u.type].domain !== 'land') return 'Only land units can retreat';
-  const dest = safeNeighbour(g, u.loc, u.owner) ?? nearestSafe(g, u);
-  if (dest === null) return 'Nowhere to retreat';
-  return orderMove(g, u, dest);
+/** Pull back to the safest neighbouring region. */
+export function retreat(g: Game, u: Unit): string | null {
+  if (!isLand(u) || u.loc < 0) return 'Only troops on land can retreat';
+  const dest = safeNeighbour(g, u.loc, u.owner);
+  if (dest === null) return 'Nowhere to retreat to';
+  u.path = [dest];
+  u.progress = 0;
+  u.pace = 0;
+  return null;
 }
 
 function safeNeighbour(g: Game, p: number, n: number): number | null {
   let best: number | null = null, bs = -Infinity;
   for (const q of g.w.provs[p].nb) {
     const c = g.s.provinces[q].ctrl;
-    if (!(c === n || g.friendly(n, c))) continue;
-    if (g.unitsAt(q).some((x) => g.atWar(x.owner, n))) continue;
-    const score = g.rt.supply[q] + (g.s.provinces[q].owner === n ? 0.5 : 0) + Math.random() * 0.01;
+    if (!g.allied(n, c)) continue;
+    if (g.unitsAt(q).some((x) => isLand(x) && g.atWar(x.owner, n))) continue;
+    const score = (c === n ? 1 : 0) + g.unitsAt(q).filter((x) => x.owner === n).length * 0.1 + g.rand() * 0.01;
     if (score > bs) { bs = score; best = q; }
   }
   return best;
 }
-function nearestSafe(g: Game, u: Unit): number | null {
-  const n = g.s.nations[u.owner];
-  if (n.capital >= 0 && g.s.provinces[n.capital].ctrl === u.owner) return n.capital;
-  return null;
+
+// ------------------------------------------------------------------ air
+export function airbases(g: Game, n: number): number[] {
+  const out: number[] = [];
+  g.s.provinces.forEach((p, i) => { if (p.ctrl === n && (p.b.airbase ?? 0) > 0) out.push(i); });
+  return out;
 }
 
-/** Spread units across a drawn front line; 'advance' attacks the enemy province beyond each line province. */
-export function orderFrontline(g: Game, units: Unit[], line: number[], mode: 'hold' | 'advance'): number {
-  const land = units.filter((u) => UNITS[u.type].domain === 'land' && u.loc >= 0);
-  if (!land.length || !line.length) return 0;
-  // assign units to line provinces round-robin by proximity
-  const slots = line.slice();
-  let ok = 0;
-  const remaining = land.slice();
-  let i = 0;
-  while (remaining.length) {
-    const p = slots[i % slots.length];
-    remaining.sort((a, b) => g.dist(a.loc, p) - g.dist(b.loc, p));
-    const u = remaining.shift()!;
-    let target = p;
-    if (mode === 'advance') {
-      const enemyNb = g.w.provs[p].nb.filter((q) => g.atWar(u.owner, g.s.provinces[q].ctrl));
-      if (enemyNb.length) target = enemyNb[(i / slots.length) % enemyNb.length | 0];
-    }
-    if (u.loc === p && mode === 'advance' && target !== p) {
-      if (!orderMove(g, u, target)) ok++;
-    } else if (!orderMove(g, u, p)) {
-      ok++;
-      if (mode === 'advance' && target !== p) u.orders.push({ kind: 'attack', to: target });
-      else u.orders.push({ kind: 'hold', to: p });
-    }
-    i++;
-  }
-  return ok;
+export function inAirRange(g: Game, u: Unit, p: number) {
+  return g.locDist(u.base, p) <= UNITS[u.type].range;
 }
 
-/** Surround an enemy province: units attack it from different adjacent provinces. */
-export function orderEncircle(g: Game, units: Unit[], target: number): number {
-  const ring = g.w.provs[target].nb.filter((q) => canEnter(g, units[0]?.owner ?? 0, q));
-  let ok = 0;
-  units.forEach((u, k) => {
-    if (UNITS[u.type].domain !== 'land') return;
-    const via = ring.length ? ring[k % ring.length] : target;
-    if (via === u.loc) {
-      if (!orderMove(g, u, target)) ok++;
-    } else if (!orderMove(g, u, via)) {
-      u.orders.push({ kind: 'attack', to: target });
-      ok++;
-    }
-  });
-  return ok;
-}
-
-export function rebase(g: Game, u: Unit, to: Loc): string | null {
-  if (to < 0) return 'Air units must be based in a province';
+/**
+ * Tap a region with planes selected:
+ *  - own/allied region with an airbase -> move there (rebase)
+ *  - anything else in range -> patrol it (fighters) / bomb it (bombers)
+ */
+export function airOrder(g: Game, u: Unit, to: Loc): string | null {
+  if (to < 0) return 'Planes need a region as target';
   const c = g.s.provinces[to].ctrl;
-  if (!(c === u.owner || g.allied(c, u.owner))) return 'Air base must be in friendly territory';
-  u.base = to;
-  u.path = [to];
-  u.progress = 0;
-  if (u.mission !== 'idle' && g.locDist(to, u.target) > airRange(g, u)) u.mission = 'idle';
-  return null;
-}
-
-export function airRange(g: Game, u: Unit) {
-  return UNITS[u.type].range * (u.type === 'missile' ? 1 + g.mod(u.owner, 'range.missile') : 1);
-}
-
-export function setAirMission(g: Game, u: Unit, mission: AirMission, target: Loc): string | null {
-  if (UNITS[u.type].domain !== 'air') return 'Not an air unit';
-  if (target < 0) return 'Target must be a province';
-  if (g.locDist(u.base, target) > airRange(g, u)) return `Out of range (${Math.round(airRange(g, u))} km)`;
-  if (mission === 'bomb' && u.type === 'fighter') return 'Fighters cannot strategic-bomb; use CAS';
-  if (mission === 'airlift' && u.type !== 'transport') return 'Only airlift wings can airlift';
-  if ((mission === 'superiority' || mission === 'cas') && u.type === 'transport') return 'Transports cannot fight';
-  if (mission === 'bomb' && !g.atWar(u.owner, g.s.provinces[target].ctrl)) return 'Can only bomb enemies you are at war with';
-  u.mission = mission;
-  u.target = target;
-  return null;
-}
-
-export function setNavalMission(g: Game, u: Unit, mission: NavalMission, target: Loc): string | null {
-  if (UNITS[u.type].domain !== 'sea') return 'Not a naval unit';
-  if (mission === 'raid' && u.type !== 'submarine') return 'Only submarines raid shipping';
-  const same = u.mission === mission && u.target === target;
-  u.mission = mission;
-  u.target = target;
-  if (mission === 'bombard' || mission === 'blockade') {
-    if (target >= 0 && !g.w.provs[target].sea.length) return 'Target is landlocked';
-    if (same && (u.path.length || (u.loc < 0 && target >= 0 && g.w.provs[target].sea.includes(-u.loc - 1)))) return null;
-    return orderMove(g, u, target);
+  if ((c === u.owner || g.allied(c, u.owner)) && g.level(to, 'airbase') > 0 && to !== u.base) {
+    u.base = to;
+    u.path = [to];
+    u.progress = 0;
+    u.target = -1;
+    return null;
   }
+  if (to === u.base) { u.target = -1; return null; }
+  if (!inAirRange(g, u, to)) return `Too far: ${UNITS[u.type].name} reach ${UNITS[u.type].range} km from their airbase`;
+  if (u.type === 'bomber' && !g.atWar(u.owner, c)) return 'Bombers can only hit enemies you are at war with';
+  u.target = to;
   return null;
-}
-
-export function fireMissile(g: Game, u: Unit, target: number): string | null {
-  if (u.type !== 'missile') return 'Not a missile battery';
-  if (u.cooldown > 0) return `Reloading (${u.cooldown} days)`;
-  if (u.loc < 0) return 'Must be on land';
-  if (g.dist(u.loc, target) > airRange(g, u)) return 'Out of range';
-  const victim = g.s.provinces[target].ctrl;
-  if (!g.atWar(u.owner, victim)) return 'Can only strike enemies you are at war with';
-  u.cooldown = 5;
-  const n = g.s.nations[u.owner];
-  n.stock.electronics -= 1;
-  const intercept = interceptChance(g, target, victim) * (1 - g.mod(u.owner, 'bypass'));
-  const power = UNITS.missile.soft * (u.str / 100) * (1 + g.mod(u.owner, 'missile'));
-  const hit = 1 - intercept;
-  const targets = g.unitsAt(target).filter((x) => g.atWar(x.owner, u.owner));
-  for (const t of targets) t.str -= (power * 0.5 * hit) / Math.max(1, targets.length / 2);
-  g.s.provinces[target].dmg = Math.min(1, g.s.provinces[target].dmg + 0.08 * hit);
-  g.s.defcon = Math.min(g.s.defcon, 4);
-  cleanupDead(g);
-  g.notify([u.owner], `Missile strike on ${g.w.provs[target].name}: ${Math.round(hit * 100)}% got through.`, 'info', target);
-  g.notify([victim], `Enemy missiles struck ${g.w.provs[target].name}!`, 'danger', target);
-  return null;
-}
-
-export function interceptChance(g: Game, p: number, defender: number) {
-  let aa = 0;
-  for (const q of [p, ...g.w.provs[p].nb]) for (const u of g.unitsAt(q)) if (u.type === 'airdef' && (u.owner === defender || g.allied(u.owner, defender))) aa += u.str / 100;
-  return Math.min(0.85, aa * 0.12 * (1 + g.mod(defender, 'aa')) + g.mod(defender, 'intercept'));
 }
 
 // ------------------------------------------------------------------ hourly
 export function militaryHour(g: Game) {
-  airHour(g);
-  navalHour(g);
   moveHour(g);
   battleHour(g);
-  recoverHour(g);
+  captureHour(g);
+  airHour(g);
+  navalHour(g);
+  for (const u of g.s.units) {
+    if (!u.path.length && isLand(u) && u.loc >= 0 && !g.rt.battleAt.has(u.loc)) u.dug = Math.min(1, u.dug + 0.01);
+  }
+}
+
+function blockedByEnemy(g: Game, u: Unit, p: number) {
+  const ctrl = g.s.provinces[p].ctrl;
+  if (g.atWar(u.owner, ctrl)) return true;
+  return g.unitsAt(p).some((x) => isLand(x) && g.atWar(x.owner, u.owner));
 }
 
 function moveHour(g: Game) {
-  let moved = false;
   for (const u of g.s.units) {
-    if (!u.path.length) {
-      if (u.orders.length) nextOrder(g, u);
-      continue;
-    }
+    if (!u.path.length) continue;
     const next = u.path[0];
-    const def = UNITS[u.type];
-    const len = def.domain === 'air' ? Math.max(50, g.locDist(u.loc, next)) : edgeLen(g, u.loc, next);
+    const air = isAir(u);
+    const len = air ? Math.max(50, g.locDist(u.loc, next)) : edgeLen(g, u.loc, next);
     if (u.progress < len) {
-      u.progress = Math.min(len, u.progress + moveSpeed(g, u, next));
-      moved = true;
+      u.progress = Math.min(len, u.progress + unitSpeed(g, u, next));
+      g.rt.dirtyUnits = true;
       if (u.progress < len) continue;
     }
-    // arrived at the edge: try to enter
-    if (def.domain === 'land' && next >= 0) {
-      const ctrl = g.s.provinces[next].ctrl;
-      if (ctrl !== u.owner && g.atWar(u.owner, ctrl) || g.unitsAt(next).some((x) => g.atWar(x.owner, u.owner) && UNITS[x.type].domain === 'land')) {
-        // battle (or empty enemy province) is resolved in battleHour
-        continue;
+    if (isLand(u) && next >= 0) {
+      if (blockedByEnemy(g, u, next)) {
+        // enemy land: if nobody defends it, walk in (the region is then captured over a few hours)
+        if (!g.unitsAt(next).some((x) => isLand(x) && g.atWar(x.owner, u.owner))) enter(g, u, next);
+        continue; // otherwise a battle is fought in battleHour
       }
-      if (!canEnter(g, u.owner, next)) {
-        u.path = [];
-        u.progress = 0;
-        continue;
-      }
-      if (u.loc < 0) u.landing = 12;
+      if (!canEnter(g, u.owner, next)) { u.path = []; u.progress = 0; continue; }
     }
     enter(g, u, next);
-    moved = true;
   }
-  if (moved) g.rt.dirtyUnits = true;
 }
 
 function enter(g: Game, u: Unit, to: Loc) {
+  const fromSea = u.loc < 0 && to >= 0 && isLand(u);
   g.relocate(u, to);
   u.path.shift();
   u.progress = 0;
-  u.entrench = 0;
-  if (!u.path.length && u.orders.length) nextOrder(g, u);
+  u.dug = 0;
+  if (!u.path.length) u.pace = 0;
+  if (fromSea) u.hp = Math.max(1, u.hp - 3); // rough landing
 }
 
-function nextOrder(g: Game, u: Unit) {
-  const o = u.orders.shift();
-  if (!o) return;
-  if (o.kind === 'hold') { u.hold = true; return; }
-  const rest = u.orders;
-  const err = orderMove(g, u, o.to);
-  if (!err) u.orders = rest;
+// ------------------------------------------------------------------ battles
+function ammoF(u: Unit) {
+  return u.ammo > 0.04 ? 1 : 0.45;
 }
 
-/** Land battles: units that reached an enemy province edge fight its defenders. */
+export function attackPower(g: Game, u: Unit, p: number, from: Loc) {
+  const d = UNITS[u.type];
+  let v = d.atk * (u.hp / 100) * ammoF(u) * (1 + u.xp * 0.4);
+  if (u.type === 'tank') v *= TERRAIN[g.w.provs[p].terrain].tank;
+  if (from >= 0) {
+    if (g.w.provs[from].river.has(p)) v *= 0.75;
+    if (g.w.provs[from].strait.has(p)) v *= 0.6;
+  } else v *= 0.5; // landing from the sea
+  return v;
+}
+
+export function defencePower(g: Game, u: Unit, p: number) {
+  const d = UNITS[u.type];
+  return d.def * DEFENDER_EDGE * (u.hp / 100) * ammoF(u) * (1 + u.xp * 0.4) * TERRAIN[g.w.provs[p].terrain].def * (1 + 0.3 * g.level(p, 'fort')) * (1 + 0.3 * u.dug);
+}
+
+/** Air, artillery and naval support a side gets in a battle at p. */
+function support(g: Game, p: number, side: number, enemy: number): number {
+  let v = 0;
+  // artillery in neighbouring regions shells the battle
+  for (const q of g.w.provs[p].nb) for (const u of g.unitsAt(q)) {
+    if (u.type === 'artillery' && !u.path.length && g.allied(u.owner, side) && !g.rt.battleAt.has(q)) v += UNITS.artillery.atk * 0.5 * (u.hp / 100) * ammoF(u);
+  }
+  // warships and carriers off the coast
+  for (const c of g.w.provs[p].sea) for (const u of g.unitsAt(seaLoc(c))) {
+    if ((u.type === 'warship' || u.type === 'carrier') && g.allied(u.owner, side)) v += UNITS[u.type].atk * 0.6 * (u.hp / 100);
+  }
+  // planes assigned to this region
+  let mine = 0, theirs = 0, ground = 0;
+  for (const u of g.s.units) {
+    if (!isAir(u) || u.target !== p || u.path.length) continue;
+    if (g.allied(u.owner, side)) { mine += UNITS[u.type].aa * (u.hp / 100); ground += UNITS[u.type].atk * (u.hp / 100); }
+    else if (g.allied(u.owner, enemy)) theirs += UNITS[u.type].aa * (u.hp / 100);
+  }
+  if (ground > 0) v += 0.4 * ground * (mine + 5) / (mine + theirs + 5);
+  return v;
+}
+
+function startBattle(g: Game, p: number, att: Unit[], def: Unit[]): Battle {
+  const b: Battle = {
+    loc: p, att: att[0].owner, def: def[0].owner, start: g.s.hour, odds: 0.5,
+    attHp: att.reduce((a, u) => a + u.hp, 0), defHp: def.reduce((a, u) => a + u.hp, 0), attLost: 0, defLost: 0,
+  };
+  g.s.battles.push(b);
+  g.rt.battleAt.set(p, b);
+  if (b.def === g.s.player) g.toast(`⚔️ ${g.name(b.att)} is attacking ${g.w.provs[p].name}!`, 'danger', p);
+  return b;
+}
+
+function endBattle(g: Game, b: Battle, attackerWon: boolean) {
+  g.s.battles = g.s.battles.filter((x) => x !== b);
+  g.rt.battleAt.delete(b.loc);
+  const me = g.s.player;
+  const name = g.w.provs[b.loc].name;
+  if (b.att === me || g.allied(b.att, me) && b.def !== me) {
+    if (b.att === me) g.toast(attackerWon ? `🏆 Victory at ${name}!` : `Our attack on ${name} failed.`, attackerWon ? 'good' : 'warn', b.loc);
+  } else if (b.def === me) g.toast(attackerWon ? `💔 We lost the battle for ${name}.` : `🛡️ We held ${name}!`, attackerWon ? 'danger' : 'good', b.loc);
+}
+
+/** Attackers standing at the edge of enemy-defended regions fight the defenders, once an hour. */
 function battleHour(g: Game) {
-  g.rt.battles.clear();
   const attacks = new Map<number, Unit[]>();
   for (const u of g.s.units) {
-    if (UNITS[u.type].domain !== 'land' || !u.path.length) continue;
+    if (!isLand(u) || !u.path.length) continue;
     const next = u.path[0];
-    if (next < 0) continue;
-    if (u.progress < edgeLen(g, u.loc, next)) continue;
+    if (next < 0 || u.progress < edgeLen(g, u.loc, next)) continue;
     let l = attacks.get(next);
     if (!l) attacks.set(next, (l = []));
     l.push(u);
   }
-  let changed = false;
+  // battles that lost all their attackers end
+  for (const b of g.s.battles.slice()) if (!attacks.has(b.loc)) endBattle(g, b, false);
+  let deaths = false;
   for (const [p, attackers] of attacks) {
-    const prov = g.s.provinces[p];
-    const atkOwner = attackers[0].owner;
-    const defenders = g.unitsAt(p).filter((x) => UNITS[x.type].domain === 'land' && attackers.some((a) => g.atWar(a.owner, x.owner)));
+    const atkSide = attackers[0].owner;
+    const defenders = g.unitsAt(p).filter((x) => isLand(x) && g.atWar(x.owner, atkSide));
     if (!defenders.length) {
-      // walk in and take control
-      for (const a of attackers) {
-        if (g.atWar(a.owner, prov.ctrl) || prov.ctrl === a.owner || canEnter(g, a.owner, p)) {
-          if (a.loc < 0) a.landing = 12;
-          g.relocate(a, p);
-          a.path.shift();
-          a.progress = 0;
-          a.entrench = 0;
-        }
+      const b = g.rt.battleAt.get(p);
+      if (b) {
+        endBattle(g, b, true);
+        for (const a of attackers) if (canEnter(g, a.owner, p)) enter(g, a, p);
+        if (g.atWar(atkSide, g.s.provinces[p].ctrl)) flipProvince(g, p, atkSide);
       }
-      if (g.atWar(atkOwner, prov.ctrl)) flipProvince(g, p, atkOwner);
-      changed = true;
       continue;
     }
-    resolveBattle(g, p, attackers, defenders);
-    g.rt.battles.set(p, { att: atkOwner, def: defenders[0].owner });
-    changed = true;
-  }
-  if (changed) cleanupDead(g);
-}
-
-function landPower(g: Game, u: Unit, attacking: boolean, enemyHard: number, p: number, from: Loc) {
-  const def = UNITS[u.type];
-  const n = g.s.nations[u.owner];
-  const t = g.w.provs[p].terrain;
-  const w = weatherOf(g, p);
-  const orgF = 0.3 + (0.7 * u.org) / 100;
-  const supF = 0.4 + 0.6 * u.supply;
-  const xpF = 1 + u.xp * 0.3;
-  let v: number;
-  if (attacking) {
-    v = def.soft * (1 - enemyHard) + def.hard * enemyHard;
-    v *= 1 + g.mod(u.owner, 'atk.land') + g.mod(u.owner, 'atk.' + u.type);
-    if (u.type === 'armor') {
-      let tf = TERRAIN[t].armor;
-      if (hasTrait(g, u, 'mountain') && (t === 'mountain' || t === 'hills')) tf = 1;
-      v *= tf;
-      if (hasTrait(g, u, 'blitz')) v *= 1.25;
+    const b = g.rt.battleAt.get(p) ?? startBattle(g, p, attackers, defenders);
+    let A = 0, D = 0;
+    for (const a of attackers) A += attackPower(g, a, p, a.loc);
+    for (const d of defenders) D += defencePower(g, d, p);
+    A += support(g, p, atkSide, defenders[0].owner);
+    D += support(g, p, defenders[0].owner, atkSide);
+    A = Math.max(A, 0.1);
+    D = Math.max(D, 0.5);
+    const odds = A / (A + D);
+    b.odds = odds;
+    let dealt = 0;
+    for (const d of defenders) {
+      const dmg = 2.6 * odds * (0.7 + g.rand() * 0.6) / Math.sqrt(defenders.length / attackers.length + 0.25);
+      d.hp -= dmg;
+      dealt += dmg;
+      d.ammo = Math.max(0, d.ammo - UNITS[d.type].burn);
+      d.xp = Math.min(1, d.xp + 0.004);
     }
-    if (hasTrait(g, u, 'offensive')) v *= 1.2;
-    if (hasTrait(g, u, 'desert') && t === 'desert') v *= 1.1;
-    v *= WEATHER_FX[w].atk;
-    if (from >= 0) {
-      if (g.w.provs[from].river.has(p)) v *= 0.75;
-      if (g.w.provs[from].strait.has(p)) v *= 0.6;
-    } else v *= 0.5; // amphibious landing
-    if (u.landing > 0) v *= 0.7;
-  } else {
-    v = def.def * (1 + g.mod(u.owner, 'def.land') + g.mod(u.owner, 'def.' + u.type));
-    let td = TERRAIN[t].def;
-    if (u.type === 'specops') td *= 1.1;
-    v *= td * (1 + u.entrench * 0.5) * (1 + g.s.provinces[p].fort * 0.15);
-    if (hasTrait(g, u, 'defensive')) v *= 1.25;
-    if (u.landing > 0) v *= 0.6;
-  }
-  const qual = n.conscription === 'volunteer' ? 1.1 : n.conscription === 'mass' ? 0.85 : 1;
-  return v * (u.str / 100) * orgF * supF * xpF * genSkill(g, u) * qual * (0.5 + 0.5 * n.readiness);
-}
-
-function hardnessOf(units: Unit[]) {
-  let h = 0, s = 0;
-  for (const u of units) { h += UNITS[u.type].hardness * u.str; s += u.str; }
-  return s > 0 ? h / s : 0;
-}
-
-function sideAir(g: Game, p: number, side: number) {
-  // close air support from air units / carriers belonging to side or its allies
-  const m = g.rt.airSup.get(p);
-  if (!m) return 0;
-  let v = 0;
-  for (const [n, pow] of m) if (n === side || g.allied(n, side)) v += pow;
-  return v;
-}
-
-function resolveBattle(g: Game, p: number, attackers: Unit[], defenders: Unit[]) {
-  const aHard = hardnessOf(attackers), dHard = hardnessOf(defenders);
-  let atk = 0, def = 0;
-  for (const a of attackers) atk += landPower(g, a, true, dHard, p, a.loc);
-  for (const d of defenders) def += landPower(g, d, false, aHard, p, p);
-  // defenders' artillery also shoots back
-  for (const d of defenders) if (d.type === 'artillery') def += landPower(g, d, true, aHard, p, p) * 0.3;
-  const atkSide = attackers[0].owner, defSide = defenders[0].owner;
-  const airA = sideAir(g, p, atkSide), airD = sideAir(g, p, defSide);
-  const casA = attackers.some((a) => hasTrait(g, a, 'air')) ? 1.3 : 1;
-  atk *= 1 + (0.5 * airA * casA) / (airA + airD + 25);
-  def *= 1 + (0.4 * airD) / (airA + airD + 25);
-  // naval bombardment
-  for (const c of g.w.provs[p].sea) for (const s of g.unitsAt(-(c + 1))) {
-    if (s.mission === 'bombard' && (s.owner === atkSide || g.allied(s.owner, atkSide))) atk += UNITS[s.type].soft * (s.str / 100) * 0.6;
-  }
-  def = Math.max(def, 0.5);
-  atk = Math.max(atk, 0.1);
-  const R = atk / def;
-  const rk = Math.pow(R, 0.7);
-  let lossA = 0, lossD = 0;
-  for (const d of defenders) {
-    const dmg = Math.min(4, 0.5 * rk * (0.7 + g.rand() * 0.6));
-    d.str -= dmg;
-    d.org -= Math.min(10, 2.5 * rk);
-    lossD += (dmg / 100) * UNITS[d.type].manpower;
-    d.xp = Math.min(1, d.xp + 0.002);
-  }
-  for (const a of attackers) {
-    const dmg = Math.min(4, (0.5 / rk) * (0.7 + g.rand() * 0.6));
-    a.str -= dmg;
-    a.org -= Math.min(10, 3 / rk);
-    lossA += (dmg / 100) * UNITS[a.type].manpower;
-    a.xp = Math.min(1, a.xp + 0.002);
-  }
-  recordCasualties(g, atkSide, defSide, lossA, lossD);
-  // attackers who are exhausted call off the attack
-  for (const a of attackers) {
-    if (a.org < 10 || a.str < 5) {
-      a.path = [];
-      a.orders = [];
-      a.progress = 0;
-      a.hold = true;
+    let taken = 0;
+    for (const a of attackers) {
+      const dmg = 2.6 * (1 - odds) * (0.7 + g.rand() * 0.6) / Math.sqrt(attackers.length / defenders.length + 0.25);
+      a.hp -= dmg;
+      taken += dmg;
+      a.ammo = Math.max(0, a.ammo - UNITS[a.type].burn);
+      a.xp = Math.min(1, a.xp + 0.004);
     }
-  }
-  // broken defenders retreat or surrender if encircled
-  for (const d of defenders) {
-    if (d.str <= 1) continue;
-    if (d.org > 1) continue;
-    const dest = safeNeighbour(g, p, d.owner);
-    if (dest === null) {
-      d.str = 0;
-      g.news('military', `${d.name} of ${g.name(d.owner)} surrendered after being encircled in ${g.w.provs[p].name}.`, [d.owner]);
-      g.notify([d.owner], `${d.name} was encircled and surrendered in ${g.w.provs[p].name}!`, 'danger', p);
-    } else {
-      g.notify([d.owner], `${d.name} was forced to retreat from ${g.w.provs[p].name}.`, 'warn', dest);
-      g.relocate(d, dest);
-      d.path = [];
-      d.orders = [];
-      d.progress = 0;
-      d.org = 5;
-      d.entrench = 0;
-    }
-  }
-}
-
-function recordCasualties(g: Game, a: number, d: number, lossA: number, lossD: number) {
-  for (const w of g.s.wars) {
-    const aAtt = w.att.includes(a) && w.def.includes(d);
-    const aDef = w.def.includes(a) && w.att.includes(d);
-    if (aAtt) { w.cas[0] += lossA; w.cas[1] += lossD; }
-    else if (aDef) { w.cas[1] += lossA; w.cas[0] += lossD; }
-  }
-  for (const [n, loss] of [[a, lossA], [d, lossD]] as const) {
-    const nat = g.s.nations[n];
-    nat.warWeariness = Math.min(100, nat.warWeariness + loss * (nat.gov === 'democracy' ? 0.02 : 0.008));
-  }
-}
-
-export function cleanupDead(g: Game) {
-  const before = g.s.units.length;
-  const dead = g.s.units.filter((u) => u.str <= 0);
-  if (!dead.length) return;
-  for (const u of dead) {
-    if (UNITS[u.type].domain === 'sea') {
-      g.news('military', `${g.name(u.owner)}'s ${u.name} was sunk in the ${g.locName(u.loc)}.`, [u.owner]);
-      g.notify([u.owner], `${u.name} has been sunk!`, 'danger', u.loc);
-    } else if (UNITS[u.type].domain === 'air') g.notify([u.owner], `${u.name} was shot down / destroyed.`, 'warn', u.loc);
-    else g.notify([u.owner], `${u.name} was destroyed.`, 'warn', u.loc);
-  }
-  g.s.units = g.s.units.filter((u) => u.str > 0);
-  if (g.s.units.length !== before) g.indexUnits();
-}
-
-// ------------------------------------------------------------------ air
-function airHour(g: Game) {
-  const sup = g.rt.airSup;
-  sup.clear();
-  const add = (p: number, n: number, v: number) => {
-    let m = sup.get(p);
-    if (!m) sup.set(p, (m = new Map()));
-    m.set(n, (m.get(n) || 0) + v);
-  };
-  const fightersAt = new Map<number, Map<number, Unit[]>>();
-  const atWar = new Uint8Array(g.N);
-  for (const w of g.s.wars) for (const x of w.att) atWar[x] = 1;
-  for (const w of g.s.wars) for (const x of w.def) atWar[x] = 1;
-  for (const u of g.s.units) {
-    if (!atWar[u.owner]) continue;
-    const def = UNITS[u.type];
-    if (def.domain === 'sea' && u.type === 'carrier') {
-      // carriers project air power onto adjacent coasts
-      const cell = g.w.cells[-u.loc - 1];
-      if (cell) for (const p of cell.coast) add(p, u.owner, def.air * (u.str / 100) * 0.5 * (1 + g.mod(u.owner, 'air') + g.mod(u.owner, 'atk.carrier')));
-      continue;
-    }
-    if (def.domain !== 'air' || u.path.length) continue;
-    if (u.mission === 'idle' || u.target < 0) continue;
-    const t = u.target;
-    const wfx = WEATHER_FX[weatherOf(g, t)].air;
-    if (u.mission === 'superiority' || u.mission === 'cas') {
-      const v = (u.mission === 'superiority' ? def.air : def.soft * (1 + g.mod(u.owner, 'cas'))) * (u.str / 100) * (1 + g.mod(u.owner, 'air')) * wfx;
-      add(t, u.owner, v);
-      if (u.mission === 'superiority') for (const q of g.w.provs[t].nb) add(q, u.owner, v * 0.5);
-      if (u.mission === 'superiority') {
-        let m = fightersAt.get(t);
-        if (!m) fightersAt.set(t, (m = new Map()));
-        const l = m.get(u.owner) || [];
-        l.push(u);
-        m.set(u.owner, l);
+    g.fx('hit', p, atkSide, Math.round(dealt));
+    if (g.chance(0.5)) g.fx('hit', attackers[0].loc, defenders[0].owner, Math.round(taken));
+    g.s.provinces[p].dmg = Math.min(1, g.s.provinces[p].dmg + 0.003);
+    // exhausted attackers stop
+    for (const a of attackers) if (a.hp < RETREAT_HP) { a.path = []; a.progress = 0; a.pace = 0; }
+    // broken defenders fall back, or surrender if surrounded
+    for (const d of defenders) {
+      if (d.hp >= RETREAT_HP || d.hp <= 0) continue;
+      const dest = safeNeighbour(g, p, d.owner);
+      if (dest === null) {
+        d.hp = 0;
+        g.notify([d.owner], `${UNITS[d.type].name} surrounded and destroyed in ${g.w.provs[p].name}!`, 'danger', p);
+      } else {
+        g.relocate(d, dest);
+        d.path = [];
+        d.progress = 0;
+        d.dug = 0;
       }
     }
+    if (defenders.some((d) => d.hp <= 0) || attackers.some((a) => a.hp <= 0)) deaths = true;
   }
-  // dogfights
-  for (const [p, sides] of fightersAt) {
-    const owners = [...sides.keys()];
-    for (const a of owners) for (const b of owners) {
-      if (a === b || !g.atWar(a, b)) continue;
-      const pa = (sup.get(p)?.get(a) || 0), pb = (sup.get(p)?.get(b) || 0);
-      for (const u of sides.get(a)!) u.str -= Math.min(2, (0.6 * pb) / (pa + pb + 5));
-    }
-  }
-  // bombing, drones, recon, airlift, AA losses
-  for (const u of g.s.units) {
-    if (!atWar[u.owner]) {
-      if (u.str < 100 && UNITS[u.type].domain === 'air') u.str = Math.min(100, u.str + 0.5);
-      continue;
-    }
-    const def = UNITS[u.type];
-    if (def.domain !== 'air' || u.path.length || u.target < 0) continue;
-    const t = u.target;
-    if (u.mission === 'bomb' || (u.mission === 'cas' && (u.type === 'bomber' || u.type === 'drone'))) {
-      const victim = g.s.provinces[t].ctrl;
-      const enemyUnits = g.unitsAt(t).filter((x) => g.atWar(x.owner, u.owner));
-      if (u.mission === 'bomb' && !g.atWar(u.owner, victim) && !enemyUnits.length) continue;
-      const wfx = WEATHER_FX[weatherOf(g, t)].air;
-      let enemyAir = 0, ownAir = 0;
-      const m = sup.get(t);
-      if (m) for (const [n, v] of m) { if (g.atWar(n, u.owner)) enemyAir += v; else if (n === u.owner || g.allied(n, u.owner)) ownAir += v; }
-      const eff = (1 - enemyAir / (enemyAir + ownAir + 20)) * wfx;
-      const power = (def.soft + def.hard) * 0.5 * (u.str / 100) * (1 + g.mod(u.owner, 'atk.' + u.type)) * eff;
-      if (u.mission === 'bomb') {
-        for (const e of enemyUnits) e.str -= (power * 0.02) / Math.max(1, enemyUnits.length / 3);
-        g.s.provinces[t].dmg = Math.min(1, g.s.provinces[t].dmg + power * 0.00015);
-      }
-      // AA and fighters shoot back
-      const aa = interceptChance(g, t, victim);
-      u.str -= (aa * 1.2 + (0.8 * enemyAir) / (enemyAir + ownAir + 20)) * (1 - g.mod(u.owner, 'stealth') * (u.type === 'bomber' ? 1 : 0));
-    } else if (u.mission === 'airlift') {
-      // handled in supplyDay via airlift list
-    }
-    // recover at base
-    if (u.mission === 'idle' && u.str < 100) u.str = Math.min(100, u.str + 0.5);
-  }
+  if (deaths) cleanupDead(g);
 }
 
-// ------------------------------------------------------------------ naval
-function navalHour(g: Game) {
-  const power = g.rt.seaPower;
-  const recompute = g.s.hour % 6 === 0 || power.size === 0;
-  if (recompute) power.clear();
-  const add = (c: number, n: number, v: number) => {
-    let m = power.get(c);
-    if (!m) power.set(c, (m = new Map()));
-    m.set(n, (m.get(n) || 0) + v);
-  };
-  const shipsAt = new Map<number, Unit[]>();
+/** Enemy regions with our troops in them and no defenders are taken over a few hours. */
+function captureHour(g: Game) {
+  const occupiers = new Map<number, Unit[]>();
   for (const u of g.s.units) {
-    if (u.loc >= 0 || UNITS[u.type].domain !== 'sea') continue;
-    const c = -u.loc - 1;
-    if (recompute) {
-      const v = navalPower(g, u);
-      add(c, u.owner, v);
-      if (u.type !== 'submarine') for (const nb of g.w.cells[c].nb) add(nb, u.owner, v * 0.4);
-    }
-    let l = shipsAt.get(c);
-    if (!l) shipsAt.set(c, (l = []));
+    if (!isLand(u) || u.loc < 0 || u.path.length) continue;
+    const p = g.s.provinces[u.loc];
+    if (!g.atWar(u.owner, p.ctrl)) continue;
+    let l = occupiers.get(u.loc);
+    if (!l) occupiers.set(u.loc, (l = []));
     l.push(u);
   }
-  let sunk = false;
-  for (const [c, ships] of shipsAt) {
-    const owners = [...new Set(ships.map((s) => s.owner))];
-    if (owners.length < 2) continue;
-    for (const s of ships) {
-      let enemy = 0, own = 0;
-      for (const t of ships) {
-        if (t.owner === s.owner || g.allied(t.owner, s.owner)) own += navalPower(g, t);
-        else if (g.atWar(t.owner, s.owner)) {
-          // submarines are only hit by escorts with ASW
-          if (s.type === 'submarine') enemy += t.type === 'destroyer' ? navalPower(g, t) * (1 + g.mod(t.owner, 'asw')) : t.type === 'carrier' ? navalPower(g, t) * 0.3 : 0;
-          else enemy += navalPower(g, t);
-        }
-      }
-      if (enemy <= 0) continue;
-      const gen = hasTrait(g, s, 'naval') ? 0.75 : 1;
-      s.str -= Math.min(5, (2 * enemy) / (enemy + own + 10)) * gen * (0.7 + g.rand() * 0.6);
-      if (s.str <= 0) sunk = true;
-    }
-    void c;
-  }
-  // land units at sea under enemy sea control take losses
-  for (const u of g.s.units) {
-    if (UNITS[u.type].domain !== 'land' || u.loc >= 0) continue;
-    const m = power.get(-u.loc - 1);
-    if (!m) continue;
-    let enemy = 0, own = 0;
-    for (const [n, v] of m) { if (g.atWar(n, u.owner)) enemy += v; else if (n === u.owner || g.allied(n, u.owner)) own += v; }
-    if (enemy > own) u.str -= 3 * (enemy / (enemy + own + 1));
-    if (u.str <= 0) sunk = true;
-  }
-  if (sunk) cleanupDead(g);
-}
-
-export function navalPower(g: Game, u: Unit) {
-  const def = UNITS[u.type];
-  let v = (def.naval + (u.type === 'carrier' ? def.air : 0)) * (u.str / 100);
-  v *= 1 + g.mod(u.owner, 'naval') + g.mod(u.owner, 'atk.' + u.type);
-  if (hasTrait(g, u, 'naval')) v *= 1.3;
-  return v;
-}
-
-/** Daily: blockades & submarine raids reduce sea trade of nations at war. */
-export function blockadeDay(g: Game) {
-  const { s } = g;
-  for (const n of s.nations) {
-    if (!n.alive || !g.atWarAny(n.idx)) { n.blockade = Math.max(0, n.blockade - 0.05); continue; }
-    const cells = new Set<number>();
-    s.provinces.forEach((p, i) => { if (p.ctrl === n.idx) for (const c of g.w.provs[i].sea) cells.add(c); });
-    if (!cells.size) { n.blockade = 0; continue; }
-    let blocked = 0;
-    for (const c of cells) {
-      const m = g.rt.seaPower.get(c);
-      if (!m) continue;
-      let enemy = 0, own = 0;
-      for (const [k, v] of m) { if (g.atWar(k, n.idx)) enemy += v; else if (k === n.idx || g.allied(k, n.idx)) own += v; }
-      if (enemy > own * 1.2) blocked++;
-    }
-    let raid = 0;
-    for (const u of s.units) if (u.type === 'submarine' && u.mission === 'raid' && g.atWar(u.owner, n.idx)) raid += 0.04 * (u.str / 100);
-    const target = Math.min(0.95, blocked / cells.size + Math.min(0.35, raid));
-    n.blockade += (target - n.blockade) * 0.2;
-  }
-}
-
-// ------------------------------------------------------------------ supply
-/** Daily supply computation for every nation with land units. */
-export function supplyDay(g: Game) {
-  const { s, w } = g;
-  const P = w.provs.length;
-  const owners = new Set<number>();
-  const landBy = new Map<number, Unit[]>();
-  for (const u of s.units) {
-    if (UNITS[u.type].domain !== 'land') continue;
-    owners.add(u.owner);
-    let l = landBy.get(u.owner);
-    if (!l) landBy.set(u.owner, (l = []));
-    l.push(u);
-  }
-  owners.add(s.player);
-  const airlift = new Map<number, Map<number, number>>();
-  for (const u of s.units) if (u.type === 'transport' && u.mission === 'airlift' && u.target >= 0 && !u.path.length) {
-    let m = airlift.get(u.owner);
-    if (!m) airlift.set(u.owner, (m = new Map()));
-    m.set(u.target, (m.get(u.target) || 0) + 0.3 * (u.str / 100) * WEATHER_FX[weatherOf(g, u.target)].air);
-  }
-  const decayP = new Float32Array(P);
-  for (let q = 0; q < P; q++) {
-    const sp = w.provs[q];
-    decayP[q] = 0.9 * Math.pow(TERRAIN[sp.terrain].supply, 0.4) * (0.88 + s.provinces[q].infra * 0.012) * WEATHER_FX[weatherOf(g, q)].supply;
-  }
-  for (const n of owners) {
-    const nat = s.nations[n];
-    if (!nat.alive) continue;
-    const mine = landBy.get(n) || [];
-    if (n !== s.player && !g.atWarAny(n)) {
-      // peacetime: units at home are fully supplied
-      for (const u of mine) u.supply = u.loc >= 0 && (s.provinces[u.loc].ctrl === n || g.friendly(n, s.provinces[u.loc].ctrl)) ? 1 : 0.5;
+  for (let i = 0; i < g.s.provinces.length; i++) {
+    const p = g.s.provinces[i];
+    const occ = occupiers.get(i);
+    if (!occ) {
+      if (p.cap > 0) { p.cap = Math.max(0, p.cap - 0.1); if (p.cap === 0) p.capBy = -1; g.rt.dirtyUnits = true; }
       continue;
     }
-    const sup = new Float32Array(P);
-    const heap = new Heap();
-    const push = (p: number, v: number) => {
-      if (v <= sup[p] + 1e-4) return;
-      sup[p] = v;
-      heap.push(-v, p);
-    };
-    const ok = new Uint8Array(g.N);
-    for (let c = 0; c < g.N; c++) ok[c] = c === n || g.friendly(n, c) ? 1 : 0;
-    const supMod = 1 + g.mod(n, 'supply') * 0.5;
-    if (nat.capital >= 0 && s.provinces[nat.capital].ctrl === n) push(nat.capital, 1);
-    s.provinces.forEach((p, i) => {
-      if (p.ctrl !== n) return;
-      if (p.depot) push(i, 0.95);
-      else if (w.provs[i].sea.length && p.pop > 80) push(i, 0.75 * (1 - nat.blockade));
-      else if (p.owner === n && p.pop > 500) push(i, 0.6);
-    });
-    // allied capitals supply too (coalition logistics)
-    for (const b of s.blocs) if (b.members.includes(n)) for (const m of b.members) {
-      const c = s.nations[m].capital;
-      if (m !== n && c >= 0 && s.provinces[c].ctrl === m) push(c, 0.7);
-    }
-    while (heap.size) {
-      const p = heap.pop();
-      const v = sup[p];
-      for (const q of w.provs[p].nb) {
-        if (!ok[s.provinces[q].ctrl]) continue;
-        push(q, v * Math.min(0.97, decayP[q] * supMod));
-      }
-    }
-    const al = airlift.get(n);
-    if (al) for (const [p, v] of al) sup[p] = Math.min(1, sup[p] + v);
-    // apply to units
-    for (const u of mine) {
-      if (u.loc < 0) { u.supply = 0.3; continue; }
-      let v = sup[u.loc];
-      // adjacent to supplied territory (attacking into enemy land)
-      if (v < 0.05) for (const q of w.provs[u.loc].nb) v = Math.max(v, sup[q] * 0.7);
-      if (hasTrait(g, u, 'logistics')) v = Math.min(1, v * 1.3);
-      v *= 1 - nat.shortage.food * 0.3;
-      u.supply = Math.max(0, Math.min(1, v));
-    }
-    if (n === s.player) for (let p = 0; p < P; p++) g.rt.supply[p] = sup[p];
+    if (g.unitsAt(i).some((x) => isLand(x) && g.atWar(x.owner, occ[0].owner))) continue;
+    const by = occ[0].owner;
+    if (p.capBy !== by) { p.capBy = by; p.cap = 0; }
+    const tanks = occ.some((u) => u.type === 'tank');
+    p.cap += (1 / CAPTURE_HOURS) * (tanks ? 1.5 : 1) * Math.min(2, 0.7 + occ.length * 0.3);
+    g.rt.dirtyUnits = true;
+    if (p.cap >= 1) flipProvince(g, i, by);
   }
 }
 
-/** Daily attrition & reinforcement. */
-export function unitsDay(g: Game) {
-  const { s } = g;
-  for (const u of s.units) {
-    const def = UNITS[u.type];
-    const n = s.nations[u.owner];
-    if (u.cooldown > 0) u.cooldown--;
-    if (u.landing > 0) u.landing = Math.max(0, u.landing - 24);
-    if (def.domain === 'land' && u.loc >= 0) {
-      const p = g.w.provs[u.loc];
-      const wth = weatherOf(g, u.loc);
-      // attrition when out of supply
-      if (u.supply < 0.35) u.str -= (0.35 - u.supply) * 6 * TERRAIN[p.terrain].attrition;
-      // winter / heat attrition
-      const att = WEATHER_FX[wth].attrition;
-      if (att > 0 && !(wth === 'snow' && hasTrait(g, u, 'winter')) && u.supply < 0.7) u.str -= att * 0.4;
-      // radiation
-      const rad = s.provinces[u.loc].rad;
-      if (rad > 0.05) u.str -= rad * 4;
-      // reinforcement
-      if (u.str < 100 && u.supply > 0.4 && n.manpower > 0.5) {
-        const add = Math.min(100 - u.str, 3 * u.supply);
-        const mp = (add / 100) * def.manpower;
-        if (n.manpower >= mp) { u.str += add; n.manpower -= mp; }
-      }
-    } else if (def.domain === 'sea' && u.loc < 0) {
-      const cell = g.w.cells[-u.loc - 1];
-      if (u.str < 100 && cell.coast.some((p) => s.provinces[p].ctrl === u.owner)) u.str = Math.min(100, u.str + 2);
-    } else if (def.domain === 'air' && u.str < 100) {
-      u.str = Math.min(100, u.str + 1);
-    }
+export function flipProvince(g: Game, p: number, by: number) {
+  const prov = g.s.provinces[p];
+  const old = prov.ctrl;
+  if (old === by) return;
+  // liberation: give it back to a friendly owner
+  const newCtrl = prov.owner !== by && g.allied(by, prov.owner) && !g.atWar(by, prov.owner) ? prov.owner : by;
+  prov.ctrl = newCtrl;
+  prov.cap = 0;
+  prov.capBy = -1;
+  prov.build = null;
+  prov.dmg = Math.min(1, prov.dmg + 0.1);
+  g.rt.dirtyOwners = true;
+  g.rt.dirtyBuildings = true;
+  g.fx('capture', p, newCtrl);
+  const name = g.w.provs[p].name;
+  const oldN = g.s.nations[old];
+  if (oldN && p === oldN.capital) {
+    g.news('war', `${g.name(by)} captures ${name}, capital of ${oldN.name}!`, [by, old]);
+    g.notify([old], `🚨 Our capital ${name} has fallen!`, 'danger', p);
+  } else g.notify([old], `We lost ${name} to ${g.name(by)}.`, 'danger', p);
+  if (newCtrl === g.s.player) g.toast(prov.owner === g.s.player ? `🏳️ ${name} liberated!` : `🚩 We captured ${name}!`, 'good', p);
+  // planes based here fly to another base (or are lost)
+  for (const u of g.s.units) {
+    if (!isAir(u) || u.base !== p || u.owner !== old) continue;
+    const bases = airbases(g, old);
+    if (!bases.length) { u.hp = 0; continue; }
+    const nb = bases.sort((a, b2) => g.dist(a, p) - g.dist(b2, p))[0];
+    u.base = nb;
+    u.target = -1;
+    g.relocate(u, nb);
+    u.hp = Math.max(1, u.hp - 20);
   }
   cleanupDead(g);
 }
 
-function recoverHour(g: Game) {
-  for (const u of g.s.units) {
-    const n = g.s.nations[u.owner];
-    const inBattle = u.path.length > 0 && u.progress >= 1e9;
-    void inBattle;
-    const maxOrg = 100 * (0.6 + 0.4 * n.readiness) * (n.electionLost > 0 ? 0.9 : 1);
-    if (u.org < maxOrg) {
-      let rec = 1.2 * (0.3 + 0.7 * u.supply) * (1 + g.mod(u.owner, 'org'));
-      if (hasTrait(g, u, 'organizer')) rec *= 1.3;
-      if (u.path.length) rec *= 0.4;
-      u.org = Math.min(maxOrg, u.org + rec);
-    } else u.org = Math.max(maxOrg, u.org - 0.5);
-    if (!u.path.length && UNITS[u.type].domain === 'land') u.entrench = Math.min(1, u.entrench + 0.01);
+export function cleanupDead(g: Game) {
+  const dead = g.s.units.filter((u) => u.hp <= 0);
+  if (!dead.length) return;
+  for (const u of dead) {
+    const def = UNITS[u.type];
+    g.fx(def.domain === 'sea' ? 'sunk' : 'boom', u.loc, u.owner);
+    const b = u.loc >= 0 ? g.rt.battleAt.get(u.loc) : undefined;
+    if (b) { if (u.owner === b.def) b.defLost++; }
+    for (const bb of g.s.battles) if (u.owner === bb.att && u.path[0] === bb.loc) bb.attLost++;
+    for (const w of g.s.wars) {
+      if (w.att.includes(u.owner)) w.lost[0]++;
+      else if (w.def.includes(u.owner)) w.lost[1]++;
+    }
+    if (u.owner === g.s.player) g.toast(`${def.domain === 'sea' ? '🌊' : '💀'} Our ${def.name} ${def.domain === 'sea' ? 'was sunk' : def.domain === 'air' ? 'were shot down' : 'were destroyed'} in ${g.locName(u.loc)}.`, 'warn', u.loc);
   }
-}
-
-/** Disband a unit (refunds some manpower). */
-export function disband(g: Game, u: Unit) {
-  const n = g.s.nations[u.owner];
-  n.manpower += (UNITS[u.type].manpower * u.str) / 200;
-  g.s.units = g.s.units.filter((x) => x !== u);
+  g.s.units = g.s.units.filter((u) => u.hp > 0);
   g.indexUnits();
 }
 
-/** Assign (or clear) a general for a set of units. */
-export function assignGeneral(g: Game, units: Unit[], genId: number) {
-  for (const u of units) u.gen = genId;
+// ------------------------------------------------------------------ air
+function enemyAirDefence(g: Game, p: number, owner: number) {
+  let aa = 0;
+  for (const q of [p, ...g.w.provs[p].nb]) for (const u of g.unitsAt(q)) {
+    if (u.type === 'antiair' && g.atWar(u.owner, owner)) aa += UNITS.antiair.aa * (u.hp / 100) * (q === p ? 1 : 0.5);
+  }
+  for (const u of g.s.units) if (u.type === 'fighter' && u.target === p && g.atWar(u.owner, owner)) aa += UNITS.fighter.aa * (u.hp / 100);
+  return aa;
 }
 
-export { landPath };
+function airHour(g: Game) {
+  const h = g.s.hour;
+  let deaths = false;
+  for (const u of g.s.units) {
+    if (!isAir(u)) continue;
+    if (u.path.length || u.target < 0) {
+      if (h % 24 === 0 && u.hp < 100) u.hp = Math.min(100, u.hp + 5);
+      continue;
+    }
+    if (u.target >= 0 && !inAirRange(g, u, u.target)) { u.target = -1; continue; }
+    if ((h + u.id) % 8 !== 0) continue;
+    const p = u.target;
+    const ctrl = g.s.provinces[p].ctrl;
+    const enemies = g.unitsAt(p).filter((x) => g.atWar(x.owner, u.owner) && !isAir(x));
+    const defence = enemyAirDefence(g, p, u.owner);
+    if (u.type === 'bomber' && (enemies.length || g.atWar(u.owner, ctrl))) {
+      const power = UNITS.bomber.atk * (u.hp / 100) * (u.ammo > 0.04 ? 1 : 0.3) * (20 / (20 + defence));
+      // bombing wears troops down; it does not wipe out a supplied army on its own
+      for (const e of enemies) e.hp -= (power * 0.25) / Math.max(1, enemies.length);
+      if (g.atWar(u.owner, ctrl)) {
+        const prov = g.s.provinces[p];
+        prov.dmg = Math.min(1, prov.dmg + 0.01 * (power / 16));
+      }
+      u.ammo = Math.max(0, u.ammo - UNITS.bomber.burn);
+      g.fx('bomb', p, u.owner);
+      if (enemies.some((e) => e.hp <= 0)) deaths = true;
+    }
+    if (defence > 0) {
+      const loss = (defence / (defence + UNITS[u.type].aa * (u.hp / 100) + 10)) * (u.type === 'fighter' ? 4 : 6) * (0.6 + g.rand() * 0.8);
+      u.hp -= loss;
+      if (u.hp <= 0) deaths = true;
+    }
+  }
+  if (deaths) cleanupDead(g);
+}
+
+// ------------------------------------------------------------------ naval
+function navalHour(g: Game) {
+  const byCell = new Map<number, Unit[]>();
+  for (const u of g.s.units) {
+    if (u.loc >= 0) continue;
+    let l = byCell.get(u.loc);
+    if (!l) byCell.set(u.loc, (l = []));
+    l.push(u);
+  }
+  let deaths = false;
+  for (const [loc, here] of byCell) {
+    const owners = new Set(here.map((u) => u.owner));
+    if (owners.size < 2) continue;
+    for (const s of here) {
+      let enemy = 0, own = 0;
+      for (const t of here) {
+        const tp = UNITS[t.type].sea * (t.hp / 100);
+        if (g.allied(t.owner, s.owner)) own += tp;
+        else if (g.atWar(t.owner, s.owner)) enemy += s.type === 'submarine' && t.type !== 'warship' ? tp * 0.3 : tp;
+      }
+      if (enemy <= 0) continue;
+      const dmg = isLand(s) ? (enemy > own ? 4 : 1) : 3 * enemy / (enemy + own + 5);
+      s.hp -= dmg * (0.7 + g.rand() * 0.6);
+      if (s.hp <= 0) deaths = true;
+    }
+    if (g.chance(0.3)) g.fx('hit', loc, here[0].owner, 1);
+  }
+  if (deaths) cleanupDead(g);
+}
+
+// ------------------------------------------------------------------ supply
+/** Is a unit in supply (can refill ammo and heal)? */
+export function inSupply(g: Game, u: Unit): boolean {
+  if (isAir(u)) return true;
+  if (u.loc < 0) {
+    if (isLand(u)) return false;
+    const cell = g.w.cells[-u.loc - 1];
+    return cell.coast.some((p) => g.allied(g.s.provinces[p].ctrl, u.owner));
+  }
+  const c = g.s.provinces[u.loc].ctrl;
+  if (g.allied(c, u.owner)) return true;
+  return g.w.provs[u.loc].nb.some((q) => g.allied(g.s.provinces[q].ctrl, u.owner));
+}
+
+/** Every 6 hours: units in supply refill ammo from the national stockpile and heal. */
+export function supplyTick(g: Game) {
+  const { s } = g;
+  for (const u of s.units) {
+    const n = s.nations[u.owner];
+    const supplied = inSupply(g, u);
+    const fighting = u.loc >= 0 && g.rt.battleAt.has(u.loc) || (u.path.length > 0 && u.path[0] >= 0 && g.rt.battleAt.has(u.path[0]));
+    if (supplied && u.ammo < 1 && n.res.ammo > 0) {
+      const need = (1 - u.ammo) * UNITS[u.type].ammo;
+      const take = Math.min(need, n.res.ammo);
+      n.res.ammo -= take;
+      n.used.ammo += take;
+      u.ammo += take / UNITS[u.type].ammo;
+    }
+    if (fighting) continue;
+    if (supplied && u.hp < 100) {
+      let heal = 1.2;
+      if (isLand(u) && u.loc >= 0 && g.level(u.loc, 'barracks') > 0) heal = 2.5;
+      if (isSeaUnit(u) && u.loc < 0 && g.w.cells[-u.loc - 1].coast.some((p) => s.provinces[p].ctrl === u.owner && g.level(p, 'port') > 0)) heal = 2.5;
+      u.hp = Math.min(100, u.hp + heal);
+    } else if (!supplied && isLand(u) && u.loc >= 0) u.hp -= 0.3;
+  }
+  if (s.units.some((u) => u.hp <= 0)) cleanupDead(g);
+}
+
+/** Total fighting value of units (for AI and UI comparisons). */
+export function unitValue(u: Unit) {
+  const d = UNITS[u.type];
+  return (d.atk + d.def + d.aa * 0.5 + d.sea) * (u.hp / 100);
+}

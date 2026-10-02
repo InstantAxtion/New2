@@ -346,7 +346,7 @@ export const SCENARIOS: ScenarioDef[] = [
     trade: [EU, USMCA],
     defcon: 5,
     goal: { kind: 'continent', cont: 'Africa', share: 0.75 },
-    victory: { conquest: 0, economic: 0, diplomatic: false, tech: false, survival: false, endYear: 2060 },
+    victory: { conquest: 0, endYear: 2060 },
   },
   {
     id: 'survive_taiwan',
@@ -360,7 +360,7 @@ export const SCENARIOS: ScenarioDef[] = [
     trade: [EU, USMCA],
     defcon: 3,
     goal: { kind: 'survive', years: 5 },
-    victory: { conquest: 0, economic: 0, diplomatic: false, tech: false, survival: false, endYear: 2032 },
+    victory: { conquest: 0, endYear: 2032 },
   },
   {
     id: 'microstate',
@@ -373,7 +373,7 @@ export const SCENARIOS: ScenarioDef[] = [
     trade: [EU, USMCA, ASEAN],
     defcon: 5,
     goal: { kind: 'gdp_rank', rank: 25, years: 20 },
-    victory: { conquest: 0, economic: 0, diplomatic: false, tech: false, survival: false, endYear: 2046 },
+    victory: { conquest: 0, endYear: 2046 },
   },
   {
     id: 'restore_ussr',
@@ -393,7 +393,7 @@ export const SCENARIOS: ScenarioDef[] = [
     trade: [EU, USMCA],
     defcon: 4,
     goal: { kind: 'restore', nations: SOVIET.filter((n) => n !== 'RUS') },
-    victory: { conquest: 0, economic: 0, diplomatic: false, tech: false, survival: false, endYear: 2046 },
+    victory: { conquest: 0, endYear: 2046 },
   },
   // ---------------------------------------------------------------- quick matches
   ...(['Europe', 'Asia', 'Africa', 'Americas', 'Middle East'] as const).map((region): ScenarioDef => ({
@@ -406,7 +406,7 @@ export const SCENARIOS: ScenarioDef[] = [
     defcon: 4,
     region,
     goal: { kind: 'region_score', years: 3 },
-    victory: { conquest: 0.4, economic: 0, diplomatic: false, tech: false, survival: false, endYear: 2029 },
+    victory: { conquest: 0.4, endYear: 2029 },
   })),
 ];
 

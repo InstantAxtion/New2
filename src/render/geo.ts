@@ -2,6 +2,7 @@
 import { geoNaturalEarth1, type GeoProjection } from 'd3-geo';
 import * as topojson from 'topojson-client';
 import type { WorldData } from '../sim/world';
+import { buildRaster, poles, type Raster } from './raster';
 
 export interface MapGeo {
   proj: GeoProjection;
@@ -16,6 +17,7 @@ export interface MapGeo {
   arcProvs: Int32Array; // per arc: [a, b] provinces (-1 = sea / outside)
   grid: Map<number, number[]>; // spatial hash for hit testing
   gridSize: number;
+  raster: Raster;
 }
 
 export function buildGeo(w: WorldData): MapGeo {
@@ -134,7 +136,33 @@ export function buildGeo(w: WorldData): MapGeo {
       }
   }
   void topojson;
-  return { proj, width, height: 1040, paths, rings, bbox, center, cellXY, arcs, arcProvs, grid, gridSize };
+  const geo: MapGeo = { proj, width, height: 1040, paths, rings, bbox, center, cellXY, arcs, arcProvs, grid, gridSize, raster: null as unknown as Raster };
+  // anchor units and names at the point deepest inside each region
+  geo.raster = buildRaster(geo);
+  const pl = poles(geo.raster, geo.raster.id, P);
+  for (let i = 0; i < P; i++) {
+    const p = pl[i];
+    if (p && p.r >= geo.raster.cell * 1.5) { center[i * 2] = p.x; center[i * 2 + 1] = p.y; }
+  }
+  // sea zones are coarse squares: make sure ships are drawn on water, not on the coast
+  const R = geo.raster;
+  const isLand = (x: number, y: number) => {
+    const cx = Math.floor(x / R.cell), cy = Math.floor(y / R.cell);
+    if (cx < 0 || cy < 0 || cx >= R.w || cy >= R.h) return false;
+    return R.id[cy * R.w + cx] >= 0;
+  };
+  for (let i = 0; i < w.cells.length; i++) {
+    const x = cellXY[i * 2], y = cellXY[i * 2 + 1];
+    if (!isLand(x, y)) continue;
+    let best: [number, number] | null = null;
+    for (let r = 1; r <= 8 && !best; r++)
+      for (let a = 0; a < 16; a++) {
+        const tx = x + Math.cos((a / 16) * Math.PI * 2) * r * R.cell, ty = y + Math.sin((a / 16) * Math.PI * 2) * r * R.cell;
+        if (!isLand(tx, ty)) { best = [tx, ty]; break; }
+      }
+    if (best) { cellXY[i * 2] = best[0]; cellXY[i * 2 + 1] = best[1]; }
+  }
+  return geo;
 }
 
 function ringHas(r: Float32Array, x: number, y: number) {

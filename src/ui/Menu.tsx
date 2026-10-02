@@ -22,7 +22,7 @@ export function MainMenu() {
               SOVEREIGN<span>WORLD COMMAND</span>
             </div>
             <div class="muted center small" style={{ marginBottom: '14px' }}>
-              Rule any nation on Earth. Real-time war, economy, diplomacy &amp; intrigue.
+              Pick any country on Earth. Build, fight and conquer in real time.
             </div>
             {auto && (
               <button class="btn primary block" onClick={async () => setErr(await ctl.load('autosave'))}>
@@ -110,10 +110,9 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
       </div>
       <div class="list">
         <Toggle label="Battery saver" desc="30 fps, lower resolution map and lighter simulation bursts." on={pref('batterySaver', false)} onChange={(v) => set('batterySaver', v)} />
-        <Toggle label="Show news ticker" on={pref('ticker', true)} onChange={(v) => set('ticker', v)} />
         <Toggle label="Auto-pause when war is declared on you" on={pref('autoPauseWar', true)} onChange={(v) => set('autoPauseWar', v)} />
       </div>
-      <div class="tiny muted">Per-game options (nuclear weapons, fog of war, difficulty, notifications, offline progress) are set when starting a game and in the in-game menu.</div>
+      <div class="tiny muted">Difficulty, fog of war and nuclear weapons are chosen when you start a new game.</div>
     </>
   );
 }
@@ -129,23 +128,19 @@ export function HowToPlay({ onBack }: { onBack: () => void }) {
       </div>
       <div class="card small col">
         <b>🎯 The goal</b>
-        <div>Lead your country to the top — by conquest, by building the biggest economy, through diplomacy, or by winning the space race. Check your progress in 🏛 Country.</div>
+        <div>Grow your country into the strongest power — mostly by taking land. Check your progress in 🏛 Country.</div>
         <b>🗺 The map</b>
-        <div>Drag to move, pinch to zoom, double-tap to zoom in. Your country has a gold border. 🗂 View changes what the map shows (terrain, supply, alliances, weather). 🌐 shows a globe.</div>
+        <div>Drag to move, pinch to zoom. Your country has a gold border. Dark striped areas are hidden by fog of war. 🗂 View switches the map colours (terrain, resources, alliances). 🌐 shows a globe.</div>
         <b>⚔️ Moving troops</b>
-        <div>Tap one of your counters (gold outline) to select it, then tap a province to send it there. Tapping enemy land attacks it. In ⚔️ Army you can select your whole army, air force or navy at once.</div>
-        <b>👆 Long-press</b>
-        <div>Hold your finger on any province for more options: surround enemies, bomb, build defenses, talk to its owner or declare war.</div>
-        <b>📦 Supply</b>
-        <div>Troops far from your land run out of supplies and weaken. Build supply depots near the front (long-press your province).</div>
-        <b>🏛 Running the country</b>
-        <div>Advisors manage your budget and research from the start. You can take over in 🏛 Country. Keep people happy (approval) or you may lose elections — or face a coup.</div>
+        <div>Drag one of your round counters onto a region — or tap it, then tap the region. Going into enemy land attacks it. Tap the bar above a battle to see who is winning and why.</div>
+        <b>🔨 Building</b>
+        <div>Tap Build, pick a building, then tap a green region. Mines dig materials, factories make ammo, barracks/airbases/ports train units, forts help defence.</div>
+        <b>📦 Resources</b>
+        <div>💰 Money comes from your regions and pays for everything. ⛏ Materials build units and buildings. 💥 Ammo is used up in battles. ☢ Uranium makes nuclear warheads. Buy and sell in 🏛 Country.</div>
         <b>🌍 Friends and enemies</b>
-        <div>In 🌍 World you can trade, make alliances, put sanctions on rivals, send spies, declare war and make peace. Each option says whether they are likely to accept.</div>
-        <b>☢️ Nukes</b>
-        <div>Some countries have nuclear weapons. Using them is devastating and turns the whole world against you. You can turn them off when starting a game.</div>
+        <div>In 🌍 World you can make allies, trade deals and peace, or declare war. Each option says whether they are likely to accept.</div>
         <b>📱 Away from the game?</b>
-        <div>When you come back, your advisors will have played for you (1 real minute = 1 game day, up to 30 days) and you get a report.</div>
+        <div>When you come back, the world will have moved on (1 real minute = 1 game day, up to 30 days). Your troops hold their positions.</div>
       </div>
     </>
   );

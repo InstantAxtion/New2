@@ -1,77 +1,54 @@
-import { NUKE_URANIUM, UNITS } from '../../data/units';
-import { canBuild, enqueue, unitCost } from '../../sim/economy';
-import { setArmed } from '../../sim/nuclear';
+import { UNIT_TYPES, UNITS } from '../../data/units';
+import { canRecruit, cancelRecruit, queuePosition, recruit, recruitCost, trainingSites, unitAvailable } from '../../sim/economy';
 import type { Domain, UnitType } from '../../sim/types';
-import { Action, Bar, fmt, Help, Sheet } from '../common';
+import { Bar, Cost, fmt, Help, Sheet, UnitIcon } from '../common';
 import { useCtl } from '../controller';
 
-/** What each unit is for, in one sentence. */
-const ROLE: Partial<Record<UnitType, string>> = {
-  infantry: 'Cheap, all-round troops. Best at holding ground.',
-  armor: 'Fast, powerful attackers. Weak in mountains and jungle.',
-  artillery: 'Heavy damage in battles, but slow.',
-  airdef: 'Shoots down enemy planes and missiles nearby.',
-  missile: 'Strikes enemy troops far away (long-press a province).',
-  fighter: 'Wins control of the sky and supports your battles.',
-  bomber: 'Bombs enemy troops and factories far behind the front.',
-  drone: 'Cheap air strikes and scouting.',
-  destroyer: 'All-round warship. Good at hunting submarines.',
-  submarine: 'Sinks ships and cuts enemy trade.',
-  carrier: 'A floating airbase. Very strong, very expensive.',
-  battleship: 'Heavy warship with huge guns.',
-  amphib: 'Carries your troops across the sea for invasions.',
-};
-const BUILDABLE: Record<Domain, UnitType[]> = {
-  land: ['infantry', 'armor', 'artillery', 'airdef', 'missile'],
-  air: ['fighter', 'bomber', 'drone'],
-  sea: ['destroyer', 'submarine', 'carrier', 'battleship', 'amphib'],
-};
-const ICON: Record<Domain, string> = { land: '🪖', air: '✈️', sea: '⚓' };
-const LABEL: Record<Domain, string> = { land: 'Army', air: 'Air force', sea: 'Navy' };
+const LABEL: Record<Domain, string> = { land: '🪖 Troops', air: '✈️ Planes', sea: '⚓ Ships' };
 
 export function ArmyPanel() {
   const c = useCtl();
   const g = c.game!;
   const n = g.player;
-  const units = g.unitsOf(n.idx);
+  const me = g.s.player;
+  const units = g.unitsOf(me);
   const count = (d: Domain) => units.filter((u) => UNITS[u.type].domain === d).length;
-  const close = () => c.open(null);
-  const selectAll = (d: Domain) => {
-    c.select(units.filter((u) => UNITS[u.type].domain === d && (d !== 'land' || u.loc >= 0)).map((u) => u.id));
-    c.open(null);
-    c.toast(`${count(d)} ${LABEL[d].toLowerCase()} units selected — now tap where to send them`, 'info');
-  };
+  const have = { money: n.money, mat: n.res.materials, uranium: n.res.uranium };
+  const hurt = units.filter((u) => u.hp < 50).length;
+  const dry = units.filter((u) => u.ammo < 0.15).length;
   return (
-    <Sheet title="⚔️ Army" onClose={close} tall>
+    <Sheet title="⚔️ Army" onClose={() => c.open(null)} tall>
       <div class="grid3">
         {(['land', 'air', 'sea'] as Domain[]).map((d) => (
-          <button class="stat" style={{ textAlign: 'left' }} onClick={() => selectAll(d)}>
-            <div class="l">{ICON[d]} {LABEL[d]}</div>
+          <button class="stat" style={{ textAlign: 'left' }} onClick={() => { c.panel = null; c.selectAll(d); }}>
+            <div class="l">{LABEL[d]}</div>
             <div class="v">{count(d)}</div>
-            <div class="tiny muted">tap to select all</div>
+            <div class="tiny muted">tap to select</div>
           </button>
         ))}
       </div>
-      <div class="spread small" style={{ marginTop: '8px' }}>
-        <span>👥 Recruits available: <b>{fmt.num(n.manpower)}k</b></span>
-        <span class={n.readiness < 0.95 ? 'bad' : 'muted'}>{n.readiness < 0.95 ? '⚠️ troops underpaid' : 'troops fully paid'}</span>
+      <div class="row wrap small" style={{ marginTop: '8px' }}>
+        <span>Upkeep: <b>{fmt.money(n.upkeep * 30)}</b>/month</span>
+        {hurt > 0 && <span class="warn">❤️ {hurt} badly hurt</span>}
+        {dry > 0 && <span class="bad">💥 {dry} low on ammo</span>}
       </div>
-      {n.readiness < 0.95 && <Help>Your military budget doesn't cover your army's pay, so units are weaker. Raise military spending in 🏛 Country (or let the advisor do it).</Help>}
+      {dry > 0 && <Help>Units refill ammo from your stockpile when they are in or next to your land. Build Factories to make more ammo, or buy it in 🏛 Country.</Help>}
 
       {n.queue.length > 0 && (
         <>
-          <div class="section">🏭 Being built</div>
+          <div class="section">🏭 Training ({n.queue.length})</div>
           <div class="list">
             {n.queue.map((q) => {
-              const name = q.type === 'nuke' ? 'Nuclear warhead' : q.type === 'depot' ? 'Supply depot' : q.type === 'fort' ? 'Fortifications' : q.type === 'infra' ? 'Infrastructure' : UNITS[q.type as UnitType].name;
+              const pos = queuePosition(g, n, q);
               return (
                 <div class="item">
+                  {q.type === 'nuke' ? <span style={{ fontSize: '22px' }}>☢️</span> : <UnitIcon type={q.type} color={n.color} size={26} />}
                   <div class="grow">
-                    <div class="small">{name} <span class="tiny muted">· {g.locName(q.at)}</span></div>
-                    <Bar v={q.progress / q.cost} />
-                    <div class="tiny muted">{q.progress >= q.cost - 1e-6 ? `ready in ${q.days} days` : q.days > 0 ? `at least ${q.days} more days` : 'waiting for money (raise military spending)'}</div>
+                    <div class="small">{q.type === 'nuke' ? 'Nuclear warhead' : UNITS[q.type].name} <span class="tiny muted">· {g.w.provs[q.at].name}</span></div>
+                    <Bar v={pos ? 0 : 1 - q.days / q.total} color="var(--good)" />
+                    <div class="tiny muted">{pos ? `waiting (#${pos} in line — upgrade the building to train more at once)` : `${q.days} days left`}</div>
                   </div>
-                  <button class="btn sm" aria-label="Cancel" onClick={() => { n.queue = n.queue.filter((x) => x !== q); n.treasury += q.progress * 0.5; c.emit(); }}>✕</button>
+                  <button class="btn sm" aria-label="Cancel" onClick={() => { cancelRecruit(g, me, q.id); c.emit(); }}>✕</button>
                 </div>
               );
             })}
@@ -79,45 +56,39 @@ export function ArmyPanel() {
         </>
       )}
 
-      <div class="section">➕ Recruit</div>
-      <Help>New units appear at your capital (ships at your biggest port) and are paid from your military budget.</Help>
-      {(['land', 'air', 'sea'] as Domain[]).map((d) => {
-        const list = BUILDABLE[d].filter((t) => !(t === 'battleship' && g.hasTech(n.idx, 'carriers')) && g.hasTech(n.idx, UNITS[t].tech));
-        if (!list.length) return null;
-        return (
-          <>
-            <div class="small muted" style={{ margin: '8px 0 4px' }}>{ICON[d]} {LABEL[d]}</div>
-            <div class="list">
-              {list.map((t) => {
-                const err = canBuild(g, n.idx, t);
-                return (
-                  <Action icon={ICON[d]} title={UNITS[t].name} desc={<>{ROLE[t]} <span class="muted">· {fmt.money(unitCost(g, n, t))} · {UNITS[t].days} days</span>{err && <span class="warn"> · {err}</span>}</>}>
-                    <button class="btn sm primary" disabled={!!err} onClick={() => { const e = enqueue(g, n.idx, t); c.toast(e ?? `${UNITS[t].name} ordered`, e ? 'warn' : 'good'); }}>
-                      Build
-                    </button>
-                  </Action>
-                );
-              })}
+      <div class="section">➕ Train new units</div>
+      <Help>Troops train at a 🪖 Barracks, planes at an ✈️ Airbase, ships at a ⚓ Port. New units appear there. Build more of these in 🔨 Build.</Help>
+      <div class="list">
+        {UNIT_TYPES.filter((t) => unitAvailable(g, t)).map((t: UnitType) => {
+          const d = UNITS[t];
+          const err = canRecruit(g, me, t);
+          const sites = trainingSites(g, me, t).length;
+          const rc = recruitCost(t);
+          return (
+            <div class="item">
+              <UnitIcon type={t} color={n.color} size={34} />
+              <div class="grow">
+                <div class="spread"><b class="small">{d.name}</b><span class="tiny muted">⚔{d.atk || d.sea} 🛡{d.def || '–'}{d.aa ? ` ✈${d.aa}` : ''}</span></div>
+                <div class="tiny muted">{d.role}</div>
+                <Cost money={rc.money} mat={rc.mat} days={rc.days} have={have} />
+                {!sites && <div class="tiny warn">Needs a {d.needs === 'barracks' ? '🪖 Barracks' : d.needs === 'airbase' ? '✈️ Airbase' : '⚓ Port'}</div>}
+              </div>
+              <button class="btn sm primary" disabled={!!err} onClick={() => { const e = recruit(g, me, t); c.toast(e ?? `${d.name} ordered`, e ? 'warn' : 'good'); }}>Train</button>
             </div>
-          </>
-        );
-      })}
+          );
+        })}
+      </div>
 
-      {g.s.settings.nukes && (n.nukes > 0 || g.mod(n.idx, 'nukes') > 0) && (
+      {g.s.settings.nukes && unitAvailable(g, 'nuke') && (
         <>
           <div class="section">☢️ Nuclear weapons</div>
           <div class="card col">
-            <div class="spread">
-              <span>Warheads: <b>{n.nukes}</b></span>
-              <span class={n.nukesArmed ? 'bad' : 'good'}>{n.nukesArmed ? 'ARMED' : 'Safe'}</span>
+            <div class="spread"><span>Warheads ready: <b>{n.nukes}</b></span><span class="tiny muted">uranium: {Math.floor(n.res.uranium)}</span></div>
+            <div class="tiny muted">Build warheads at a ☢️ Nuclear Facility (needs {recruitCost('nuke').uranium} uranium each). A strike wipes out armies and cities in one region — and the whole world will turn against you.</div>
+            <div class="row">
+              <button class="btn sm" disabled={!!canRecruit(g, me, 'nuke')} onClick={() => { const e = recruit(g, me, 'nuke'); c.toast(e ?? 'Warhead production started', e ? 'warn' : 'good'); }}>Build warhead</button>
+              <button class="btn sm danger" disabled={n.nukes <= 0} onClick={() => c.startNuke()}>☢️ Launch…</button>
             </div>
-            <div class="tiny muted">Arming warns the whole world and raises tension (DEFCON). Once armed, long-press an enemy province to strike. A nuclear strike destroys a province, crashes world markets and may bring retaliation.</div>
-            <button class={'btn sm ' + (n.nukesArmed ? '' : 'danger')} disabled={!n.nukes && !n.nukesArmed} onClick={() => { const e = setArmed(g, n.idx, !n.nukesArmed); if (e) c.toast(e, 'warn'); c.emit(); }}>
-              {n.nukesArmed ? 'Stand down (disarm)' : 'Arm nuclear weapons'}
-            </button>
-            <button class="btn sm" disabled={!!canBuild(g, n.idx, 'nuke')} onClick={() => { const e = enqueue(g, n.idx, 'nuke'); c.toast(e ?? 'Warhead production started', e ? 'warn' : 'good'); }}>
-              Build a warhead ({fmt.money(unitCost(g, n, 'nuke'))}, needs {NUKE_URANIUM} uranium)
-            </button>
           </div>
         </>
       )}

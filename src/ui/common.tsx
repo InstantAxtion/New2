@@ -1,5 +1,8 @@
 import type { ComponentChildren } from 'preact';
+import { useEffect, useRef } from 'preact/hooks';
+import { drawIcon } from '../render/renderer';
 import type { Game } from '../sim/ctx';
+import type { UnitType } from '../sim/types';
 
 export const fmt = {
   money(v: number) {
@@ -142,4 +145,54 @@ export function Likely({ ok }: { ok: boolean }) {
 
 export function Help({ children }: { children: ComponentChildren }) {
   return <div class="help">💡 {children}</div>;
+}
+
+/** A unit counter like the ones on the map. */
+export function UnitIcon({ type, color = '#3b82f6', size = 30 }: { type: UnitType; color?: string; size?: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = cv.height = size * dpr;
+    const x = cv.getContext('2d')!;
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    x.clearRect(0, 0, size, size);
+    x.fillStyle = color;
+    x.beginPath();
+    x.arc(size / 2, size / 2, size / 2 - 1.5, 0, Math.PI * 2);
+    x.fill();
+    x.strokeStyle = 'rgba(0,0,0,0.6)';
+    x.lineWidth = 1.5;
+    x.stroke();
+    x.save();
+    x.translate(size / 2, size / 2);
+    x.scale(size / 32, size / 32);
+    x.fillStyle = '#fff';
+    drawIcon(x, type, 0, 0);
+    x.restore();
+  }, [type, color, size]);
+  return <canvas ref={ref} style={{ width: size + 'px', height: size + 'px', flex: 'none' }} />;
+}
+
+/** "$5B · ⛏ 15 · 20 days" with the parts you can't afford in red. */
+export function Cost({ money, mat = 0, uranium = 0, days, have }: { money: number; mat?: number; uranium?: number; days?: number; have?: { money: number; mat: number; uranium: number } }) {
+  const lack = (need: number, got?: number) => (have && got !== undefined && got < need ? 'bad' : '');
+  return (
+    <span class="cost">
+      <span class={lack(money, have?.money)}>💰{fmt.money(money)}</span>
+      {mat > 0 && <span class={lack(mat, have?.mat)}>⛏{Math.round(mat)}</span>}
+      {uranium > 0 && <span class={lack(uranium, have?.uranium)}>☢{uranium}</span>}
+      {days !== undefined && <span class="muted">⏱{days}d</span>}
+    </span>
+  );
+}
+
+export function HpBar({ hp, ammo }: { hp: number; ammo?: number }) {
+  return (
+    <div class="col" style={{ gap: '2px', minWidth: '60px' }}>
+      <Bar v={hp / 100} color={hp > 60 ? 'var(--good)' : hp > 30 ? 'var(--warn)' : 'var(--bad)'} h={5} />
+      {ammo !== undefined && <Bar v={ammo} color="#f59e0b" h={3} />}
+    </div>
+  );
 }

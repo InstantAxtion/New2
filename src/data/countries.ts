@@ -1,4 +1,4 @@
-import type { Gov, Personality, Resource } from '../sim/types';
+import type { Gov, Personality } from '../sim/types';
 
 /**
  * Curated country profiles (approximate, public figures ~2024 rounded for gameplay).
@@ -124,56 +124,5 @@ export const PROFILES: Record<string, CountryProfile> = {
   PSX: P(A, 'defensive', [10, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1]),
 };
 
-/** Approximate shares of world production (%), used to seed resource deposits. */
-export const PRODUCTION: Record<Resource, Record<string, number>> = {
-  oil: { USA: 13, SAU: 11, RUS: 11, CAN: 5.8, IRQ: 4.5, CHN: 4.3, ARE: 3.8, IRN: 3.9, BRA: 3.6, KWT: 2.8, KAZ: 2, NOR: 2, MEX: 2, NGA: 1.5, QAT: 1.5, DZA: 1.4, LBY: 1.3, AGO: 1.2, OMN: 1.1, VEN: 0.9, GBR: 0.8, COL: 0.8, AZE: 0.7, EGY: 0.6, IDN: 0.7, MYS: 0.6, ARG: 0.7, IND: 0.7, ECU: 0.5, GUY: 0.6, TKM: 0.3, SDN: 0.2, SSD: 0.2, GAB: 0.2, COG: 0.3, GNQ: 0.1, TCD: 0.1, SYR: 0.1, YEM: 0.1, BRN: 0.1, VNM: 0.2, THA: 0.2, AUS: 0.4, ROU: 0.1, DNK: 0.1, TTO: 0.1, PER: 0.1, UKR: 0.05, TUR: 0.1, PAK: 0.1, BHR: 0.2 },
-  gas: { USA: 25, RUS: 15, IRN: 6, CHN: 6, CAN: 4.5, QAT: 4.5, AUS: 3.8, NOR: 3, SAU: 3, DZA: 2.5, TKM: 2, MYS: 1.8, ARE: 1.4, EGY: 1.5, IDN: 1.4, UZB: 1.2, AZE: 1, NGA: 1.1, ARG: 1, OMN: 1, IND: 0.8, PAK: 0.8, THA: 0.8, MEX: 0.8, KAZ: 0.7, TTO: 0.7, NLD: 0.5, GBR: 0.8, BRA: 0.6, IRQ: 0.3, UKR: 0.5, KWT: 0.4, BGD: 0.8, MMR: 0.4, LBY: 0.3, PER: 0.3, VEN: 0.6, BOL: 0.4, ISR: 0.6, BHR: 0.4, BRN: 0.3 },
-  steel: { CHN: 50, IND: 7, JPN: 4.5, USA: 4.3, RUS: 4, KOR: 3.5, DEU: 2, TUR: 1.9, BRA: 3.6, IRN: 1.6, AUS: 3, VNM: 1, TWN: 1.1, ITA: 1.1, MEX: 0.9, UKR: 0.4, CAN: 0.8, FRA: 0.6, ESP: 0.6, POL: 0.4, ZAF: 0.9, SWE: 0.6, KAZ: 0.6, EGY: 0.5, SAU: 0.5, AUT: 0.4, BEL: 0.3, NLD: 0.3, GBR: 0.3, CZE: 0.2, SVK: 0.2, FIN: 0.2, ARG: 0.2, MYS: 0.3, IDN: 0.6, THA: 0.2, PAK: 0.2, CHL: 0.3, PER: 0.2, MRT: 0.2, GIN: 0.3, ARE: 0.2, QAT: 0.1, DZA: 0.2 },
-  rare: { CHN: 68, USA: 12, MMR: 10, AUS: 5, THA: 2, IND: 1, RUS: 1, VNM: 0.5, MDG: 0.5, BRA: 0.3, MYS: 0.2, LAO: 0.2, BDI: 0.1, ZAF: 0.1, KAZ: 0.1, GRL: 0.1 },
-  uranium: { KAZ: 43, CAN: 15, NAM: 11, AUS: 9, UZB: 7, RUS: 5, NER: 4, CHN: 3, IND: 1, ZAF: 0.5, UKR: 1, USA: 0.5, BRA: 0.1, CZE: 0.1, ROU: 0.1, MNG: 0.1, PAK: 0.1, IRN: 0.1 },
-  food: { CHN: 22, IND: 11, USA: 8, BRA: 6, IDN: 4, RUS: 3, NGA: 3, PAK: 2.5, TUR: 2, ARG: 2, FRA: 1.8, MEX: 2, JPN: 1.5, VNM: 1.5, BGD: 1.5, EGY: 1.3, THA: 1.3, UKR: 1.5, IRN: 1.2, CAN: 1.2, AUS: 1.2, DEU: 1.2, ESP: 1.1, ITA: 1.1, ETH: 1, PHL: 1, COL: 0.8, MYS: 0.7, KEN: 0.6, POL: 0.8, GBR: 0.6, KAZ: 0.5, MMR: 0.7, NLD: 0.6, NZL: 0.4, ROU: 0.4, MAR: 0.4, DZA: 0.4, PER: 0.4, KOR: 0.5, TZA: 0.6, UGA: 0.4, COD: 0.5, SDN: 0.4, ZAF: 0.5, GHA: 0.4, CIV: 0.4, UZB: 0.4, SAU: 0.2, VEN: 0.3, CHL: 0.3, ECU: 0.2, PRY: 0.3, URY: 0.2, HUN: 0.3, BLR: 0.2, NPL: 0.3, LKA: 0.2, KHM: 0.2, AFG: 0.2, IRQ: 0.2, SYR: 0.1, MOZ: 0.2, MDG: 0.2, CMR: 0.3, AGO: 0.2, ZMB: 0.2, MLI: 0.2, NER: 0.2, BFA: 0.2, SEN: 0.1, GRC: 0.3, PRT: 0.2, DNK: 0.3, IRL: 0.3, SWE: 0.2, FIN: 0.1, AUT: 0.2, BEL: 0.2, CZE: 0.2, BGR: 0.2, SRB: 0.2, CUB: 0.1, GTM: 0.2, BOL: 0.1 },
-  electronics: { CHN: 35, TWN: 12, KOR: 10, JPN: 8, USA: 8, DEU: 3, VNM: 3, MYS: 2.5, SGP: 2, MEX: 2, NLD: 1.5, THA: 1.5, IND: 1.5, PHL: 1, CZE: 0.8, HUN: 0.6, POL: 0.7, ISR: 0.6, IRL: 0.6, FRA: 0.8, GBR: 0.8, ITA: 0.5, CAN: 0.4, SWE: 0.5, FIN: 0.4, BRA: 0.4, RUS: 0.3, TUR: 0.3, IDN: 0.3, SVK: 0.2, AUT: 0.2, BEL: 0.2, CHE: 0.4, DNK: 0.2, ARE: 0.1, SAU: 0.1, ROU: 0.2, ESP: 0.3 },
-};
-
-/** Base prices in $B per resource unit (world production is normalised to 1000 units/day). */
-export const BASE_PRICE: Record<Resource, number> = {
-  oil: 0.0055,
-  gas: 0.003,
-  steel: 0.004,
-  rare: 0.0006,
-  uranium: 0.0004,
-  food: 0.02,
-  electronics: 0.008,
-};
-
-export const RES_NAMES: Record<Resource, string> = {
-  oil: 'Oil',
-  gas: 'Natural Gas',
-  steel: 'Steel',
-  rare: 'Rare Earths',
-  uranium: 'Uranium',
-  food: 'Food',
-  electronics: 'Electronics',
-};
-
-export const RES_ICONS: Record<Resource, string> = {
-  oil: '🛢️',
-  gas: '🔥',
-  steel: '⚙️',
-  rare: '💎',
-  uranium: '☢️',
-  food: '🌾',
-  electronics: '💾',
-};
-
-/** Countries treated as having nuclear power plants (uranium demand). */
-export const NUCLEAR_POWER = ['USA', 'FRA', 'CHN', 'RUS', 'KOR', 'JPN', 'CAN', 'UKR', 'GBR', 'ESP', 'SWE', 'IND', 'BEL', 'CZE', 'FIN', 'CHE', 'HUN', 'SVK', 'PAK', 'ARG', 'BRA', 'ZAF', 'MEX', 'ROU', 'BGR', 'SVN', 'ARM', 'IRN', 'ARE', 'TWN', 'BLR', 'NLD', 'TUR', 'EGY', 'BGD'];
-
-/** Real-world leaders' titles for flavour (no names, to stay timeless). */
-export const LEADER_TITLE: Record<string, string> = {
-  democracy: 'President',
-  authoritarian: 'Supreme Leader',
-  monarchy: 'King',
-  communist: 'General Secretary',
-  theocracy: 'Supreme Cleric',
-};
+/** Uranium mining, approximate share of world output (%). */
+export const URANIUM: Record<string, number> = { KAZ: 43, CAN: 15, NAM: 11, AUS: 9, UZB: 7, RUS: 5, NER: 4, CHN: 3, IND: 1, ZAF: 0.5, UKR: 1, USA: 0.5, BRA: 0.1, CZE: 0.1, ROU: 0.1, MNG: 0.1, PAK: 0.1, IRN: 0.1 };

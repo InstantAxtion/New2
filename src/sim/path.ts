@@ -69,13 +69,19 @@ export function chokepointController(g: Game, k: number): number[] {
   return [...new Set(cc.list[k].provinces.map((p) => g.s.provinces[p].ctrl))];
 }
 
-/** Can units of nation n enter province p? */
+/** Can units of nation n enter province p? (own, allied or enemy land) */
 export function canEnter(g: Game, n: number, p: number) {
   const c = g.s.provinces[p].ctrl;
   if (c === n) return true;
   const cn = g.s.nations[c];
   if (cn && !cn.active) return false;
-  return g.friendly(n, c) || g.atWar(n, c);
+  return g.allied(n, c) || g.atWar(n, c);
+}
+
+/** Troops may set sail from a region with a port held by them or an ally. */
+export function canEmbark(g: Game, n: number, p: number) {
+  const c = g.s.provinces[p].ctrl;
+  return (c === n || g.allied(n, c)) && g.level(p, 'port') > 0;
 }
 
 // ---------------------------------------------------------------- binary heap
@@ -129,8 +135,9 @@ export function landEdgeCost(g: Game, a: number, b: number) {
 }
 
 export interface PathOpts {
-  sea?: boolean; // land unit may embark (amphibious)
+  sea?: boolean; // land unit may sail from ports
   avoidEnemy?: boolean; // don't path through enemy-controlled provinces (except destination)
+  fromCell?: number; // start at sea (troops already sailing)
 }
 
 /** A* path for a land unit from province `from` to province `to`. Returns list of Locs (excluding start). */
@@ -141,7 +148,7 @@ export function landPath(g: Game, n: number, from: number, to: number, opts: Pat
   if (from === to) return [];
   let fails = landFail.get(g);
   if (!fails) landFail.set(g, (fails = new Map()));
-  const key = g.rt.dipVersion + ':' + n + ':' + from + ':' + to + ':' + (opts.sea ? 1 : 0) + (opts.avoidEnemy ? 1 : 0);
+  const key = g.rt.dipVersion + ':' + n + ':' + from + ':' + to + ':' + (opts.sea ? 1 : 0) + (opts.avoidEnemy ? 1 : 0) + ':' + (opts.fromCell ?? '');
   if ((fails.get(key) ?? -1) > g.s.hour) return null;
   const res = landPathRaw(g, n, from, to, opts);
   if (!res) {
@@ -161,8 +168,9 @@ function landPathRaw(g: Game, n: number, from: number, to: number, opts: PathOpt
   const dist = new Map<number, number>();
   const prev = new Map<number, number>();
   const heap = new Heap();
-  dist.set(from, 0);
-  heap.push(h(from), from);
+  const start = opts.fromCell !== undefined ? P + opts.fromCell : from;
+  dist.set(start, 0);
+  heap.push(h(start), start);
   let expanded = 0;
   while (heap.size) {
     const cur = heap.pop();
@@ -183,11 +191,7 @@ function landPathRaw(g: Game, n: number, from: number, to: number, opts: PathOpt
         if (opts.avoidEnemy && nb !== to && g.atWar(n, g.s.provinces[nb].ctrl)) continue;
         relax(nb, landEdgeCost(g, cur, nb));
       }
-      if (opts.sea && cur !== to) {
-        // embark only from friendly-controlled coast
-        const c = g.s.provinces[cur].ctrl;
-        if (c === n || g.friendly(n, c)) for (const cell of g.w.provs[cur].sea) relax(P + cell, 150);
-      }
+      if (opts.sea && cur !== to && canEmbark(g, n, cur)) for (const cell of g.w.provs[cur].sea) relax(P + cell, 150);
     } else {
       const cell = cur - P;
       if (!seaPassable(g, n, cell)) continue;
@@ -198,7 +202,7 @@ function landPathRaw(g: Game, n: number, from: number, to: number, opts: PathOpt
   }
   if (!prev.has(to)) return null;
   const out: Loc[] = [];
-  for (let x = to; x !== from; x = prev.get(x)!) out.push(x < P ? x : -(x - P + 1));
+  for (let x = to; x !== start; x = prev.get(x)!) out.push(x < P ? x : -(x - P + 1));
   return out.reverse();
 }
 
@@ -254,37 +258,13 @@ function seaPathRaw(g: Game, n: number, fromCell: number, to: Loc): Loc[] | null
 /** Compute a path for a unit to a destination, honouring its domain. */
 export function pathFor(g: Game, u: Unit, to: Loc): Loc[] | null {
   const def = UNITS[u.type];
-  if (def.domain === 'air') {
-    if (to < 0) return null;
-    return [to];
-  }
+  if (def.domain === 'air') return to < 0 ? null : [to];
   if (def.domain === 'sea') {
     const from = u.loc < 0 ? -u.loc - 1 : g.w.provs[u.loc].sea[0];
     if (from === undefined) return null;
     return seaPath(g, u.owner, from, to);
   }
   if (to < 0) return null;
-  const start = u.loc >= 0 ? u.loc : nearestCoast(g, u);
-  if (start < 0) return null;
-  const hasAmphib = g.s.units.some((x) => x.owner === u.owner && x.type === 'amphib');
-  let path = landPath(g, u.owner, start, to, {});
-  if (!path && hasAmphib) path = landPath(g, u.owner, start, to, { sea: true });
-  if (path && u.loc < 0) path.unshift(start);
-  return path;
-}
-
-function nearestCoast(g: Game, u: Unit): number {
-  const cell = g.w.cells[-u.loc - 1];
-  return cell.coast.find((p) => canEnter(g, u.owner, p)) ?? -1;
-}
-
-/** Capacity check for amphibious moves: land units at sea at once <= amphib groups * 3. */
-export function amphibCapacity(g: Game, n: number) {
-  let cap = 0, used = 0;
-  for (const u of g.s.units) {
-    if (u.owner !== n) continue;
-    if (u.type === 'amphib') cap += UNITS.amphib.capacity ?? 3;
-    if (UNITS[u.type].domain === 'land' && (u.loc < 0 || u.path.some((l) => l < 0))) used++;
-  }
-  return { cap, used };
+  if (u.loc < 0) return landPath(g, u.owner, -1, to, { sea: true, fromCell: -u.loc - 1 });
+  return landPath(g, u.owner, u.loc, to, {}) ?? landPath(g, u.owner, u.loc, to, { sea: true });
 }

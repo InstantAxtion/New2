@@ -1,73 +1,90 @@
-import type { Domain, ResMap, UnitType } from '../sim/types';
+import type { BuildingType, Domain, Terrain, UnitType } from '../sim/types';
 
 export interface UnitDef {
   type: UnitType;
   name: string;
-  icon: string;
+  short: string;
   domain: Domain;
-  soft: number; // attack vs soft targets (land) / ground damage (air)
-  hard: number; // attack vs armoured targets
-  def: number; // defence
-  hardness: number; // 0..1 share of the unit that is armoured
-  air: number; // air-to-air / anti-air power
-  naval: number; // naval attack
-  speed: number; // km per hour (land/sea), air: mission range factor
-  range: number; // km (air mission radius, missile strike radius)
+  role: string; // one-line explanation for the UI
+  atk: number; // attack vs land targets
+  def: number; // defence when holding ground
+  aa: number; // anti-air power
+  sea: number; // naval combat power
+  speed: number; // km/h (air: used for flight animation)
+  range: number; // km (air units: mission radius)
   cost: number; // $B
-  days: number; // build time
-  manpower: number; // thousands
+  mat: number; // materials to build
+  days: number; // training time
   upkeep: number; // $B per year
-  res: Partial<ResMap>; // resources consumed to build
-  oil: number; // daily oil use when active
-  tech: string | null; // required tech
-  capacity?: number; // amphib: land units carried
+  ammo: number; // ammo used to refill a full load
+  burn: number; // share of the load used per battle hour
+  needs: BuildingType; // where it is trained
+  year: number; // first year it is available
 }
 
-const U = (d: Omit<UnitDef, 'icon'> & { icon?: string }): UnitDef => ({ icon: '', ...d });
+const U = (d: UnitDef) => d;
 
 export const UNITS: Record<UnitType, UnitDef> = {
-  infantry: U({ type: 'infantry', name: 'Infantry Division', icon: 'INF', domain: 'land', soft: 10, hard: 3, def: 14, hardness: 0.05, air: 1, naval: 0, speed: 4, range: 0, cost: 0.6, days: 30, manpower: 15, upkeep: 0.25, res: { steel: 3, food: 4 }, oil: 0.02, tech: null }),
-  armor: U({ type: 'armor', name: 'Armored Division', icon: 'ARM', domain: 'land', soft: 16, hard: 16, def: 9, hardness: 0.8, air: 1, naval: 0, speed: 8, range: 0, cost: 2.2, days: 60, manpower: 10, upkeep: 0.6, res: { steel: 14, oil: 4, electronics: 2 }, oil: 0.15, tech: 'tanks' }),
-  artillery: U({ type: 'artillery', name: 'Artillery Brigade', icon: 'ART', domain: 'land', soft: 20, hard: 7, def: 5, hardness: 0.2, air: 1, naval: 0, speed: 4, range: 0, cost: 0.9, days: 40, manpower: 6, upkeep: 0.3, res: { steel: 8 }, oil: 0.05, tech: null }),
-  specops: U({ type: 'specops', name: 'Special Forces', icon: 'SOF', domain: 'land', soft: 13, hard: 6, def: 10, hardness: 0.05, air: 1, naval: 0, speed: 6, range: 0, cost: 1.2, days: 45, manpower: 4, upkeep: 0.4, res: { steel: 2, electronics: 2 }, oil: 0.03, tech: null }),
-  airdef: U({ type: 'airdef', name: 'Air Defense Battery', icon: 'SAM', domain: 'land', soft: 1, hard: 1, def: 4, hardness: 0.3, air: 18, naval: 0, speed: 4, range: 300, cost: 1.4, days: 40, manpower: 3, upkeep: 0.35, res: { steel: 4, electronics: 5, rare: 1 }, oil: 0.03, tech: 'radar' }),
-  missile: U({ type: 'missile', name: 'Missile Battery', icon: 'MSL', domain: 'land', soft: 30, hard: 20, def: 3, hardness: 0.3, air: 0, naval: 8, speed: 4, range: 1500, cost: 2.5, days: 60, manpower: 2, upkeep: 0.5, res: { steel: 5, electronics: 6, rare: 2 }, oil: 0.03, tech: 'rocketry' }),
-  fighter: U({ type: 'fighter', name: 'Fighter Wing', icon: 'FTR', domain: 'air', soft: 4, hard: 2, def: 10, hardness: 0, air: 20, naval: 2, speed: 700, range: 1200, cost: 2.5, days: 70, manpower: 1, upkeep: 0.5, res: { steel: 3, electronics: 6, rare: 1, oil: 3 }, oil: 0.2, tech: 'aviation' }),
-  bomber: U({ type: 'bomber', name: 'Bomber Wing', icon: 'BMB', domain: 'air', soft: 22, hard: 12, def: 8, hardness: 0, air: 3, naval: 8, speed: 600, range: 3500, cost: 3.5, days: 90, manpower: 1, upkeep: 0.7, res: { steel: 5, electronics: 6, rare: 1, oil: 4 }, oil: 0.3, tech: 'strategic_bombing' }),
-  drone: U({ type: 'drone', name: 'Drone Squadron', icon: 'UAV', domain: 'air', soft: 9, hard: 7, def: 3, hardness: 0, air: 1, naval: 3, speed: 300, range: 1800, cost: 0.5, days: 25, manpower: 0.3, upkeep: 0.1, res: { electronics: 4, rare: 1 }, oil: 0.03, tech: 'uav' }),
-  transport: U({ type: 'transport', name: 'Airlift Wing', icon: 'TRN', domain: 'air', soft: 0, hard: 0, def: 4, hardness: 0, air: 0, naval: 0, speed: 600, range: 3000, cost: 1.2, days: 45, manpower: 1, upkeep: 0.25, res: { steel: 3, electronics: 2 }, oil: 0.2, tech: 'aviation' }),
-  carrier: U({ type: 'carrier', name: 'Carrier Group', icon: 'CV', domain: 'sea', soft: 10, hard: 6, def: 35, hardness: 1, air: 22, naval: 22, speed: 50, range: 800, cost: 13, days: 300, manpower: 6, upkeep: 2.5, res: { steel: 60, electronics: 20, rare: 3 }, oil: 0.4, tech: 'carriers' }),
-  battleship: U({ type: 'battleship', name: 'Battleship', icon: 'BB', domain: 'sea', soft: 18, hard: 12, def: 40, hardness: 1, air: 6, naval: 30, speed: 40, range: 150, cost: 6, days: 240, manpower: 2, upkeep: 1.2, res: { steel: 50, oil: 5 }, oil: 0.3, tech: 'dreadnought' }),
-  destroyer: U({ type: 'destroyer', name: 'Destroyer Squadron', icon: 'DD', domain: 'sea', soft: 6, hard: 4, def: 18, hardness: 1, air: 10, naval: 15, speed: 55, range: 300, cost: 2.2, days: 120, manpower: 1, upkeep: 0.45, res: { steel: 15, electronics: 4 }, oil: 0.15, tech: null }),
-  submarine: U({ type: 'submarine', name: 'Submarine Flotilla', icon: 'SS', domain: 'sea', soft: 0, hard: 0, def: 10, hardness: 1, air: 0, naval: 20, speed: 40, range: 0, cost: 2.8, days: 150, manpower: 1, upkeep: 0.5, res: { steel: 12, electronics: 4 }, oil: 0.08, tech: 'submarines' }),
-  amphib: U({ type: 'amphib', name: 'Amphibious Group', icon: 'LHD', domain: 'sea', soft: 2, hard: 1, def: 12, hardness: 1, air: 2, naval: 3, speed: 45, range: 0, cost: 1.8, days: 120, manpower: 1, upkeep: 0.35, res: { steel: 10 }, oil: 0.1, tech: null, capacity: 3 }),
+  infantry: U({ type: 'infantry', name: 'Infantry', short: 'INF', domain: 'land', role: 'Cheap and tough. Best at holding ground.', atk: 7, def: 10, aa: 1, sea: 0, speed: 5, range: 0, cost: 2, mat: 8, days: 12, upkeep: 0.6, ammo: 2, burn: 0.02, needs: 'barracks', year: 0 }),
+  tank: U({ type: 'tank', name: 'Tanks', short: 'TNK', domain: 'land', role: 'Fast and hits hard. Weak in mountains, jungle and marsh.', atk: 15, def: 8, aa: 1, sea: 0, speed: 9, range: 0, cost: 6, mat: 25, days: 25, upkeep: 1.8, ammo: 4, burn: 0.03, needs: 'barracks', year: 1917 }),
+  artillery: U({ type: 'artillery', name: 'Artillery', short: 'ART', domain: 'land', role: 'Big guns. Also shells battles in neighbouring regions.', atk: 12, def: 5, aa: 0, sea: 0, speed: 4, range: 0, cost: 3, mat: 12, days: 15, upkeep: 0.9, ammo: 5, burn: 0.04, needs: 'barracks', year: 0 }),
+  antiair: U({ type: 'antiair', name: 'Anti-Air', short: 'AA', domain: 'land', role: 'Shoots down enemy planes over its region and next door.', atk: 2, def: 5, aa: 14, sea: 0, speed: 5, range: 0, cost: 3, mat: 12, days: 15, upkeep: 0.9, ammo: 3, burn: 0.03, needs: 'barracks', year: 1925 }),
+  fighter: U({ type: 'fighter', name: 'Fighters', short: 'FTR', domain: 'air', role: 'Controls the sky over a region and helps battles there.', atk: 4, def: 0, aa: 14, sea: 2, speed: 700, range: 1400, cost: 7, mat: 20, days: 25, upkeep: 2, ammo: 3, burn: 0.03, needs: 'airbase', year: 1915 }),
+  bomber: U({ type: 'bomber', name: 'Bombers', short: 'BMB', domain: 'air', role: 'Bombs enemy troops and buildings far behind the front.', atk: 16, def: 0, aa: 2, sea: 6, speed: 600, range: 3000, cost: 9, mat: 25, days: 30, upkeep: 2.6, ammo: 6, burn: 0.05, needs: 'airbase', year: 1918 }),
+  warship: U({ type: 'warship', name: 'Warships', short: 'WAR', domain: 'sea', role: 'Fights other ships, shells coasts and escorts troops at sea.', atk: 6, def: 0, aa: 6, sea: 12, speed: 50, range: 0, cost: 8, mat: 35, days: 40, upkeep: 2.4, ammo: 6, burn: 0.03, needs: 'port', year: 0 }),
+  submarine: U({ type: 'submarine', name: 'Submarines', short: 'SUB', domain: 'sea', role: 'Hidden hunter. Sinks ships and blockades enemy ports.', atk: 0, def: 0, aa: 0, sea: 15, speed: 40, range: 0, cost: 7, mat: 30, days: 40, upkeep: 1.8, ammo: 4, burn: 0.03, needs: 'port', year: 1905 }),
+  carrier: U({ type: 'carrier', name: 'Aircraft Carrier', short: 'CV', domain: 'sea', role: 'A floating airbase: strikes coasts and guards the fleet.', atk: 10, def: 0, aa: 16, sea: 10, speed: 45, range: 0, cost: 30, mat: 90, days: 90, upkeep: 9, ammo: 8, burn: 0.03, needs: 'port', year: 1922 }),
 };
 
 export const UNIT_TYPES = Object.keys(UNITS) as UnitType[];
-export const LAND_TYPES = UNIT_TYPES.filter((t) => UNITS[t].domain === 'land');
-export const AIR_TYPES = UNIT_TYPES.filter((t) => UNITS[t].domain === 'air');
-export const SEA_TYPES = UNIT_TYPES.filter((t) => UNITS[t].domain === 'sea');
 
-export const NUKE_COST = 8; // $B per warhead
-export const NUKE_URANIUM = 25;
-export const NUKE_DAYS = 180;
+export const NUKE = { cost: 15, uranium: 20, days: 60, year: 1945 };
+
+export interface BuildingDef {
+  type: BuildingType;
+  name: string;
+  icon: string;
+  max: number; // max level
+  cost: number; // $B per level
+  mat: number; // materials per level
+  days: number;
+  short: string; // what it does, one line
+  year: number;
+}
+
+export const BUILDINGS: Record<BuildingType, BuildingDef> = {
+  mine: { type: 'mine', name: 'Mine', icon: '⛏️', max: 3, cost: 3, mat: 0, days: 15, short: '+3 materials a day per level (more in hills and mountains). Digs uranium where there is some.', year: 0 },
+  factory: { type: 'factory', name: 'Factory', icon: '🏭', max: 3, cost: 5, mat: 15, days: 20, short: 'Makes ammunition: +3 ammo a day per level. Also +10% income here.', year: 0 },
+  barracks: { type: 'barracks', name: 'Barracks', icon: '🪖', max: 3, cost: 3, mat: 10, days: 10, short: 'Trains infantry, tanks, artillery and anti-air. Each level trains one more unit at a time.', year: 0 },
+  airbase: { type: 'airbase', name: 'Airbase', icon: '✈️', max: 1, cost: 6, mat: 20, days: 20, short: 'Builds and houses planes. Planes can only reach targets within range of a base.', year: 1915 },
+  port: { type: 'port', name: 'Port', icon: '⚓', max: 1, cost: 6, mat: 20, days: 20, short: 'Builds ships, repairs them, and lets troops sail from here.', year: 0 },
+  fort: { type: 'fort', name: 'Fort', icon: '🏰', max: 3, cost: 3, mat: 15, days: 15, short: '+30% defence per level for your troops in this region.', year: 0 },
+  nuclear: { type: 'nuclear', name: 'Nuclear Facility', icon: '☢️', max: 1, cost: 25, mat: 60, days: 60, short: 'Builds nuclear warheads from uranium.', year: 1945 },
+};
+export const BUILDING_TYPES = Object.keys(BUILDINGS) as BuildingType[];
 
 export interface Terrainfx {
   name: string;
   move: number; // movement speed multiplier
   def: number; // defender bonus multiplier
-  armor: number; // armour attack multiplier
-  supply: number; // supply multiplier
-  attrition: number; // daily strength loss when out of supply multiplier
+  tank: number; // tank attack multiplier
+  mat: number; // natural materials multiplier
   color: string;
+  note: string;
 }
-export const TERRAIN: Record<string, Terrainfx> = {
-  plains: { name: 'Plains', move: 1, def: 1, armor: 1.1, supply: 1, attrition: 1, color: '#9cbf6b' },
-  forest: { name: 'Forest', move: 0.8, def: 1.2, armor: 0.8, supply: 0.9, attrition: 1.1, color: '#4f7d4a' },
-  hills: { name: 'Hills', move: 0.75, def: 1.3, armor: 0.8, supply: 0.85, attrition: 1.1, color: '#b49b6b' },
-  mountain: { name: 'Mountains', move: 0.5, def: 1.7, armor: 0.5, supply: 0.6, attrition: 1.5, color: '#8b7d6b' },
-  desert: { name: 'Desert', move: 0.85, def: 1.0, armor: 1.0, supply: 0.6, attrition: 1.6, color: '#e2c98a' },
-  jungle: { name: 'Jungle', move: 0.55, def: 1.4, armor: 0.5, supply: 0.6, attrition: 1.5, color: '#2f6b3b' },
-  marsh: { name: 'Marsh', move: 0.6, def: 1.3, armor: 0.6, supply: 0.75, attrition: 1.3, color: '#6b8f86' },
-  arctic: { name: 'Arctic', move: 0.6, def: 1.2, armor: 0.7, supply: 0.5, attrition: 2, color: '#dfe7ee' },
+export const TERRAIN: Record<Terrain, Terrainfx> = {
+  plains: { name: 'Plains', move: 1, def: 1, tank: 1.15, mat: 1, color: '#9cbf6b', note: 'Open ground: great for tanks.' },
+  forest: { name: 'Forest', move: 0.8, def: 1.2, tank: 0.8, mat: 1.1, color: '#4f7d4a', note: 'Forest: a bit easier to defend.' },
+  hills: { name: 'Hills', move: 0.75, def: 1.3, tank: 0.8, mat: 1.5, color: '#b49b6b', note: 'Hills: easier to defend, rich in materials.' },
+  mountain: { name: 'Mountains', move: 0.55, def: 1.6, tank: 0.5, mat: 1.8, color: '#8b7d6b', note: 'Mountains: very hard to attack, tanks struggle.' },
+  desert: { name: 'Desert', move: 0.85, def: 1, tank: 1.05, mat: 1.2, color: '#e2c98a', note: 'Desert: open ground, slow to cross.' },
+  jungle: { name: 'Jungle', move: 0.55, def: 1.4, tank: 0.5, mat: 0.8, color: '#2f6b3b', note: 'Jungle: slow and easy to defend.' },
+  marsh: { name: 'Marsh', move: 0.6, def: 1.3, tank: 0.6, mat: 0.6, color: '#6b8f86', note: 'Marsh: slow going, good for defenders.' },
+  arctic: { name: 'Arctic', move: 0.6, def: 1.2, tank: 0.7, mat: 0.7, color: '#dfe7ee', note: 'Arctic: freezing and slow.' },
 };
+
+export const RES_INFO = {
+  materials: { name: 'Materials', icon: '⛏️', desc: 'Dug up by every region (more with mines). Needed to build units and buildings.' },
+  ammo: { name: 'Ammo', icon: '💥', desc: 'Made by factories. Troops use it up in battle and fight badly without it.' },
+  uranium: { name: 'Uranium', icon: '☢️', desc: 'Found in a few regions; dig it with a mine. Needed for nuclear warheads.' },
+} as const;

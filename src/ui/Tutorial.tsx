@@ -1,39 +1,15 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 import { setPref } from '../platform/storage';
-import { drawIcon } from '../render/renderer';
+import { UnitIcon } from './common';
 import { useCtl } from './controller';
-
-/** Draws one map counter so the legend looks exactly like the map. */
-function Counter({ icon, ring, color = '#3f6fb5' }: { icon: Parameters<typeof drawIcon>[1]; ring: string; color?: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const c = ref.current;
-    if (!c) return;
-    c.width = 68;
-    c.height = 52;
-    const x = c.getContext('2d')!;
-    x.scale(2, 2);
-    x.fillStyle = color;
-    x.strokeStyle = ring;
-    x.lineWidth = 2.5;
-    x.beginPath();
-    x.roundRect(2, 2, 30, 20, 5);
-    x.fill();
-    x.stroke();
-    x.fillStyle = '#fff';
-    x.strokeStyle = '#fff';
-    x.lineWidth = 1.6;
-    drawIcon(x, icon, 17, 12);
-  }, []);
-  return <canvas ref={ref} />;
-}
 
 export function Tutorial({ onDone }: { onDone: () => void }) {
   const c = useCtl();
   const g = c.game!;
+  const col = g.player.color;
   const [step, setStep] = useState(0);
   const finish = () => {
-    setPref('tutorialDone', true);
+    setPref('tutorial2Done', true);
     onDone();
   };
   const steps = [
@@ -41,47 +17,44 @@ export function Tutorial({ onDone }: { onDone: () => void }) {
       title: `Welcome, leader of ${g.player.name}!`,
       body: (
         <>
-          <p>Your country has a <b class="gold">gold border</b> on the map. Drag to move around, pinch to zoom.</p>
-          <p>Time is <b>paused</b>. When you're ready, press <b>▶</b> at the top right. ▶▶ and ▶▶▶ make time go faster.</p>
+          <p>Your country has a <b class="gold">gold border</b>. Drag to look around, pinch to zoom.</p>
+          <p>The darker, striped areas are covered by <b>fog of war</b>: you can't see enemy troops there until your own units get close.</p>
+          <p>Time is <b>paused</b>. Press <b>▶</b> (top right) to start. ▶▶ and ▶▶▶ go faster.</p>
         </>
       ),
     },
     {
-      title: 'Your forces',
+      title: 'Your army',
       body: (
         <>
-          <p>Units appear as counters. <b class="gold">Gold outline = yours</b>, <b class="bad">red outline = enemy</b>. The bar underneath shows their health.</p>
+          <p>Each round counter is an army in a region. The number shows how many units are in it; the ring shows their health (green → red).</p>
           <div class="legend">
-            <Counter icon="soldier" ring="#ffd700" /> <span>Infantry — holds ground</span>
-            <Counter icon="tank" ring="#ffd700" /> <span>Tanks — strong attacks</span>
-            <Counter icon="gun" ring="#ffd700" /> <span>Artillery — heavy damage</span>
-            <Counter icon="plane" ring="#ffd700" /> <span>Aircraft</span>
-            <Counter icon="ship" ring="#ffd700" /> <span>Ships</span>
-            <Counter icon="rocket" ring="#ffd700" /> <span>Missiles / air defense</span>
+            <UnitIcon type="infantry" color={col} /> <span>Infantry — cheap, holds ground</span>
+            <UnitIcon type="tank" color={col} /> <span>Tanks — fast, hit hard</span>
+            <UnitIcon type="artillery" color={col} /> <span>Artillery — also shells nearby battles</span>
+            <UnitIcon type="fighter" color={col} /> <span>Planes — strike regions in range</span>
+            <UnitIcon type="warship" color={col} /> <span>Ships — fight at sea, shell coasts</span>
           </div>
         </>
       ),
     },
     {
-      title: 'Giving orders',
+      title: 'Moving and attacking',
       body: (
         <>
-          <p>1. <b>Tap</b> one of your counters to select it.</p>
-          <p>2. <b>Tap a province</b> to send it there. Tapping enemy land <b>attacks</b> it.</p>
-          <p>3. <b>Long-press</b> anywhere for more: surround enemies, bomb, build defenses, declare war.</p>
-          <p>Troops far from home run out of <b>supply</b> and weaken — keep fronts close to your land.</p>
+          <p><b>Drag</b> one of your counters onto a region to send it there. Or <b>tap</b> it, then tap where it should go.</p>
+          <p>Moving into enemy land <b class="bad">attacks</b> it. A battle starts if they defend it. The bar over the battle shows who is winning — tap it for details.</p>
+          <p>Empty enemy regions are captured after a few hours. Troops use up <b>💥 ammo</b> in battle, so keep making it.</p>
         </>
       ),
     },
     {
-      title: 'Running your country',
+      title: 'Building',
       body: (
         <>
-          <p>🏛 <b>Country</b> — money, taxes, research and laws.</p>
-          <p>⚔️ <b>Army</b> — recruit new units and select whole armies.</p>
-          <p>🌍 <b>World</b> — friends, enemies, trade, alliances, wars and peace.</p>
-          <p>📰 <b>News</b> — what is happening around the world.</p>
-          <p>Your <b>advisors</b> already manage the budget and research. You can take over any time in 🏛 Country.</p>
+          <p>Tap <b>🔨 Build</b>, pick a building, then tap a <b class="good">green</b> region on the map:</p>
+          <p>⛏️ <b>Mine</b> → materials · 🏭 <b>Factory</b> → ammo · 🪖 <b>Barracks</b> → trains troops · ✈️ <b>Airbase</b> → planes · ⚓ <b>Port</b> → ships · 🏰 <b>Fort</b> → defence</p>
+          <p>Train new units in <b>⚔️ Army</b>. Your money comes from your regions — take more land, earn more.</p>
         </>
       ),
     },

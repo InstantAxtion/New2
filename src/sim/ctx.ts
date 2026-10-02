@@ -1,33 +1,33 @@
 // Game context: state + static world + runtime caches, and shared query helpers.
-import { TECH_BY_ID } from '../data/techs';
-import type { GameState, Loc, Nation, NewsKind, Toast, Unit } from './types';
+import type { Battle, GameState, Loc, Nation, NewsKind, Toast, Unit } from './types';
 import { DAY_HOURS } from './types';
 import type { WorldData } from './world';
 import { haversine } from './world';
 
-export type Mods = Record<string, number>;
+/** Visual events for the renderer (explosions, captures...). Not saved. */
+export interface Fx {
+  kind: 'hit' | 'boom' | 'capture' | 'nuke' | 'bomb' | 'sunk' | 'built';
+  loc: Loc;
+  owner: number;
+  hour: number;
+  value?: number;
+}
 
 export interface Runtime {
-  mods: Mods[];
-  modsKey: number[];
-  weather: Uint8Array; // per province weather code (see weather.ts)
-  supply: Float32Array; // per province supply for its controller
-  visible: Uint8Array; // player visibility per province
-  seaVisible: Uint8Array;
   byLoc: Map<Loc, Unit[]>;
   unitById: Map<number, Unit>;
   war: Set<number>; // a * N + b
-  allied: Set<number>; // a * N + b (bloc members / vassal ties)
-  friendly: Set<number>; // a * N + b: allied, co-belligerent or a has access through b
+  allied: Set<number>; // a * N + b (bloc members)
   power: Float64Array; // military power per nation (cached)
   powerHour: number;
-  genById: Map<number, import('./types').General>;
-  dipVersion: number; // bumps whenever wars/alliances/access change (invalidates path caches)
-  battles: Map<number, { att: number; def: number }>; // province -> nations fighting (for rendering)
+  dipVersion: number; // bumps whenever wars/alliances change (invalidates path caches)
+  battleAt: Map<number, Battle>;
+  visible: Uint8Array; // player visibility per province
+  seaVisible: Uint8Array;
+  fx: Fx[];
   dirtyOwners: boolean;
   dirtyUnits: boolean;
-  airSup: Map<number, Map<number, number>>; // province -> nation -> air power present
-  seaPower: Map<number, Map<number, number>>; // sea cell -> nation -> naval power
+  dirtyBuildings: boolean;
 }
 
 export class Game {
@@ -35,29 +35,24 @@ export class Game {
   constructor(public s: GameState, public w: WorldData) {
     const P = w.provs.length, C = w.cells.length;
     this.rt = {
-      mods: [],
-      modsKey: [],
-      weather: new Uint8Array(P),
-      supply: new Float32Array(P).fill(1),
-      visible: new Uint8Array(P).fill(1),
-      seaVisible: new Uint8Array(C).fill(1),
       byLoc: new Map(),
       unitById: new Map(),
       war: new Set(),
       allied: new Set(),
-      friendly: new Set(),
       power: new Float64Array(0),
       powerHour: -1,
-      genById: new Map(),
       dipVersion: 0,
-      battles: new Map(),
+      battleAt: new Map(),
+      visible: new Uint8Array(P).fill(1),
+      seaVisible: new Uint8Array(C).fill(1),
+      fx: [],
       dirtyOwners: true,
       dirtyUnits: true,
-      airSup: new Map(),
-      seaPower: new Map(),
+      dirtyBuildings: true,
     };
     this.rebuildDiplomacy();
     this.indexUnits();
+    this.indexBattles();
   }
 
   get N() {
@@ -76,9 +71,6 @@ export class Game {
   }
   get year() {
     return this.date().getUTCFullYear();
-  }
-  get month() {
-    return this.date().getUTCMonth();
   }
 
   // ------------------------------------------------------------ randomness
@@ -114,31 +106,17 @@ export class Game {
     for (const b of this.s.blocs)
       for (const a of b.members)
         for (const c of b.members) if (a !== c) this.rt.allied.add(a * N + c);
-    for (const [sub, over] of Object.entries(this.s.vassal)) {
-      const a = +sub;
-      this.rt.allied.add(a * N + over);
-      this.rt.allied.add(over * N + a);
-    }
-    const f = this.rt.friendly;
-    f.clear();
-    for (const k of this.rt.allied) f.add(k);
-    for (const k of this.s.access) {
-      const [b, a] = k.split('>').map(Number);
-      f.add(a * N + b);
-    }
+    // co-belligerents may move through each other's land
     for (const w of this.s.wars)
       for (const side of [w.att, w.def])
-        for (const a of side) for (const b of side) if (a !== b) f.add(a * N + b);
+        for (const a of side) for (const b of side) if (a !== b) this.rt.allied.add(a * N + b);
   }
   atWar(a: number, b: number) {
     return this.rt.war.has(a * this.N + b);
   }
+  /** Same nation, alliance member or fighting on the same side. */
   allied(a: number, b: number) {
     return a === b || this.rt.allied.has(a * this.N + b);
-  }
-  /** Friendly for movement/supply purposes: same nation, allied, or a co-belligerent. */
-  friendly(a: number, b: number) {
-    return a === b || this.rt.friendly.has(a * this.N + b);
   }
   enemies(a: number): number[] {
     const out: number[] = [];
@@ -167,31 +145,6 @@ export class Game {
   hasPair(list: string[], a: number, b: number) {
     return list.includes(this.pairKey(a, b));
   }
-  sanctioned(by: number, target: number) {
-    return this.s.sanctions.includes(by + '>' + target);
-  }
-
-  // ------------------------------------------------------------ tech modifiers
-  mods(n: number): Mods {
-    const nation = this.s.nations[n];
-    const key = nation.techs.length;
-    if (this.rt.modsKey[n] === key) return this.rt.mods[n];
-    const m: Mods = {};
-    for (const t of nation.techs) {
-      const def = TECH_BY_ID[t];
-      if (!def) continue;
-      for (const [k, v] of Object.entries(def.fx)) m[k] = (m[k] || 0) + v;
-    }
-    this.rt.mods[n] = m;
-    this.rt.modsKey[n] = key;
-    return m;
-  }
-  mod(n: number, key: string) {
-    return this.mods(n)[key] || 0;
-  }
-  hasTech(n: number, t: string | null) {
-    return !t || this.s.nations[n].techs.includes(t);
-  }
 
   // ------------------------------------------------------------ geography
   private distCache = new Map<number, number>();
@@ -201,7 +154,7 @@ export class Game {
     if (d === undefined) {
       const A = this.w.provs[a], B = this.w.provs[b];
       d = haversine(A.lon, A.lat, B.lon, B.lat);
-      if (this.distCache.size < 500000) this.distCache.set(key, d);
+      if (this.distCache.size < 300000) this.distCache.set(key, d);
     }
     return d;
   }
@@ -217,6 +170,9 @@ export class Game {
   locName(l: Loc) {
     return l >= 0 ? this.w.provs[l].name : this.w.cells[-l - 1].name;
   }
+  level(p: number, b: keyof GameState['provinces'][number]['b']) {
+    return this.s.provinces[p].b[b] ?? 0;
+  }
 
   // ------------------------------------------------------------ units
   indexUnits() {
@@ -225,12 +181,15 @@ export class Game {
     this.rt.unitById.clear();
     for (const u of this.s.units) {
       this.rt.unitById.set(u.id, u);
-      if (u.carriedBy >= 0) continue;
       let l = byLoc.get(u.loc);
       if (!l) byLoc.set(u.loc, (l = []));
       l.push(u);
     }
     this.rt.dirtyUnits = true;
+  }
+  indexBattles() {
+    this.rt.battleAt.clear();
+    for (const b of this.s.battles) this.rt.battleAt.set(b.loc, b);
   }
   /** Move a unit in the location index without rebuilding it. */
   relocate(u: Unit, to: Loc) {
@@ -246,14 +205,6 @@ export class Game {
     l.push(u);
     this.rt.dirtyUnits = true;
   }
-  general(id: number) {
-    if (id < 0) return null;
-    if (this.rt.genById.size !== this.s.generals.length) {
-      this.rt.genById.clear();
-      for (const gen of this.s.generals) this.rt.genById.set(gen.id, gen);
-    }
-    return this.rt.genById.get(id) ?? null;
-  }
   unitsAt(l: Loc): Unit[] {
     return this.rt.byLoc.get(l) || [];
   }
@@ -264,20 +215,23 @@ export class Game {
   // ------------------------------------------------------------ messages
   news(kind: NewsKind, text: string, nations: number[] = []) {
     this.s.news.push({ day: this.day, kind, text, nations });
-    if (this.s.news.length > 400) this.s.news.splice(0, this.s.news.length - 400);
+    if (this.s.news.length > 300) this.s.news.splice(0, this.s.news.length - 300);
   }
   toast(text: string, kind: Toast['kind'] = 'info', loc?: Loc) {
-    // collapse repeats of the same alert within a few days
     for (let i = this.s.toasts.length - 1; i >= Math.max(0, this.s.toasts.length - 8); i--) {
       const t = this.s.toasts[i];
-      if (t.text === text && this.day - t.day <= 7) return;
+      if (t.text === text && this.day - t.day <= 3) return;
     }
     this.s.toasts.push({ id: this.nextId(), day: this.day, text, kind, loc });
     if (this.s.toasts.length > 60) this.s.toasts.splice(0, this.s.toasts.length - 60);
   }
-  /** Toast only if it concerns the player (or always for global events). */
+  /** Toast only if it concerns the player. */
   notify(nations: number[], text: string, kind: Toast['kind'] = 'info', loc?: Loc) {
     if (nations.includes(this.s.player)) this.toast(text, kind, loc);
+  }
+  fx(kind: Fx['kind'], loc: Loc, owner: number, value?: number) {
+    if (this.rt.fx.length > 200) this.rt.fx.splice(0, 100);
+    this.rt.fx.push({ kind, loc, owner, hour: this.s.hour, value });
   }
   name(n: number) {
     return this.s.nations[n]?.name ?? '?';
