@@ -1,5 +1,5 @@
 // Projected map geometry built once from the topology.
-import { geoNaturalEarth1, type GeoProjection } from 'd3-geo';
+import { geoProjection, type GeoProjection } from 'd3-geo';
 import * as topojson from 'topojson-client';
 import type { WorldData } from '../sim/world';
 import { buildRaster, poles, type Raster } from './raster';
@@ -22,7 +22,14 @@ export interface MapGeo {
 
 export function buildGeo(w: WorldData): MapGeo {
   const width = 2000;
-  const proj = geoNaturalEarth1().scale(width / 5.47).translate([width / 2, 520]);
+  // Miller cylindrical: like the maps in most war games — northern countries (Europe,
+  // Russia, Canada) get room to breathe instead of being squeezed toward the top.
+  const miller = (lambda: number, phi: number): [number, number] => [lambda, 1.25 * Math.log(Math.tan(Math.PI / 4 + 0.4 * phi))];
+  miller.invert = (x: number, y: number): [number, number] => [x, 2.5 * Math.atan(Math.exp(0.8 * y)) - 0.625 * Math.PI];
+  const scale = width / (2 * Math.PI);
+  const top = miller(0, (84 * Math.PI) / 180)[1]; // northernmost land
+  const proj = geoProjection(miller).scale(scale).translate([width / 2, 24 + top * scale]);
+  const bottom = 24 + (top - miller(0, (-72 * Math.PI) / 180)[1]) * scale;
   const topo = w.raw.topo;
   const obj = Object.values(topo.objects)[0] as any;
   const P = w.provs.length;
@@ -136,7 +143,7 @@ export function buildGeo(w: WorldData): MapGeo {
       }
   }
   void topojson;
-  const geo: MapGeo = { proj, width, height: 1040, paths, rings, bbox, center, cellXY, arcs, arcProvs, grid, gridSize, raster: null as unknown as Raster };
+  const geo: MapGeo = { proj, width, height: Math.ceil(bottom), paths, rings, bbox, center, cellXY, arcs, arcProvs, grid, gridSize, raster: null as unknown as Raster };
   // anchor units and names at the point deepest inside each region
   geo.raster = buildRaster(geo);
   const pl = poles(geo.raster, geo.raster.id, P);

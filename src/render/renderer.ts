@@ -142,14 +142,15 @@ export class MapRenderer {
 
   // ------------------------------------------------------------ view
   minK() {
-    return Math.max(this.w / this.geo.width, this.h / (this.geo.height - 160)) * 0.95;
+    return Math.max(this.w / this.geo.width, this.h / (this.geo.height * 0.82)) * 0.95;
   }
   clampView() {
     const k = (this.view.k = Math.max(this.minK(), Math.min(40, this.view.k)));
     const vw = this.w / k, vh = this.h / k;
-    const minY = 50, maxY = this.geo.height - 110;
-    this.view.x = vw >= this.geo.width ? (this.geo.width - vw) / 2 : Math.max(0, Math.min(this.geo.width - vw, this.view.x));
-    this.view.y = vh >= maxY - minY ? (minY + maxY - vh) / 2 : Math.max(minY, Math.min(maxY - vh, this.view.y));
+    const W = this.geo.width, H = this.geo.height;
+    // any point of the map can be brought to the middle of the screen (clear of the top bar)
+    this.view.x = vw >= W ? (W - vw) / 2 : Math.max(-vw * 0.45, Math.min(W - vw * 0.55, this.view.x));
+    this.view.y = vh >= H ? (H - vh) / 2 : Math.max(-vh * 0.45, Math.min(H - vh * 0.6, this.view.y));
   }
   toScreen(x: number, y: number): [number, number] {
     return [(x - this.view.x) * this.view.k, (y - this.view.y) * this.view.k];
@@ -185,7 +186,7 @@ export class MapRenderer {
   }
   fitWorld() {
     this.view.k = this.minK();
-    this.centerOn(this.geo.width / 2, this.geo.height / 2 - 30);
+    this.centerOn(this.geo.width / 2, this.geo.height * 0.42);
   }
   private viewChanged() {
     this.lastViewChange = performance.now();
