@@ -446,7 +446,7 @@ export function propose(g: Game, from: number, to: number, kind: ProposalKind, t
   if (to === g.s.player && from !== g.s.player) {
     const msg: Message = { id: g.nextId(), day: g.day, from, to, kind, terms, war: extra?.war, target: extra?.target, amount: extra?.amount, text: proposalText(g, from, kind, terms, extra), expires: g.day + 30 };
     g.s.inbox.push(msg);
-    g.toast(`📨 ${g.name(from)}: ${msg.text}`, kind === 'demand' ? 'warn' : 'info');
+    g.toast(`📨 ${msg.text}`, kind === 'demand' ? 'warn' : 'info');
     return { ok: true, reason: 'sent' };
   }
   const [ok, reason] = evaluate(g, kind, from, to, terms, extra);

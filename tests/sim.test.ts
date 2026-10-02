@@ -3,7 +3,7 @@ import { SCENARIOS } from '../src/data/scenarios';
 import { UNITS } from '../src/data/units';
 import { declareWar, propose, warOf } from '../src/sim/diplomacy';
 import { enqueue } from '../src/sim/economy';
-import { createGame, deserialize, loadGame, serialize, tickHour } from '../src/sim/engine';
+import { catchUp, createGame, deserialize, loadGame, serialize, tickHour } from '../src/sim/engine';
 import { orderMove } from '../src/sim/military';
 import { launchNuke, setArmed } from '../src/sim/nuclear';
 import { landPath } from '../src/sim/path';
@@ -144,5 +144,15 @@ describe('mechanics', () => {
     checkInvariants(g);
     expect(g.s.nations.filter((n) => n.alive).length).toBeGreaterThan(170);
     for (const [r, p] of Object.entries(g.s.price)) expect(p, r).toBeGreaterThan(0);
+  });
+
+  test('offline catch-up runs advisors and produces a report', () => {
+    const g = createGame(world(), { scenario: 'modern', player: 'UKR', seed: 13 });
+    const day0 = g.day;
+    const report = catchUp(g, 24 * 10);
+    expect(g.day - day0).toBe(10);
+    expect(report[0]).toMatch(/10 days passed/);
+    expect(g.player.advisors.military).toBe(false); // restored afterwards
+    checkInvariants(g);
   });
 });

@@ -421,19 +421,23 @@ export class MapRenderer {
   private computeLabels() {
     const g = this.game!;
     const geo = this.geo;
+    // label each nation over its home territory: provinces near its capital
     const acc = new Map<number, { sx: number; sy: number; a: number; maxA: number; mx: number; my: number }>();
     g.s.provinces.forEach((p, i) => {
+      const n = g.s.nations[p.ctrl];
+      if (!n?.alive) return;
+      const cx = geo.center[i * 2], cy = geo.center[i * 2 + 1];
+      const cap = n.capital >= 0 && g.s.provinces[n.capital].ctrl === p.ctrl ? n.capital : -1;
+      if (cap >= 0 && Math.hypot(cx - geo.center[cap * 2], cy - geo.center[cap * 2 + 1]) > 260) return;
       const b = i * 4;
       const area = (geo.bbox[b + 2] - geo.bbox[b]) * (geo.bbox[b + 3] - geo.bbox[b + 1]);
       let e = acc.get(p.ctrl);
       if (!e) acc.set(p.ctrl, (e = { sx: 0, sy: 0, a: 0, maxA: 0, mx: 0, my: 0 }));
-      const cx = geo.center[i * 2], cy = geo.center[i * 2 + 1];
       if (area > e.maxA) { e.maxA = area; e.mx = cx; e.my = cy; }
       e.sx += cx * area; e.sy += cy * area; e.a += area;
     });
     this.nationLabels = [];
     for (const [n, e] of acc) {
-      if (!g.s.nations[n]?.alive) continue;
       // use the area-weighted centre unless it is far from the main province (split nations)
       let x = e.sx / e.a, y = e.sy / e.a;
       if (Math.hypot(x - e.mx, y - e.my) > Math.sqrt(e.maxA) * 0.8) { x = e.mx; y = e.my; }
