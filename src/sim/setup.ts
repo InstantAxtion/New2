@@ -161,7 +161,9 @@ export function newGame(w: WorldData, opts: NewGameOptions): Game {
     const pop = provs.reduce((s, p) => s + p.pop, 0);
     const gdp = provs.reduce((s, p) => s + p.gdp, 0);
     const tier = incomeTier(pr.inc);
-    const capital = pickCapital(w, provinces, i);
+    const nn = sc.newNations?.find((x) => x.id === pr.id);
+    const home = nn ? nn.from.map((f) => f.replace(/^t:/, '').slice(0, 3)) : [pr.id];
+    const capital = pickCapital(w, provinces, i, home);
     const perCap = pop > 0 ? (gdp * 1e6) / pop : 0; // $ per person (pop in thousands, gdp in $B)
     const tax = [0.34, 0.26, 0.19, 0.15][tier];
     const mil = MIL_SPEND[pr.id] ?? (pr.gov === 'democracy' ? 0.014 : 0.025);
@@ -356,14 +358,15 @@ function selectProvinces(w: WorldData, _owner: number[], idx: Map<string, number
   return out;
 }
 
-function pickCapital(w: WorldData, provinces: Province[], n: number): number {
-  let best = -1, bestScore = -1;
+/** Capital: the home nation's historical capital if owned, else the most populous province. */
+function pickCapital(w: WorldData, provinces: Province[], n: number, home: string[]): number {
+  for (const id of home) {
+    const i = provinces.findIndex((p, k) => p.owner === n && w.provs[k].baseCapital && w.nations[w.provs[k].baseOwner].id === id);
+    if (i >= 0) return i;
+  }
+  let best = -1, bp = -1;
   provinces.forEach((p, i) => {
-    if (p.owner !== n) return;
-    const sp = w.provs[i];
-    // prefer the original capital of the base nation that contributes most
-    const score = (sp.baseCapital ? 1e9 * (w.nations[sp.baseOwner].pop / 1e6) : 0) + p.pop;
-    if (score > bestScore) { bestScore = score; best = i; }
+    if (p.owner === n && p.pop > bp) { bp = p.pop; best = i; }
   });
   return best;
 }
