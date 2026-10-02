@@ -40,7 +40,8 @@ export class MapRenderer {
   private baseCv: HTMLCanvasElement;
   overCv: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
-  dpr = 1;
+  dpr = 1; // overlay (text, counters): full screen sharpness
+  mapDpr = 1; // base map fills: capped, they are costly to redraw and blur is invisible on flat colour
   w = 0;
   h = 0;
   view: View = { x: 0, y: 0, k: 1 };
@@ -130,13 +131,15 @@ export class MapRenderer {
 
   resize() {
     const r = this.root.getBoundingClientRect();
-    this.dpr = Math.min(window.devicePixelRatio || 1, this.lowDetail ? 1.25 : 2);
+    const dev = window.devicePixelRatio || 1;
+    this.dpr = Math.min(dev, this.lowDetail ? 2 : 3);
+    this.mapDpr = Math.min(dev, this.lowDetail ? 1.25 : 2);
     this.w = Math.max(1, r.width);
     this.h = Math.max(1, r.height);
     this.overCv.width = Math.round(this.w * this.dpr);
     this.overCv.height = Math.round(this.h * this.dpr);
-    this.baseCv.width = Math.round((this.w + PAD * 2) * this.dpr);
-    this.baseCv.height = Math.round((this.h + PAD * 2) * this.dpr);
+    this.baseCv.width = Math.round((this.w + PAD * 2) * this.mapDpr);
+    this.baseCv.height = Math.round((this.h + PAD * 2) * this.mapDpr);
     Object.assign(this.baseCv.style, { width: this.w + PAD * 2 + 'px', height: this.h + PAD * 2 + 'px' });
     this.clampView();
     this.baseView = null;
@@ -334,7 +337,7 @@ export class MapRenderer {
     if (!this.mapVisible) return false;
     this.stepMotion(now);
     const gesturing = now - this.lastViewChange < 160;
-    const useBase = this.view.k * this.dpr > WORLD_SCALE * 1.3;
+    const useBase = this.view.k * this.mapDpr > WORLD_SCALE * 1.3;
     let drew = false;
     if (this.worldDirty && !gesturing && now - this.lastWorldRender > (!running ? 600 : useBase ? 15000 : 3000)) {
       this.renderWorld();
@@ -626,7 +629,7 @@ export class MapRenderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = OCEAN;
     ctx.fillRect(0, 0, this.baseCv.width, this.baseCv.height);
-    const s = k * this.dpr;
+    const s = k * this.mapDpr;
     const ox = x - PAD / k, oy = y - PAD / k;
     ctx.setTransform(s, 0, 0, s, -ox * s, -oy * s);
     this.drawMap(ctx, s, true);

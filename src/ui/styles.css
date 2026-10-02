@@ -264,7 +264,7 @@ b, strong, h1, h2, h3, h4, .big, .atitle { font-weight: 700; }
 .text-ink { text-shadow: 0 2px 0 var(--ink); }
 
 /* candy buttons: thick outline + a "ledge" that squishes when pressed */
-.btn { background: linear-gradient(180deg, #4a86cc, #2f67ad); border: 2.5px solid var(--ink); border-radius: 16px; padding: 10px 16px; min-height: 48px; font-weight: 600; box-shadow: 0 4px 0 var(--ink); transition: transform .08s, box-shadow .08s, filter .15s; text-shadow: 0 1px 0 rgba(0,0,0,.3); }
+.btn { background: linear-gradient(180deg, #4a86cc, #2f67ad); border: 2.5px solid var(--ink); border-radius: 16px; padding: 10px 16px; min-height: 48px; font-weight: 600; box-shadow: 0 4px 0 var(--ink); transition: transform .08s, box-shadow .08s, filter .15s; }
 .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
 .btn:disabled { opacity: .5; filter: saturate(.4); }
 .btn.sm { min-height: 40px; padding: 6px 13px; font-size: 14px; border-radius: 14px; box-shadow: 0 3px 0 var(--ink); }
@@ -294,7 +294,7 @@ b, strong, h1, h2, h3, h4, .big, .atitle { font-weight: 700; }
 .tab { border: 2.5px solid var(--ink); background: #2f67ad; font-size: 14px; font-weight: 600; padding: 8px 14px; box-shadow: 0 3px 0 var(--ink); }
 .tab.on { background: linear-gradient(180deg, #ffe07a, #ffbf1f); color: #3a2600; border-color: var(--ink); }
 input[type=text], input[type=search], select { border: 2.5px solid var(--ink); border-radius: 16px; padding: 12px 14px; background: #10305a; font-size: 16px; }
-.section { color: var(--gold); font-size: 14px; font-weight: 700; letter-spacing: .03em; text-transform: none; margin: 16px 0 8px; text-shadow: 0 2px 0 var(--ink); }
+.section { color: var(--gold); font-size: 14px; font-weight: 700; letter-spacing: .03em; text-transform: none; margin: 16px 0 8px; }
 .help { background: #1a4374; border: 2.5px dashed #6fb1ff; border-radius: 16px; color: #e3efff; font-size: 13px; }
 
 /* menu screens */
@@ -321,7 +321,7 @@ input[type=text], input[type=search], select { border: 2.5px solid var(--ink); b
 .fab:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
 .fab.on { background: linear-gradient(180deg, #ffe07a, #ffbf1f); }
 .fab.big { width: 66px; height: 66px; font-size: 26px; background: linear-gradient(180deg, #6ee68a, #25b24f); }
-.fablabel { font-size: 10px; color: #fff; font-weight: 600; text-shadow: 0 1px 0 var(--ink); }
+.fablabel { font-size: 11px; color: #fff; font-weight: 600; }
 .layers { top: auto; bottom: calc(92px + var(--safe-bottom)); right: 78px; background: var(--panel); border: 3px solid var(--ink); border-radius: 20px; box-shadow: 0 4px 0 var(--ink); padding: 8px; gap: 6px; }
 .layers button { border-radius: 14px; padding: 10px 12px; }
 .layers button.on { background: linear-gradient(180deg, #ffe07a, #ffbf1f); color: #3a2600; }
@@ -376,7 +376,7 @@ input[type=text], input[type=search], select { border: 2.5px solid var(--ink); b
 .dots i.on { background: var(--gold); }
 .tug { height: 18px; border: 2.5px solid var(--ink); border-radius: 10px; }
 .end-title { font-size: 38px; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; text-shadow: 0 4px 0 var(--ink); }
-.newsday { color: var(--gold); text-shadow: 0 1px 0 var(--ink); }
+.newsday { color: var(--gold); }
 .item.news.big { background: linear-gradient(90deg, #8c2f3c, var(--panel2)); border-color: var(--ink); }
 .unbanner { top: calc(94px + var(--safe-top)); right: 8px; }
 
@@ -397,3 +397,6 @@ input[type=text], input[type=search], select { border: 2.5px solid var(--ink); b
   .toasts, .breaking { top: calc(68px + var(--safe-top)); }
 }
 .menubtn { width: 46px; height: 46px; min-height: 0; padding: 0; border-radius: 15px; font-size: 21px; flex: none; }
+
+/* crisp text: no fake bold, no sub-pixel blur from the GPU layers */
+html, body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-synthesis: none; }

@@ -183,7 +183,7 @@ export function UnitIcon({ type, color = '#3b82f6', size = 30 }: { type: UnitTyp
   useEffect(() => {
     const cv = ref.current;
     if (!cv) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
     cv.width = cv.height = size * dpr;
     const x = cv.getContext('2d')!;
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
