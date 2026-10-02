@@ -124,5 +124,3 @@ export const PROFILES: Record<string, CountryProfile> = {
   PSX: P(A, 'defensive', [10, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1]),
 };
 
-/** Uranium mining, approximate share of world output (%). */
-export const URANIUM: Record<string, number> = { KAZ: 43, CAN: 15, NAM: 11, AUS: 9, UZB: 7, RUS: 5, NER: 4, CHN: 3, IND: 1, ZAF: 0.5, UKR: 1, USA: 0.5, BRA: 0.1, CZE: 0.1, ROU: 0.1, MNG: 0.1, PAK: 0.1, IRN: 0.1 };

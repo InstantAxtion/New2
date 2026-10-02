@@ -1,11 +1,8 @@
 import { SCENARIO_BY_ID } from '../../data/scenarios';
-import { RES_INFO } from '../../data/units';
 import { regionCount } from '../../sim/diplomacy';
-import { buyPrice, sellPrice, storage, trade, tradeBonus } from '../../sim/economy';
-import type { Resource } from '../../sim/types';
-import { RESOURCES } from '../../sim/types';
+import { RES_VALUE } from '../../sim/economy';
 import { continentShare, incomeRank, scores, worldShare } from '../../sim/victory';
-import { Bar, fmt, Help, Sheet } from '../common';
+import { Bar, fmt, Help, NationDot, Sheet, Spark } from '../common';
 import { useCtl } from '../controller';
 
 export function CountryPanel() {
@@ -13,47 +10,49 @@ export function CountryPanel() {
   const g = c.game!;
   const n = g.player;
   const me = g.s.player;
-  const cap = storage(g, me);
   const net = n.income - n.upkeep;
-  const deals = Math.round(tradeBonus(g, me) * 100);
-  const deal = (r: Resource, q: number) => {
-    const e = trade(g, me, r, q);
-    if (e) c.toast(e, 'warn');
-    c.emit();
-  };
+  const blockers = g.s.nations.filter((m) => m.alive && m.idx !== me && (g.atWar(m.idx, me) || g.s.embargo.includes(m.idx + '>' + me)));
+  const price = g.s.price;
   return (
     <Sheet title={`🏛 ${n.name}`} onClose={() => c.open(null)} tall>
-      <div class="section">💰 Money</div>
       <div class="grid3">
         <div class="stat"><div class="l">Treasury</div><div class="v">{fmt.money(n.money)}</div></div>
         <div class="stat"><div class="l">Income</div><div class="v good">+{fmt.money(n.income * 30)}</div><div class="tiny muted">a month</div></div>
-        <div class="stat"><div class="l">Army upkeep</div><div class="v bad">−{fmt.money(n.upkeep * 30)}</div><div class="tiny muted">a month</div></div>
+        <div class="stat"><div class="l">Army</div><div class="v bad">−{fmt.money(n.upkeep * 30)}</div><div class="tiny muted">a month</div></div>
       </div>
       <div class={'small ' + (net >= 0 ? 'good' : 'bad')} style={{ marginTop: '6px' }}>
-        {net >= 0 ? `You save ${fmt.money(net * 30)} a month.` : `You lose ${fmt.money(-net * 30)} a month — when money runs out your troops start to desert.`}
+        {net >= 0 ? `💰 You save ${fmt.money(net * 30)} a month.` : `💸 You lose ${fmt.money(-net * 30)} a month — when money runs out your troops start to desert.`}
       </div>
-      <Help>Money comes from your {regionCount(g, me)} regions (bigger, richer regions pay more; captured ones pay half). Factories add +10% in their region{deals ? `, and your trade deals add +${deals}%` : ''}. Every unit costs upkeep.</Help>
 
-      <div class="section">📦 Resources</div>
+      <div class="section">💵 Where the money comes from</div>
       <div class="list">
-        {RESOURCES.map((r) => (
-          <div class="card">
-            <div class="spread">
-              <b>{RES_INFO[r].icon} {RES_INFO[r].name}</b>
-              <span class="small"><b>{Math.floor(n.res[r])}</b><span class="muted"> / {cap[r]}</span> <span class="good">+{n.made[r].toFixed(1)}/day</span></span>
-            </div>
-            <Bar v={n.res[r] / cap[r]} color={r === 'ammo' ? '#f59e0b' : r === 'uranium' ? '#a3e635' : '#a8a29e'} />
-            <div class="tiny muted" style={{ marginTop: '4px' }}>{RES_INFO[r].desc}</div>
-            <div class="row wrap" style={{ marginTop: '6px' }}>
-              <span class="tiny muted grow">Market: buy {fmt.money(buyPrice(g, r))} · sell {fmt.money(sellPrice(g, r))}</span>
-              <button class="btn sm" onClick={() => deal(r, 10)}>Buy 10</button>
-              <button class="btn sm" onClick={() => deal(r, 50)}>Buy 50</button>
-              <button class="btn sm" disabled={n.res[r] < 10} onClick={() => deal(r, -10)}>Sell 10</button>
-            </div>
+        <div class="item">
+          <span style={{ fontSize: '22px' }}>🏛</span>
+          <div class="grow">
+            <div class="spread small"><b>Taxes</b><b class="good">+{fmt.money(n.taxes * 30)}/mo</b></div>
+            <div class="tiny muted">From your {regionCount(g, me)} regions. Big cities pay most; 🏭 factories add +25% each; captured regions pay half.</div>
           </div>
-        ))}
+        </div>
+        <div class="item">
+          <span style={{ fontSize: '22px' }}>⛏</span>
+          <div class="grow">
+            <div class="spread small"><b>Resource exports</b><b class="good">+{fmt.money(n.exports * 30)}/mo</b></div>
+            <div class="tiny muted">You dig up {n.mined.toFixed(1)} a day and sell it automatically at {fmt.money(RES_VALUE * price)} each. Build ⛏ mines to dig more.</div>
+            <div class="spread tiny" style={{ marginTop: '4px' }}><span>Countries buying from you</span><b class={n.access < 0.8 ? 'warn' : 'good'}>{Math.round(n.access * 100)}%</b></div>
+            <Bar v={n.access} color={n.access < 0.8 ? 'var(--warn)' : 'var(--good)'} />
+          </div>
+        </div>
       </div>
-      <Help>Storage grows with your land and army. Anything above the limit is lost, so sell the extra.</Help>
+      {blockers.length > 0 && (
+        <div class="card small" style={{ marginTop: '8px' }}>
+          🚫 <b>Not buying from you:</b>{' '}
+          {blockers.slice(0, 12).map((m) => <span class="chip click" style={{ margin: '2px' }} onClick={() => c.open('world', m.idx)}><NationDot color={m.color} /> {m.name} {g.atWar(m.idx, me) ? '⚔️' : ''}</span>)}
+          <div class="tiny muted" style={{ marginTop: '4px' }}>Countries at war with you or that put an embargo on you don't buy your resources. Make peace or improve relations to get them back.</div>
+        </div>
+      )}
+      <div class="section">📈 World resource price: {Math.round(price * 100)}%</div>
+      <Spark values={g.s.priceHist.length > 1 ? g.s.priceHist : [1, price]} color={price >= 1 ? '#4ade80' : '#f87171'} />
+      <Help>Prices go up and down. Booms and crashes make the headlines!</Help>
 
       <Goals />
     </Sheet>

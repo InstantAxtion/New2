@@ -12,7 +12,6 @@ import { canConstruct, construct } from '../sim/economy';
 import { catchUp, createGame, deserialize, loadGame, serialize, SPEEDS, tickHour } from '../sim/engine';
 import { updateVisibility } from '../sim/fog';
 import { inAirRange, isAir, orderMove, retreat, stop } from '../sim/military';
-import { canNuke, launchNuke } from '../sim/nuclear';
 import { pathFor } from '../sim/path';
 import type { NewGameOptions } from '../sim/setup';
 import type { BuildingType, Loc, Unit } from '../sim/types';
@@ -45,8 +44,12 @@ class Controller {
   layer: Layer = 'political';
   /** Build mode: the building being placed. */
   building: BuildingType | null = null;
-  /** Nuke targeting mode. */
-  nuking = false;
+  /** Breaking-news banner (latest big headline) and when it appeared. */
+  breaking: { text: string; at: number; loc?: number } | null = null;
+  private newsSeen = 0;
+  /** Message popup (e.g. alliance offer) currently shown, and the speed to resume afterwards. */
+  popupDismissed = new Set<number>();
+  private resumeSpeed = 0;
   version = 0;
   screen: 'loading' | 'menu' | 'newgame' | 'game' = 'loading';
   loadError: string | null = null;
@@ -113,9 +116,11 @@ class Controller {
         } else this.renderer!.zoomAt(x, y, f);
       },
       tap: (x, y) => this.onTap(x, y),
-      doubleTap: (x, y) => (this.mode === 'globe' ? this.exitGlobe(x, y) : this.renderer!.zoomAt(x, y, 1.8)),
+      doubleTap: (x, y) => (this.mode === 'globe' ? this.exitGlobe(x, y) : this.renderer!.zoomSmooth(x, y, 2)),
       longPress: (x, y) => this.onLongPress(x, y),
       isDrawing: () => false,
+      fling: (vx, vy) => { if (this.mode === 'globe') this.globe!.fling(vx, vy); else this.renderer!.fling(vx, vy); },
+      touchDown: () => { this.renderer?.stopMotion(); this.globe?.fling(0, 0); },
       gestureEnd: () => this.emit(),
       unitDragStart: (x, y) => this.dragStart(x, y),
       unitDragMove: (x, y) => this.dragMove(x, y),
@@ -146,7 +151,8 @@ class Controller {
         ticked = true;
       }
       if (ticked) this.afterTick();
-    }
+      if (this.renderer) this.renderer.tickFrac = Math.min(1, this.acc);
+    } else if (this.renderer) this.renderer.tickFrac = 0;
     if (this.screen === 'game' || this.screen === 'newgame') {
       if (this.mode === 'globe') this.globe?.frame(this.game, dt, now);
       else this.renderer?.frame(now, this.speed > 0 && this.screen === 'game');
@@ -156,6 +162,8 @@ class Controller {
 
   private afterTick() {
     const g = this.game!;
+    this.checkPopups();
+    this.checkNews();
     let dropped = false;
     for (const id of this.selected) if (!g.rt.unitById.has(id)) { this.selected.delete(id); dropped = true; }
     if (dropped) this.syncSelection();
@@ -209,12 +217,15 @@ class Controller {
     this.panel = null;
     this.menu = null;
     this.building = null;
-    this.nuking = false;
     this.mode = 'map';
     this.globe?.show(false);
     this.renderer?.setMapVisible(true);
     this.speed = 0;
     this.lastToastId = g.s.toasts.length ? g.s.toasts[g.s.toasts.length - 1].id : 0;
+    this.newsSeen = g.s.news.length;
+    this.breaking = null;
+    this.popupDismissed.clear();
+    this.resumeSpeed = 0;
     this.lastAutosaveDay = g.day;
     this.screen = 'game';
     this.renderer?.setGame(g);
@@ -229,7 +240,7 @@ class Controller {
     const g = this.game, r = this.renderer;
     if (!g || !r) return;
     const cap = g.player.capital;
-    if (cap >= 0) r.centerOnProvince(cap, Math.max(r.minK() * 3, 2.4));
+    if (cap >= 0) r.flyToProvince(cap, Math.max(r.minK() * 3, 2.4));
     if (this.mode === 'globe') this.exitGlobe();
     this.emit();
   }
@@ -304,7 +315,7 @@ class Controller {
   }
   private onBack(): boolean {
     if (this.menu) { this.menu = null; this.emit(); return true; }
-    if (this.building || this.nuking) { this.cancelBuild(); this.nuking = false; this.emit(); return true; }
+    if (this.building) { this.cancelBuild(); this.emit(); return true; }
     if (this.panel) { this.panel = null; this.emit(); return true; }
     if (this.selected.size) { this.clearSelection(); return true; }
     if (this.screen === 'game') { this.panel = 'menu'; this.setSpeed(0); return true; }
@@ -332,7 +343,7 @@ class Controller {
       const ll = this.globe.invert(sx, sy);
       if (ll) {
         const p = this.geo.proj(ll);
-        if (p) this.renderer.centerOn(p[0], p[1], Math.max(this.renderer.minK() * 2.5, 2));
+        if (p) { this.renderer.centerOn(p[0], p[1], Math.max(this.renderer.minK() * 1.6, 1.4)); this.renderer.flyTo(p[0], p[1], Math.max(this.renderer.minK() * 2.5, 2)); }
       }
     }
     this.emit();
@@ -415,7 +426,7 @@ class Controller {
     if (!this.renderer) return;
     if (this.mode === 'globe') this.exitGlobe();
     const [x, y] = this.renderer.locXY(l);
-    this.renderer.centerOn(x, y, Math.max(this.renderer.view.k, 3));
+    this.renderer.flyTo(x, y, Math.max(this.renderer.view.k, 3));
     this.renderer.ping(l);
     this.emit();
   }
@@ -458,16 +469,6 @@ class Controller {
       if (loc !== null && loc >= 0) this.placeBuilding(loc);
       return;
     }
-    if (this.nuking) {
-      this.nuking = false;
-      if (loc !== null && loc >= 0) {
-        const e = launchNuke(g, g.s.player, loc);
-        if (e) this.toast(e, 'warn');
-      }
-      this.renderer.highlight = [];
-      this.emit();
-      return;
-    }
     const battle = this.battleAt(sx, sy);
     if (battle >= 0 && !this.selected.size) { this.open('battle', battle); return; }
     const mine = this.renderer.badgeAt(sx, sy, g.s.player);
@@ -502,7 +503,7 @@ class Controller {
 
   private dragStart(sx: number, sy: number): boolean {
     const g = this.game, r = this.renderer;
-    if (!g || !r || this.mode !== 'map' || this.screen !== 'game' || this.building || this.nuking) return false;
+    if (!g || !r || this.mode !== 'map' || this.screen !== 'game' || this.building) return false;
     const b = r.badgeAt(sx, sy, g.s.player);
     if (!b) return false;
     // drag the selected part of this stack if some of it is selected, else the whole stack
@@ -564,31 +565,45 @@ class Controller {
     if (!ok && err) this.toast(err, 'warn');
     this.emit();
   }
-  startNuke() {
-    const g = this.game!;
-    if (g.player.nukes <= 0) { this.toast('You have no warheads.', 'warn'); return; }
-    this.nuking = true;
-    this.panel = null;
-    if (this.renderer) {
-      this.renderer.highlight = g.s.provinces.map((_, i) => (canNuke(g, g.s.player, i) ? -1 : i)).filter((i) => i >= 0);
-      this.renderer.highlightColor = '239,68,68';
-      this.renderer.touch();
-    }
-    this.toast('☢️ Tap an enemy region to launch. Tap anywhere else to cancel.', 'danger');
-  }
-  /** Select every unit of a kind (on screen first; all if none on screen). */
+  /** Select every one of our troops (or planes, or ships) anywhere on the map. */
   selectAll(domain: 'land' | 'air' | 'sea') {
-    const g = this.game, r = this.renderer;
-    if (!g || !r) return;
-    const all = g.s.units.filter((u) => u.owner === g.s.player && UNITS[u.type].domain === domain);
-    const onScreen = all.filter((u) => {
-      const [sx, sy] = r.toScreen(...r.locXY(isAir(u) ? u.base : u.loc));
-      return sx >= 0 && sy >= 0 && sx <= r.w && sy <= r.h;
-    });
-    const list = onScreen.length ? onScreen : all;
+    const g = this.game;
+    if (!g) return;
+    const list = g.s.units.filter((u) => u.owner === g.s.player && UNITS[u.type].domain === domain);
     this.select(list.map((u) => u.id));
-    if (!list.length) this.toast(`You have no ${domain === 'land' ? 'troops' : domain === 'air' ? 'planes' : 'ships'}.`);
-    else this.toast(`${list.length} selected${onScreen.length ? ' (on screen)' : ''} — tap a region to send them`, 'info');
+    const what = domain === 'land' ? 'troops' : domain === 'air' ? 'planes' : 'ships';
+    if (!list.length) this.toast(`You have no ${what}.`);
+    else this.toast(`🎯 All ${list.length} ${what} selected — tap a region to send them`, 'info');
+  }
+
+  // ------------------------------------------------------------ popups & breaking news
+  /** The next message that should pop up on screen (alliance offers, peace offers...). */
+  popup() {
+    const g = this.game;
+    if (!g || this.screen !== 'game') return null;
+    // small stuff (no-attack pacts) waits in the News inbox; big decisions pop up
+    return g.s.inbox.find((m) => m.to === g.s.player && !m.resolved && m.kind !== 'nap' && !this.popupDismissed.has(m.id)) ?? null;
+  }
+  private checkPopups() {
+    const m = this.popup();
+    if (m && this.speed > 0) {
+      this.resumeSpeed = this.speed;
+      this.speed = 0;
+      this.emit();
+    }
+  }
+  closePopup(id: number) {
+    this.popupDismissed.add(id);
+    if (!this.popup() && this.resumeSpeed) { this.speed = this.resumeSpeed; this.resumeSpeed = 0; }
+    this.renderer?.invalidate(true);
+    this.emit();
+  }
+  private checkNews() {
+    const g = this.game!;
+    const news = g.s.news;
+    if (this.newsSeen > news.length) this.newsSeen = 0;
+    for (let i = this.newsSeen; i < news.length; i++) if (news[i].big) this.breaking = { text: news[i].text, at: performance.now(), loc: news[i].loc };
+    this.newsSeen = news.length;
   }
 
   closeMenu() {

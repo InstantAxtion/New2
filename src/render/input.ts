@@ -14,6 +14,10 @@ export interface GestureHandlers {
   unitDragStart?(sx: number, sy: number): boolean;
   unitDragMove?(sx: number, sy: number): void;
   unitDragEnd?(sx: number, sy: number, moved: boolean): void;
+  /** A swipe ended with this velocity (px per ms): keep gliding. */
+  fling?(vx: number, vy: number): void;
+  /** A finger touched down (stop any gliding). */
+  touchDown?(): void;
 }
 
 export function attachGestures(el: HTMLElement, h: GestureHandlers) {
@@ -24,6 +28,7 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers) {
   let pinchDist = 0;
   let drawing = false;
   let unitDrag = false;
+  let vx = 0, vy = 0, lastMove = 0;
   const rel = (e: PointerEvent | WheelEvent) => {
     const r = el.getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top] as [number, number];
@@ -36,6 +41,8 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers) {
     el.setPointerCapture(e.pointerId);
     const [x, y] = rel(e);
     pts.set(e.pointerId, { x, y, sx: x, sy: y, t: performance.now() });
+    h.touchDown?.();
+    vx = vy = 0;
     if (pts.size === 1) {
       moved = false;
       if (h.isDrawing()) {
@@ -73,7 +80,15 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers) {
     if (drawing) { h.drawMove?.(x, y); return; }
     if (unitDrag) { if (moved) h.unitDragMove?.(x, y); return; }
     if (pts.size === 1) {
-      if (moved) h.pan(dx, dy);
+      if (moved) {
+        h.pan(dx, dy);
+        const now = performance.now();
+        const dt = Math.max(1, now - lastMove);
+        lastMove = now;
+        // smoothed finger velocity for the fling
+        vx = vx * 0.6 + (dx / dt) * 0.4;
+        vy = vy * 0.6 + (dy / dt) * 0.4;
+      }
     } else if (pts.size === 2) {
       const [a, b] = [...pts.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -99,6 +114,7 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers) {
       h.unitDragEnd?.(p.x, p.y, moved && e.type === 'pointerup');
       if (moved) { h.gestureEnd?.(); return; }
     }
+    if (pts.size === 0 && moved && e.type === 'pointerup' && performance.now() - lastMove < 80 && Math.hypot(vx, vy) > 0.15) h.fling?.(vx, vy);
     if (pts.size === 0) {
       if (!moved && e.type === 'pointerup') {
         const now = performance.now();

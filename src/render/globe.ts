@@ -160,6 +160,12 @@ export class GlobeRenderer {
     this.dirty = true;
   }
 
+  private vel = [0, 0];
+  /** Keep spinning after a swipe. */
+  fling(vx: number, vy: number) {
+    this.vel = [vx, vy];
+  }
+
   zoomBy(f: number) {
     this.zoom = Math.max(0.6, Math.min(2.2, this.zoom * f));
     this.dirty = true;
@@ -256,6 +262,13 @@ export class GlobeRenderer {
   frame(game: Game | null, dt: number, now = performance.now()): boolean {
     if (this.spin) {
       this.rotate = [this.rotate[0] + dt * 0.006, this.rotate[1]];
+      this.dirty = true;
+    }
+    if (Math.abs(this.vel[0]) + Math.abs(this.vel[1]) > 0.01) {
+      const k = 0.35 / this.zoom;
+      this.rotate = [this.rotate[0] + this.vel[0] * dt * k, Math.max(-80, Math.min(80, this.rotate[1] - this.vel[1] * dt * k))];
+      const d = Math.exp(-dt / 500);
+      this.vel = [this.vel[0] * d, this.vel[1] * d];
       this.dirty = true;
     }
     if (!this.dirty || now - this.lastDraw < 16) return false;

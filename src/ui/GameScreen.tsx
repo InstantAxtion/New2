@@ -5,7 +5,7 @@ import type { Layer } from '../render/renderer';
 import { declareWar } from '../sim/diplomacy';
 import { buildCost } from '../sim/economy';
 import { inAirRange, isAir, isLand } from '../sim/military';
-import { canNuke, launchNuke } from '../sim/nuclear';
+import { respondMessage, cededRegions } from '../sim/diplomacy';
 import type { Toast, UnitType } from '../sim/types';
 import { Cost, dateStr, fmt, NationDot, UnitIcon } from './common';
 import { useCtl, type Panel } from './controller';
@@ -23,7 +23,7 @@ import { Tutorial } from './Tutorial';
 const LAYERS: [Layer, string, string][] = [
   ['political', '🗺 Countries', 'Who owns what. Striped = occupied by an enemy.'],
   ['terrain', '⛰ Terrain', 'Mountains, jungle and marsh slow attackers and help defenders.'],
-  ['resources', '⛏ Resources', 'Brighter = more materials. Green = uranium. Good places for mines.'],
+  ['resources', '⛏ Resources', 'Brighter = more resources to dig up. Good places for ⛏ mines.'],
   ['alliances', '🛡 Alliances', 'Military alliances, coloured by alliance.'],
 ];
 
@@ -58,6 +58,9 @@ export function GameScreen() {
         <button class="fab" onClick={() => c.home()} aria-label="My country">
           🏠<span class="fablabel">Home</span>
         </button>
+        <button class="fab" onClick={() => c.selectAll('land')} aria-label="Select all troops">
+          🪖<span class="fablabel">All troops</span>
+        </button>
       </div>
       {showLayers && (
         <div class="layers">
@@ -71,7 +74,6 @@ export function GameScreen() {
       )}
       <Toasts />
       {c.building && <PlaceBar />}
-      {c.nuking && <div class="placebar bad"><b>☢️ Choose a target</b><div class="tiny">Tap an enemy region (red). Tap anywhere else to cancel.</div></div>}
       {c.selected.size > 0 && !c.panel && !c.building && <SelectionBar />}
       {c.menu && <ContextMenu />}
       {c.panel === 'build' && !c.building && <BuildPanel />}
@@ -92,6 +94,8 @@ export function GameScreen() {
         ))}
       </div>
       {c.awayReport && <AwayReport />}
+      {!c.awayReport && !g.s.over && c.popup() && <MessagePopup />}
+      <Breaking />
       {tutorial && !g.s.over && <Tutorial onDone={() => setTutorial(false)} />}
       {g.s.over && <EndScreen />}
     </>
@@ -123,10 +127,9 @@ function Hud() {
         </div>
       </div>
       <div class="resbar" onClick={() => c.open('country')}>
+        <span title="Resources dug up and sold every day">⛏ <b>{n.mined.toFixed(1)}</b>/day → <i class="good">+{fmt.money(n.exports)}</i></span>
+        <span title="Your troops">🪖 <b>{g.s.units.reduce((a, u) => a + (u.owner === g.s.player ? 1 : 0), 0)}</b></span>
         <span title="Money"><b>💰 {fmt.money(n.money)}</b> <i class={net >= 0 ? 'good' : 'bad'}>{net >= 0 ? '+' : ''}{fmt.money(net)}/day</i></span>
-        <span title="Materials">⛏ <b>{Math.floor(n.res.materials)}</b></span>
-        <span title="Ammo" class={n.res.ammo < 20 ? 'bad' : ''}>💥 <b>{Math.floor(n.res.ammo)}</b></span>
-        <span title="Uranium">☢ <b>{Math.floor(n.res.uranium)}</b>{n.nukes > 0 && <i> · 🚀{n.nukes}</i>}</span>
       </div>
     </div>
   );
@@ -147,7 +150,7 @@ function Toasts() {
   });
   const last = show[show.length - 1];
   useEffect(() => {
-    if (last && last.kind === 'danger' && /declared war on us|nuclear/i.test(last.text) && pref('autoPauseWar', true) && c.speed > 0) c.setSpeed(0);
+    if (last && last.kind === 'danger' && /declared war on us/i.test(last.text) && pref('autoPauseWar', true) && c.speed > 0) c.setSpeed(0);
   }, [last?.id]);
   return (
     <div class="toasts">
@@ -175,7 +178,7 @@ function PlaceBar() {
         <span style={{ fontSize: '26px' }}>{d.icon}</span>
         <div class="grow">
           <b>Placing: {d.name}</b>
-          <div class="tiny">{n ? `Tap a green region (${n} possible).` : 'No region can take one right now.'} <Cost money={cost.money} mat={cost.mat} days={cost.days} have={{ money: g.player.money, mat: g.player.res.materials, uranium: 0 }} /></div>
+          <div class="tiny">{n ? `Tap a green region (${n} possible).` : 'No region can take one right now.'} <Cost money={cost.money} days={cost.days} have={g.player.money} /></div>
         </div>
         <button class="btn sm" onClick={() => c.open('build')}>Other</button>
         <button class="btn sm primary" onClick={() => c.cancelBuild()}>Done</button>
@@ -200,7 +203,6 @@ function SelectionBar() {
   const here = new Set(units.map((u) => (isAir(u) ? u.base : u.loc)));
   const others = g.s.units.filter((u) => u.owner === g.s.player && !c.selected.has(u.id) && here.has(isAir(u) ? u.base : u.loc));
   const hp = units.reduce((a, u) => a + u.hp, 0) / units.length;
-  const ammo = units.reduce((a, u) => a + u.ammo, 0) / units.length;
   const land = units.some(isLand), air = units.some(isAir);
   const moving = units.some((u) => u.path.length);
   const fighting = units.some((u) => u.path.length && u.path[0] >= 0 && g.rt.battleAt.has(u.path[0]) && u.progress > 0);
@@ -216,7 +218,6 @@ function SelectionBar() {
           <b>{units.length === 1 ? UNITS[units[0].type].name : `${units.length} units`}</b> <span class="tiny muted">in {where}{moving ? (fighting ? ' · ⚔ fighting' : ' · on the move') : ''}</span>
           <div class="row tiny muted" style={{ gap: '10px' }}>
             <span>❤️ {Math.round(hp)}%</span>
-            <span class={ammo < 0.2 ? 'bad' : ''}>💥 ammo {Math.round(ammo * 100)}%</span>
             {air && !land && <span>📍 {inRange} regions in range</span>}
           </div>
         </div>
@@ -275,22 +276,13 @@ function ContextMenu() {
       {units.length > 0 && <Item icon={enemy ? '⚔️' : '➡️'} title={enemy ? 'Attack here' : 'Move here'} desc={`Send your ${units.length} selected unit(s).`} onClick={() => c.issueOrder(loc)} />}
       {isProv && p && p.owner === me && p.ctrl === me && <Item icon="🔨" title="Build here" desc="Mines, factories, barracks, forts…" onClick={() => c.selectProvince(loc)} />}
       {isProv && <Item icon="ℹ️" title="Region details" desc="What it makes, its buildings and who is there." onClick={() => c.selectProvince(loc)} />}
-      {isProv && p && ctrl !== me && <Item icon="🤝" title={`Talk to ${g.name(ctrl)}`} desc="Alliances, trade deals or peace." onClick={() => c.open('world', ctrl)} />}
+      {isProv && p && ctrl !== me && <Item icon="🤝" title={`Talk to ${g.name(ctrl)}`} desc="Alliances, embargoes or peace." onClick={() => c.open('world', ctrl)} />}
       {isProv && p && ctrl !== me && !g.atWar(me, ctrl) && !g.allied(me, ctrl) && (
         <Item icon="⚔️" title={`Declare war on ${g.name(ctrl)}`} desc="Their allies will join them." bad onClick={() => {
           if (!confirm(`Declare war on ${g.name(ctrl)}?`)) return;
           const e = declareWar(g, me, ctrl);
           if (e) c.toast(e, 'warn');
           c.renderer?.invalidate(true);
-        }} />
-      )}
-      {isProv && enemy && g.player.nukes > 0 && (
-        <Item icon="☢️" title="Nuclear strike" desc="Wipes out armies and cities here. The world will turn on you." bad onClick={() => {
-          const e = canNuke(g, me, loc);
-          if (e) { c.toast(e, 'warn'); return; }
-          if (!confirm(`☢️ Launch a nuclear strike on ${name}? This cannot be undone.`)) return;
-          const er = launchNuke(g, me, loc);
-          if (er) c.toast(er, 'warn');
         }} />
       )}
     </div>
@@ -309,6 +301,64 @@ function AwayReport() {
           ))}
         </div>
         <button class="btn primary" onClick={() => c.dismissAway()}>Resume command</button>
+      </div>
+    </div>
+  );
+}
+
+/** Big headlines slide in at the top for a few seconds. */
+function Breaking() {
+  const c = useCtl();
+  const b = c.breaking;
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!b) return;
+    const id = setTimeout(() => tick((x) => x + 1), 5600);
+    return () => clearTimeout(id);
+  }, [b?.at]);
+  if (!b || c.panel || performance.now() - b.at > 5500) return null;
+  return (
+    <div class="breaking" key={b.at} onClick={() => { if (b.loc !== undefined && b.loc >= 0) c.focus(b.loc); c.breaking = null; c.emit(); }}>
+      <span class="blabel">BREAKING</span>
+      <span class="btext">{b.text}</span>
+    </div>
+  );
+}
+
+/** Offers from other countries pop up so they can't be missed. The game pauses meanwhile. */
+function MessagePopup() {
+  const c = useCtl();
+  const g = c.game!;
+  const m = c.popup()!;
+  const me = g.s.player;
+  const from = g.s.nations[m.from];
+  const done = (text: string) => { c.toast(text); c.closePopup(m.id); };
+  const surrender = m.kind === 'peace' && m.terms?.kind === 'annex' && m.from !== me;
+  const icon = m.kind === 'alliance' ? '🤝' : m.kind === 'nap' ? '🕊️' : m.kind === 'peace' ? (surrender ? '🏳️' : '🕊️') : m.kind === 'join_war' ? '📣' : '📨';
+  const title = m.kind === 'alliance' ? 'Alliance offer!' : m.kind === 'nap' ? 'Friendship offer' : surrender ? 'They surrender!' : m.kind === 'peace' ? 'Peace offer' : m.kind === 'join_war' ? 'Your ally needs you!' : 'Message';
+  const held = surrender ? cededRegions(g, m.from, me, { kind: 'cede' }).length : 0;
+  return (
+    <div class="modal-bg" onPointerDown={(e) => e.stopPropagation()}>
+      <div class="modal col popup">
+        <div class="picon">{icon}</div>
+        <h3 class="center">{title}</h3>
+        <div class="row" style={{ justifyContent: 'center' }}><NationDot color={from.color} /> <b>{from.name}</b></div>
+        <div class="center">{m.text}</div>
+        {m.kind === 'alliance' && <div class="tiny muted center">Allies fight together: if one of you is attacked, the other joins in.</div>}
+        {m.kind === 'nap' && <div class="tiny muted center">You both promise not to attack each other.</div>}
+        {surrender ? (
+          <div class="list">
+            <button class="btn primary" onClick={() => done(respondMessage(g, m.id, true, { kind: 'annex' }))}>🏴 Take the whole country</button>
+            <button class="btn" onClick={() => done(respondMessage(g, m.id, true, { kind: 'cede' }))}>🗺 Keep the {held} region{held === 1 ? '' : 's'} you hold</button>
+            <button class="btn" onClick={() => done(respondMessage(g, m.id, true, { kind: 'white' }))}>🕊 Just make peace</button>
+          </div>
+        ) : (
+          <div class="row">
+            <button class="btn grow" onClick={() => done(respondMessage(g, m.id, false))}>{m.kind === 'join_war' ? 'Stay out' : 'No thanks'}</button>
+            <button class="btn good grow" onClick={() => done(respondMessage(g, m.id, true))}>{m.kind === 'join_war' ? 'Join the war' : 'Accept'}</button>
+          </div>
+        )}
+        <button class="btn sm ghost" onClick={() => c.closePopup(m.id)}>Decide later (in 📰 News)</button>
       </div>
     </div>
   );

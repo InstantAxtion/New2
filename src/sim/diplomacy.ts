@@ -1,6 +1,7 @@
 // Wars, peace, alliances and treaties, plus how AI nations answer proposals.
 import { UNITS } from '../data/units';
 import type { Game } from './ctx';
+import { headline } from './headlines';
 import type { Message, PeaceTerms, ProposalKind, War } from './types';
 
 // ------------------------------------------------------------------ power
@@ -9,7 +10,6 @@ export function militaryPower(g: Game, n: number) {
   if (rt.powerHour !== g.s.hour || rt.power.length !== g.N) {
     rt.power = new Float64Array(g.N);
     for (const u of g.s.units) rt.power[u.owner] += UNITS[u.type].cost * (u.hp / 100);
-    for (const x of g.s.nations) rt.power[x.idx] += x.nukes * 15;
     rt.powerHour = g.s.hour;
   }
   return rt.power[n];
@@ -45,7 +45,6 @@ export function declareWar(g: Game, a: number, b: number): string | null {
   const war: War = { id: g.nextId(), name: `${A.name}–${B.name} War`, att: [a], def: [b], start: g.day, score: 0, lost: [0, 0] };
   g.s.wars.push(war);
   g.s.nap = g.s.nap.filter((k) => k !== g.pairKey(a, b));
-  g.s.trade = g.s.trade.filter((k) => k !== g.pairKey(a, b));
   g.addRel(a, b, -60);
   for (const m of g.s.nations) {
     if (!m.alive || m.idx === a || m.idx === b) continue;
@@ -55,7 +54,7 @@ export function declareWar(g: Game, a: number, b: number): string | null {
     g.addRel(m.idx, a, d);
   }
   A.lastWar = g.day;
-  g.news('war', `⚔️ ${A.name} declares war on ${B.name}!`, [a, b]);
+  g.news('war', headline(g, 'war', { A: A.name, B: B.name }), [a, b], notable(g, a, b), B.capital);
   if (b === g.s.player) g.toast(`⚔️ ${A.name} has declared war on us!`, 'danger', B.capital);
   g.rebuildDiplomacy();
   rallyAllies(g, war);
@@ -88,7 +87,7 @@ export function joinWar(g: Game, war: War, m: number, side: 'att' | 'def') {
   const other = side === 'att' ? war.def : war.att;
   for (const o of other) g.addRel(m, o, -50);
   g.s.nap = g.s.nap.filter((k) => !other.some((o) => k === g.pairKey(m, o)));
-  g.news('war', `${g.name(m)} joins the ${war.name}.`, [m]);
+  g.news('war', headline(g, 'joins', { A: g.name(m), W: war.name }), [m]);
   if (other.includes(g.s.player)) g.toast(`${g.name(m)} has joined the war against us!`, 'danger');
   g.rebuildDiplomacy();
 }
@@ -97,7 +96,7 @@ export function joinWar(g: Game, war: War, m: number, side: 'att' | 'def') {
 export function betray(g: Game, m: number, ally: number) {
   leaveBloc(g, m);
   g.addRel(m, ally, -40);
-  g.news('diplomacy', `💔 ${g.name(m)} refuses to fight for ${g.name(ally)} and leaves the alliance.`, [m, ally]);
+  g.news('diplomacy', headline(g, 'betray', { A: g.name(m), B: g.name(ally) }), [m, ally], ally === g.s.player);
   if (ally === g.s.player) g.toast(`${g.name(m)} broke our alliance!`, 'danger');
 }
 
@@ -146,7 +145,7 @@ function checkSurrender(g: Game, w: War, n: number, side: 'att' | 'def') {
   const army = g.s.units.filter((u) => u.owner === n && UNITS[u.type].domain === 'land').length;
   if (!(share < 0.2 || (capLost && share < 0.4 && army < 3))) return;
   const enemies = side === 'att' ? w.def : w.att;
-  g.news('war', `🏳️ ${nat.name} has surrendered!`, [n]);
+  g.news('war', headline(g, 'surrender', { B: nat.name }), [n], true, nat.capital);
   if (n === g.s.player) {
     g.s.over = { won: false, reason: `${nat.name} surrendered to ${g.name(enemies[0])}.`, day: g.day };
     return;
@@ -160,8 +159,9 @@ function checkSurrender(g: Game, w: War, n: number, side: 'att' | 'def') {
     g.toast(`🏳️ ${nat.name} surrendered! Open News → Messages to choose the terms.`, 'good');
     return;
   }
-  removeFromWar(g, w, n);
+  // terms first: ending the war would hand the occupied regions straight back
   applyTerms(g, n, main, { kind: share < 0.15 ? 'annex' : 'cede' });
+  removeFromWar(g, w, n);
 }
 
 function removeFromWar(g: Game, w: War, n: number) {
@@ -169,7 +169,7 @@ function removeFromWar(g: Game, w: War, n: number) {
   w.def = w.def.filter((x) => x !== n);
   if (!w.att.length || !w.def.length) {
     g.s.wars = g.s.wars.filter((x) => x !== w);
-    g.news('peace', `🕊️ The ${w.name} is over.`, []);
+    g.news('peace', headline(g, 'peace', { W: w.name }), [], w.att.includes(g.s.player) || w.def.includes(g.s.player));
   }
   g.rebuildDiplomacy();
   // regions occupied by nations no longer at war go back to their owners
@@ -226,7 +226,7 @@ export function whitePeace(g: Game, a: number, b: number) {
   const leaders = w.att[0] === a || w.def[0] === a || w.att[0] === b || w.def[0] === b;
   if (leaders) {
     g.s.wars = g.s.wars.filter((x) => x !== w);
-    g.news('peace', `🕊️ Peace ends the ${w.name}.`, [...w.att, ...w.def]);
+    g.news('peace', headline(g, 'peace', { W: w.name }), [...w.att, ...w.def], w.att.includes(g.s.player) || w.def.includes(g.s.player));
     g.rebuildDiplomacy();
     for (const p of g.s.provinces) if (p.ctrl !== p.owner && !g.atWar(p.ctrl, p.owner)) p.ctrl = p.owner;
     fixUnitsAfterBorderChange(g);
@@ -265,7 +265,7 @@ export function checkAlive(g: Game) {
       n.queue = [];
       leaveBloc(g, n.idx);
       g.s.units = g.s.units.filter((u) => u.owner !== n.idx);
-      g.news('war', `🏴 ${n.name} has ceased to exist.`, [n.idx]);
+      g.news('war', headline(g, 'gone', { B: n.name }), [n.idx], true);
       if (n.idx === g.s.player && !g.s.over) g.s.over = { won: false, reason: `${n.name} was wiped off the map.`, day: g.day };
     }
     if (n.alive && (n.capital < 0 || g.s.provinces[n.capital].owner !== n.idx)) {
@@ -304,7 +304,7 @@ export function formAlliance(g: Game, a: number, b: number) {
   }
   g.addRel(a, b, 20);
   g.rebuildDiplomacy();
-  if (notable(g, a, b)) g.news('diplomacy', `🤝 ${g.name(a)} and ${g.name(b)} are now allies.`, [a, b]);
+  if (notable(g, a, b)) g.news('diplomacy', headline(g, 'alliance', { A: g.name(a), B: g.name(b) }), [a, b], a === g.s.player || b === g.s.player);
 }
 
 /** Worth a headline: involves the player or a sizeable economy. */
@@ -329,9 +329,6 @@ export function evaluate(g: Game, kind: ProposalKind, from: number, to: number, 
     case 'nap':
       if (g.atWar(to, from)) return [false, 'We are at war.'];
       return r >= (T.pers === 'expansionist' ? 20 : -30) ? [true, 'Peace on our border suits us.'] : [false, 'They do not trust you.'];
-    case 'trade':
-      if (g.atWar(to, from)) return [false, 'We are at war.'];
-      return r >= (T.pers === 'mercantile' ? -20 : 0) ? [true, 'Trade helps both of us.'] : [false, 'They do not like you enough.'];
     case 'peace': {
       const w = g.s.wars.find((x) => x.id === extra?.war) ?? warOf(g, from, to);
       if (!w) return [false, 'We are not at war.'];
@@ -374,10 +371,6 @@ function applyProposal(g: Game, from: number, to: number, kind: ProposalKind, te
       g.addRel(from, to, 10);
       if (notable(g, from, to)) g.news('diplomacy', `${g.name(from)} and ${g.name(to)} promise not to attack each other.`, [from, to]);
       break;
-    case 'trade':
-      if (!g.hasPair(g.s.trade, from, to)) g.s.trade.push(g.pairKey(from, to));
-      g.addRel(from, to, 8);
-      break;
     case 'peace': {
       const t = terms ?? { kind: 'white' };
       if (t.kind === 'white') whitePeace(g, from, to);
@@ -419,9 +412,8 @@ export function respondMessage(g: Game, id: number, accept: boolean, termsOverri
 function proposalText(g: Game, from: number, kind: ProposalKind, terms?: PeaceTerms) {
   const n = g.name(from);
   switch (kind) {
-    case 'alliance': return `${n} wants to be your ally.`;
+    case 'alliance': return g.pick([`${n} wants to be your ally!`, `${n} wants to team up. Allies fight side by side.`, `${n} sends flowers and an alliance offer. 💐`, `${n}: "Friends? We'd make a great team."`]);
     case 'nap': return `${n} offers a promise not to attack each other.`;
-    case 'trade': return `${n} offers a trade deal (+3% income for both).`;
     case 'peace': return terms?.kind === 'cede' ? `${n} offers peace if you hand over the regions they hold.` : `${n} offers peace with no land changing hands.`;
     case 'join_war': return `${n} asks you to join its war.`;
   }
@@ -441,9 +433,80 @@ export function relationsCost(g: Game, from: number) {
   return Math.max(0.5, g.s.nations[from].income * 2);
 }
 
-export function breakTreaty(g: Game, a: number, b: number, kind: 'alliance' | 'nap' | 'trade') {
+export function breakTreaty(g: Game, a: number, b: number, kind: 'alliance' | 'nap') {
   if (kind === 'alliance') leaveBloc(g, a);
   else if (kind === 'nap') g.s.nap = g.s.nap.filter((k) => k !== g.pairKey(a, b));
-  else g.s.trade = g.s.trade.filter((k) => k !== g.pairKey(a, b));
   g.addRel(a, b, kind === 'alliance' ? -20 : -10);
+}
+
+// ------------------------------------------------------------------ foreign aid
+/** Monthly: rich friends send money to countries fighting a stronger enemy. */
+export function foreignAid(g: Game) {
+  const { s } = g;
+  const got = new Map<number, { total: number; from: number[] }>();
+  for (const w of s.wars) {
+    for (const side of ['att', 'def'] as const) {
+      const us = w[side], them = side === 'att' ? w.def : w.att;
+      if (sidePower(g, us) > sidePower(g, them) * 0.8) continue;
+      for (const d of us) {
+        const rec = s.nations[d];
+        if (!rec.alive) continue;
+        const cap = rec.income * 30 * 0.8 + 2;
+        let total = 0;
+        const from: number[] = [];
+        for (const m of s.nations) {
+          if (!m.alive || !m.active || m.idx === d || m.idx === s.player || total >= cap) continue;
+          if (g.atWarAny(m.idx)) continue;
+          // friends of the defender, or enemies of the enemy
+          const enemyRel = Math.max(...them.map((e) => g.rel(m.idx, e)));
+          if (g.rel(m.idx, d) < 35 && g.rel(m.idx, d) - enemyRel < 40) continue;
+          if (enemyRel > 20) continue;
+          if (m.money < m.income * 60 + 5) continue;
+          const amt = Math.min(m.money * 0.03, cap - total);
+          if (amt < 0.3) continue;
+          m.money -= amt;
+          total += amt;
+          from.push(m.idx);
+        }
+        if (total > 0) {
+          const e = got.get(d) ?? { total: 0, from: [] };
+          e.total += total;
+          e.from.push(...from);
+          got.set(d, e);
+        }
+      }
+    }
+  }
+  for (const [d, { total, from }] of got) {
+    s.nations[d].money += total;
+    const donors = [...new Set(from)].sort((a, b) => s.nations[b].income - s.nations[a].income);
+    const A = donors.length > 2 ? `${g.name(donors[0])} and ${donors.length - 1} friends` : donors.map((x) => g.name(x)).join(' and ');
+    const M = '$' + (total >= 10 ? Math.round(total) : total.toFixed(1)) + 'B';
+    if (d === s.player) g.notify([d], `💸 ${A} sent us ${M} in aid for the war!`, 'good');
+    if (d === s.player || total > 3) g.news('economy', headline(g, 'aid', { A, B: g.name(d), M }), [d, ...donors.slice(0, 2)]);
+  }
+}
+
+// ------------------------------------------------------------------ relations drift
+/** Monthly: how the world feels about the player slowly changes, so friendships and rivalries form. */
+export function relationsDrift(g: Game) {
+  const { s, w } = g;
+  const me = s.player;
+  const P = s.nations[me];
+  if (!P.alive) return;
+  const border = new Set<number>();
+  s.provinces.forEach((p, i) => {
+    if (p.ctrl !== me) return;
+    for (const q of w.provs[i].nb) border.add(s.provinces[q].ctrl);
+  });
+  for (const m of s.nations) {
+    if (!m.alive || !m.active || m.idx === me || g.atWar(m.idx, me)) continue;
+    let bias = 0;
+    if (m.cont === P.cont) bias += 0.6;
+    if (m.gov === P.gov) bias += 0.4;
+    if (g.allied(m.idx, me)) bias += 0.5;
+    if (border.has(m.idx) && m.pers === 'expansionist') bias -= 1.2;
+    if (g.s.embargo.includes(m.idx + '>' + me) || g.s.embargo.includes(me + '>' + m.idx)) bias -= 0.6;
+    g.addRel(m.idx, me, bias + (g.rand() - 0.5) * 4);
+  }
 }

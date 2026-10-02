@@ -1,6 +1,7 @@
-// Movement, battles, captures, air strikes, sea fights and ammo supply.
+// Movement, battles, captures, air strikes, sea fights and supply.
 import { TERRAIN, UNITS } from '../data/units';
 import type { Game } from './ctx';
+import { headline } from './headlines';
 import { canEnter, pathFor } from './path';
 import type { Battle, Loc, Unit } from './types';
 import { seaLoc } from './types';
@@ -186,13 +187,10 @@ function enter(g: Game, u: Unit, to: Loc) {
 }
 
 // ------------------------------------------------------------------ battles
-function ammoF(u: Unit) {
-  return u.ammo > 0.04 ? 1 : 0.45;
-}
 
 export function attackPower(g: Game, u: Unit, p: number, from: Loc) {
   const d = UNITS[u.type];
-  let v = d.atk * (u.hp / 100) * ammoF(u) * (1 + u.xp * 0.4);
+  let v = d.atk * (u.hp / 100) * (1 + u.xp * 0.4);
   if (u.type === 'tank') v *= TERRAIN[g.w.provs[p].terrain].tank;
   if (from >= 0) {
     if (g.w.provs[from].river.has(p)) v *= 0.75;
@@ -203,7 +201,7 @@ export function attackPower(g: Game, u: Unit, p: number, from: Loc) {
 
 export function defencePower(g: Game, u: Unit, p: number) {
   const d = UNITS[u.type];
-  return d.def * DEFENDER_EDGE * (u.hp / 100) * ammoF(u) * (1 + u.xp * 0.4) * TERRAIN[g.w.provs[p].terrain].def * (1 + 0.3 * g.level(p, 'fort')) * (1 + 0.3 * u.dug);
+  return d.def * DEFENDER_EDGE * (u.hp / 100) * (1 + u.xp * 0.4) * TERRAIN[g.w.provs[p].terrain].def * (1 + 0.3 * g.level(p, 'fort')) * (1 + 0.3 * u.dug);
 }
 
 /** Air, artillery and naval support a side gets in a battle at p. */
@@ -211,7 +209,7 @@ function support(g: Game, p: number, side: number, enemy: number): number {
   let v = 0;
   // artillery in neighbouring regions shells the battle
   for (const q of g.w.provs[p].nb) for (const u of g.unitsAt(q)) {
-    if (u.type === 'artillery' && !u.path.length && g.allied(u.owner, side) && !g.rt.battleAt.has(q)) v += UNITS.artillery.atk * 0.5 * (u.hp / 100) * ammoF(u);
+    if (u.type === 'artillery' && !u.path.length && g.allied(u.owner, side) && !g.rt.battleAt.has(q)) v += UNITS.artillery.atk * 0.5 * (u.hp / 100);
   }
   // warships and carriers off the coast
   for (const c of g.w.provs[p].sea) for (const u of g.unitsAt(seaLoc(c))) {
@@ -290,7 +288,6 @@ function battleHour(g: Game) {
       const dmg = 2.6 * odds * (0.7 + g.rand() * 0.6) / Math.sqrt(defenders.length / attackers.length + 0.25);
       d.hp -= dmg;
       dealt += dmg;
-      d.ammo = Math.max(0, d.ammo - UNITS[d.type].burn);
       d.xp = Math.min(1, d.xp + 0.004);
     }
     let taken = 0;
@@ -298,7 +295,6 @@ function battleHour(g: Game) {
       const dmg = 2.6 * (1 - odds) * (0.7 + g.rand() * 0.6) / Math.sqrt(attackers.length / defenders.length + 0.25);
       a.hp -= dmg;
       taken += dmg;
-      a.ammo = Math.max(0, a.ammo - UNITS[a.type].burn);
       a.xp = Math.min(1, a.xp + 0.004);
     }
     g.fx('hit', p, atkSide, Math.round(dealt));
@@ -370,7 +366,7 @@ export function flipProvince(g: Game, p: number, by: number) {
   const name = g.w.provs[p].name;
   const oldN = g.s.nations[old];
   if (oldN && p === oldN.capital) {
-    g.news('war', `${g.name(by)} captures ${name}, capital of ${oldN.name}!`, [by, old]);
+    g.news('war', headline(g, 'capital', { A: g.name(by), B: oldN.name, C: name }), [by, old], true, p);
     g.notify([old], `🚨 Our capital ${name} has fallen!`, 'danger', p);
   } else g.notify([old], `We lost ${name} to ${g.name(by)}.`, 'danger', p);
   if (newCtrl === g.s.player) g.toast(prov.owner === g.s.player ? `🏳️ ${name} liberated!` : `🚩 We captured ${name}!`, 'good', p);
@@ -433,14 +429,13 @@ function airHour(g: Game) {
     const enemies = g.unitsAt(p).filter((x) => g.atWar(x.owner, u.owner) && !isAir(x));
     const defence = enemyAirDefence(g, p, u.owner);
     if (u.type === 'bomber' && (enemies.length || g.atWar(u.owner, ctrl))) {
-      const power = UNITS.bomber.atk * (u.hp / 100) * (u.ammo > 0.04 ? 1 : 0.3) * (20 / (20 + defence));
+      const power = UNITS.bomber.atk * (u.hp / 100) * (20 / (20 + defence));
       // bombing wears troops down; it does not wipe out a supplied army on its own
       for (const e of enemies) e.hp -= (power * 0.25) / Math.max(1, enemies.length);
       if (g.atWar(u.owner, ctrl)) {
         const prov = g.s.provinces[p];
         prov.dmg = Math.min(1, prov.dmg + 0.01 * (power / 16));
       }
-      u.ammo = Math.max(0, u.ammo - UNITS.bomber.burn);
       g.fx('bomb', p, u.owner);
       if (enemies.some((e) => e.hp <= 0)) deaths = true;
     }
@@ -471,7 +466,7 @@ function navalHour(g: Game) {
       for (const t of here) {
         const tp = UNITS[t.type].sea * (t.hp / 100);
         if (g.allied(t.owner, s.owner)) own += tp;
-        else if (g.atWar(t.owner, s.owner)) enemy += s.type === 'submarine' && t.type !== 'warship' ? tp * 0.3 : tp;
+        else if (g.atWar(t.owner, s.owner)) enemy += tp;
       }
       if (enemy <= 0) continue;
       const dmg = isLand(s) ? (enemy > own ? 4 : 1) : 3 * enemy / (enemy + own + 5);
@@ -484,7 +479,7 @@ function navalHour(g: Game) {
 }
 
 // ------------------------------------------------------------------ supply
-/** Is a unit in supply (can refill ammo and heal)? */
+/** Is a unit in supply (can heal)? */
 export function inSupply(g: Game, u: Unit): boolean {
   if (isAir(u)) return true;
   if (u.loc < 0) {
@@ -497,20 +492,12 @@ export function inSupply(g: Game, u: Unit): boolean {
   return g.w.provs[u.loc].nb.some((q) => g.allied(g.s.provinces[q].ctrl, u.owner));
 }
 
-/** Every 6 hours: units in supply refill ammo from the national stockpile and heal. */
+/** Every 6 hours: units in supply heal; troops cut off deep in enemy land wear down. */
 export function supplyTick(g: Game) {
   const { s } = g;
   for (const u of s.units) {
-    const n = s.nations[u.owner];
     const supplied = inSupply(g, u);
     const fighting = u.loc >= 0 && g.rt.battleAt.has(u.loc) || (u.path.length > 0 && u.path[0] >= 0 && g.rt.battleAt.has(u.path[0]));
-    if (supplied && u.ammo < 1 && n.res.ammo > 0) {
-      const need = (1 - u.ammo) * UNITS[u.type].ammo;
-      const take = Math.min(need, n.res.ammo);
-      n.res.ammo -= take;
-      n.used.ammo += take;
-      u.ammo += take / UNITS[u.type].ammo;
-    }
     if (fighting) continue;
     if (supplied && u.hp < 100) {
       let heal = 1.2;

@@ -169,30 +169,26 @@ export function UnitIcon({ type, color = '#3b82f6', size = 30 }: { type: UnitTyp
     x.translate(size / 2, size / 2);
     x.scale(size / 32, size / 32);
     x.fillStyle = '#fff';
-    drawIcon(x, type, 0, 0);
+    drawIcon(x, type, 0, 0, color);
     x.restore();
   }, [type, color, size]);
   return <canvas ref={ref} style={{ width: size + 'px', height: size + 'px', flex: 'none' }} />;
 }
 
-/** "$5B · ⛏ 15 · 20 days" with the parts you can't afford in red. */
-export function Cost({ money, mat = 0, uranium = 0, days, have }: { money: number; mat?: number; uranium?: number; days?: number; have?: { money: number; mat: number; uranium: number } }) {
-  const lack = (need: number, got?: number) => (have && got !== undefined && got < need ? 'bad' : '');
+/** "💰 $5B · ⏱ 20d", red when you can't afford it. */
+export function Cost({ money, days, have }: { money: number; days?: number; have?: number }) {
   return (
     <span class="cost">
-      <span class={lack(money, have?.money)}>💰{fmt.money(money)}</span>
-      {mat > 0 && <span class={lack(mat, have?.mat)}>⛏{Math.round(mat)}</span>}
-      {uranium > 0 && <span class={lack(uranium, have?.uranium)}>☢{uranium}</span>}
+      <span class={have !== undefined && have < money ? 'bad' : ''}>💰{fmt.money(money)}</span>
       {days !== undefined && <span class="muted">⏱{days}d</span>}
     </span>
   );
 }
 
-export function HpBar({ hp, ammo }: { hp: number; ammo?: number }) {
+export function HpBar({ hp }: { hp: number }) {
   return (
     <div class="col" style={{ gap: '2px', minWidth: '60px' }}>
       <Bar v={hp / 100} color={hp > 60 ? 'var(--good)' : hp > 30 ? 'var(--warn)' : 'var(--bad)'} h={5} />
-      {ammo !== undefined && <Bar v={ammo} color="#f59e0b" h={3} />}
     </div>
   );
 }

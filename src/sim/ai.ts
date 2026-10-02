@@ -1,10 +1,10 @@
 // AI for computer-controlled nations.
+import { SCENARIO_BY_ID } from '../data/scenarios';
 import { TERRAIN, UNITS } from '../data/units';
 import type { Game } from './ctx';
 import { declareWar, evaluate, militaryPower, propose, sidePower } from './diplomacy';
-import { buyPrice, canConstruct, canRecruit, construct, recruit, trade } from './economy';
+import { canConstruct, canRecruit, construct, recruit, setEmbargo } from './economy';
 import { airbases, inAirRange, isAir, isLand, isSeaUnit, orderMove, unitValue } from './military';
-import { launchNuke } from './nuclear';
 import type { BuildingType, Nation, Unit, UnitType } from './types';
 import { seaLoc } from './types';
 
@@ -20,7 +20,6 @@ export function aiHour(g: Game) {
       economyAI(g, n);
       recruitAI(g, n);
       if ((h / 72 + n.idx) % 2 < 1) diplomacyAI(g, n);
-      nuclearAI(g, n);
     }
     const atWar = g.atWarAny(n.idx);
     const period = atWar ? 12 : 96;
@@ -35,18 +34,8 @@ function threatened(g: Game, n: Nation) {
 }
 
 function economyAI(g: Game, n: Nation) {
-  const units = g.unitsOf(n.idx).length;
   const reserve = n.upkeep * 30 + 3;
-  // market: keep some ammo and materials, sell big surpluses
-  const wantAmmo = 40 + units * 4;
-  if (n.res.ammo < wantAmmo && n.money > reserve + 5) {
-    const q = Math.min(wantAmmo - n.res.ammo, Math.floor((n.money - reserve) * 0.3 / buyPrice(g, 'ammo')));
-    if (q >= 5) trade(g, n.idx, 'ammo', q);
-  }
-  if (n.res.materials < 40 && n.money > reserve + 10) trade(g, n.idx, 'materials', Math.min(60, Math.floor((n.money - reserve) * 0.2 / buyPrice(g, 'materials'))));
-  if (n.res.materials > 400) trade(g, n.idx, 'materials', -100);
-  if (n.res.ammo > wantAmmo * 3) trade(g, n.idx, 'ammo', -Math.floor(n.res.ammo - wantAmmo * 2));
-  if (n.res.uranium > 60 && !g.s.provinces.some((p) => p.ctrl === n.idx && p.b.nuclear)) trade(g, n.idx, 'uranium', -Math.floor(n.res.uranium - 20));
+  embargoAI(g, n);
   if (n.money < reserve) return;
   // one construction per tick
   const mine = g.s.provinces.map((p, i) => (p.ctrl === n.idx && p.owner === n.idx ? i : -1)).filter((i) => i >= 0);
@@ -57,11 +46,9 @@ function economyAI(g: Game, n: Nation) {
     return false;
   };
   const byPop = mine.slice().sort((a, b) => g.s.provinces[b].pop - g.s.provinces[a].pop);
-  const factories = levels('factory'), barracks = levels('barracks');
-  const war = g.atWarAny(n.idx);
-  if (!levels('barracks') && tryBuild('barracks', [n.capital, ...byPop])) return;
-  if (n.res.ammo < wantAmmo && factories < 2 + mine.length && tryBuild('factory', byPop)) return;
-  if (n.made.materials < factories * 2 + 4 && tryBuild('mine', mine.slice().sort((a, b) => TERRAIN[g.w.provs[b].terrain].mat - TERRAIN[g.w.provs[a].terrain].mat))) return;
+  const byRes = mine.slice().sort((a, b) => g.s.provinces[b].res * TERRAIN[g.w.provs[b].terrain].res - g.s.provinces[a].res * TERRAIN[g.w.provs[a].terrain].res);
+  const barracks = levels('barracks');
+  if (!barracks && tryBuild('barracks', [n.capital, ...byPop])) return;
   if (barracks < Math.max(2, Math.ceil(mine.length / 2)) && tryBuild('barracks', byPop)) return;
   if (threatened(g, n)) {
     const border = mine.filter((p) => g.w.provs[p].nb.some((q) => { const c = g.s.provinces[q].ctrl; return c !== n.idx && (g.atWar(n.idx, c) || g.rel(n.idx, c) < -40); }));
@@ -69,13 +56,25 @@ function economyAI(g: Game, n: Nation) {
   }
   if (!levels('airbase') && n.income > 0.2 && tryBuild('airbase', byPop)) return;
   if (!levels('port') && tryBuild('port', byPop.filter((p) => g.w.provs[p].sea.length))) return;
-  if (!war && n.money > reserve * 4 && factories < mine.length * 2) tryBuild('factory', byPop);
-  if (n.pers === 'expansionist' && n.income > 3 && g.chance(0.05)) tryBuild('nuclear', byPop);
+  // grow the economy: mines where the ground is rich, factories where people live
+  if (g.chance(0.5)) tryBuild('mine', byRes);
+  else tryBuild('factory', byPop);
+}
+
+/** Embargo bitter rivals; lift embargoes when relations recover. */
+function embargoAI(g: Game, n: Nation) {
+  for (const m of g.s.nations) {
+    if (!m.alive || m.idx === n.idx) continue;
+    const r = g.rel(n.idx, m.idx);
+    const on = g.s.embargo.includes(n.idx + '>' + m.idx);
+    if (!on && r < -60 && !g.atWar(n.idx, m.idx) && g.chance(0.05)) setEmbargo(g, n.idx, m.idx, true);
+    else if (on && r > -30) setEmbargo(g, n.idx, m.idx, false);
+  }
 }
 
 const MIX: [UnitType, number][] = [
   ['infantry', 0.36], ['tank', 0.18], ['artillery', 0.12], ['antiair', 0.06],
-  ['fighter', 0.12], ['bomber', 0.05], ['warship', 0.06], ['submarine', 0.03], ['carrier', 0.02],
+  ['fighter', 0.12], ['bomber', 0.05], ['warship', 0.08], ['carrier', 0.03],
 ];
 
 function recruitAI(g: Game, n: Nation) {
@@ -88,13 +87,12 @@ function recruitAI(g: Game, n: Nation) {
   const units = g.unitsOf(n.idx);
   let regions = 0;
   for (const p of g.s.provinces) if (p.ctrl === n.idx) regions++;
-  if (units.length + n.queue.length >= 24 + regions * 6) return;
+  if (units.length + n.queue.length >= 8 + regions * 5 + (war ? 8 : 0)) return;
   const count = (t: UnitType) => units.filter((u) => u.type === t).length + n.queue.filter((q) => q.type === t).length;
   const total = units.length + n.queue.length + 1;
   const needs = MIX.filter(([t]) => !canRecruit(g, n.idx, t)).map(([t, f]) => ({ t, gap: total * f - count(t) })).sort((a, b) => b.gap - a.gap);
   const adds = war ? 3 : 1;
   for (let i = 0; i < adds && i < needs.length; i++) if (recruit(g, n.idx, needs[i].t)) break;
-  if (g.s.settings.nukes && n.nukes < (n.pers === 'expansionist' ? 8 : 3) && !canRecruit(g, n.idx, 'nuke') && !n.queue.some((q) => q.type === 'nuke') && g.chance(0.3)) recruit(g, n.idx, 'nuke');
 }
 
 // ================================================================== diplomacy
@@ -137,15 +135,13 @@ function diplomacyAI(g: Game, n: Nation) {
       if (propose(g, idx, c.idx, 'alliance').ok) break;
     }
   }
-  // trade & non-aggression
-  if (g.chance(n.pers === 'mercantile' ? 0.5 : 0.2)) {
-    const opts = s.nations.filter((m) => m.alive && m.active && m.idx !== idx && g.rel(idx, m.idx) > 10 && !g.hasPair(s.trade, idx, m.idx) && !g.atWar(idx, m.idx));
-    if (opts.length) {
-      const p = g.pick(opts);
-      if (p.idx === s.player) { if (g.chance(0.2)) propose(g, idx, p.idx, 'trade'); }
-      else propose(g, idx, p.idx, 'trade');
-    }
+  // friends invite the player into an alliance now and then (at most one offer every ~3 months)
+  const me = s.player;
+  if (idx !== me && s.nations[me].alive && !g.allied(idx, me) && !g.atWar(idx, me) && g.rel(idx, me) > 25 && g.chance(0.03)) {
+    const lastOffer = s.inbox.reduce((d, m) => (m.to === me && m.kind === 'alliance' ? Math.max(d, m.day) : d), -9999);
+    if (g.day - lastOffer > 90 && !evaluate(g, 'alliance', me, idx)[1].startsWith('Your enemies')) propose(g, idx, me, 'alliance');
   }
+  // non-aggression
   if (n.pers === 'isolationist' && g.chance(0.25)) {
     const nb = neighbours(g, idx).filter((m) => !g.hasPair(s.nap, idx, m) && !g.atWar(idx, m));
     if (nb.length) {
@@ -166,20 +162,21 @@ function warAI(g: Game, n: Nation) {
   const idx = n.idx;
   if (n.pers !== 'expansionist' && n.pers !== 'opportunist') return;
   if (s.wars.some((w) => w.att[0] === idx)) return;
-  const aggro = AGGRO[s.settings.difficulty];
-  if (g.day - n.lastWar < (n.pers === 'expansionist' ? 600 : 1200) / aggro) return;
+  const hot = SCENARIO_BY_ID[s.scenario]?.hot ?? 1;
+  const aggro = AGGRO[s.settings.difficulty] * Math.sqrt(hot);
+  if (g.day - n.lastWar < (n.pers === 'expansionist' ? 420 : 900) / aggro) return;
   const aiWars = s.wars.filter((w) => w.att[0] !== s.player && w.def[0] !== s.player);
-  if (aiWars.length >= 4 || aiWars.some((w) => g.day - w.start < 60)) return;
+  if (aiWars.length >= 5 * hot || aiWars.some((w) => g.day - w.start < 60 / hot)) return;
   if (g.atWarAny(idx) && g.chance(0.85)) return;
   const mine = militaryPower(g, idx);
   let best = -1, bestScore = 0;
   for (const t of neighbours(g, idx)) {
     if (g.allied(idx, t) || g.atWar(idx, t) || (g.hasPair(s.nap, idx, t) && n.pers !== 'expansionist')) continue;
     const r = g.rel(idx, t);
-    if (r > (n.pers === 'expansionist' ? -25 : -50)) continue;
+    if (r > (n.pers === 'expansionist' ? -15 : -40)) continue;
     const bloc = g.blocOf(t);
     const theirs = sidePower(g, bloc ? bloc.members : [t]);
-    const need = (n.pers === 'expansionist' ? 1.8 : 3) * (g.atWarAny(t) ? 0.6 : 1);
+    const need = (n.pers === 'expansionist' ? 1.6 : 2.5) * (g.atWarAny(t) ? 0.6 : 1);
     const ratio = mine / Math.max(1, theirs);
     if (ratio < need) continue;
     let score = Math.min(ratio, 10) * (1 - r / 100) * aggro;
@@ -189,22 +186,6 @@ function warAI(g: Game, n: Nation) {
   if (best < 0) return;
   if (!g.chance((n.pers === 'expansionist' ? 0.15 : 0.07) * aggro)) { g.addRel(idx, best, -5); return; }
   declareWar(g, idx, best);
-}
-
-function nuclearAI(g: Game, n: Nation) {
-  if (!g.s.settings.nukes || n.nukes <= 0) return;
-  const desperate = g.s.wars.some((w) => (w.att.includes(n.idx) && w.score < -60) || (w.def.includes(n.idx) && w.score > 60));
-  if (!desperate) return;
-  const capLost = n.capital >= 0 && g.s.provinces[n.capital].ctrl !== n.idx;
-  if (!g.chance((capLost ? 0.4 : 0.06) * (n.pers === 'expansionist' ? 1.5 : n.pers === 'defensive' ? 0.5 : 1))) return;
-  const enemies = new Set(g.enemies(n.idx));
-  let best = -1, bv = 0;
-  g.s.provinces.forEach((p, i) => {
-    if (!enemies.has(p.ctrl)) return;
-    const v = g.unitsAt(i).filter((u) => enemies.has(u.owner)).length * 50 + p.pop / 200;
-    if (v > bv) { bv = v; best = i; }
-  });
-  if (best >= 0) launchNuke(g, n.idx, best);
 }
 
 // ================================================================== tactics
@@ -236,6 +217,9 @@ function tactical(g: Game, n: Nation, atWar: boolean) {
   // also push on from regions we are capturing
   for (const u of land) if (enemies.has(s.provinces[u.loc].ctrl)) for (const q of w.provs[u.loc].nb) if (enemies.has(s.provinces[q].ctrl)) targets.add(q);
   const busy = new Set<Unit>();
+  const left = new Map<number, number>(); // own strength left behind in each region
+  // the underdog guards its regions; a much stronger side can take risks
+  const caution = militaryPower(g, idx) > sidePower(g, [...enemies]) * 1.5 ? 0.3 : 1;
   // 1) attacks
   const targetList = [...targets].map((t) => {
     const pr = s.provinces[t];
@@ -247,12 +231,16 @@ function tactical(g: Game, n: Nation, atWar: boolean) {
     if (!cands.length) continue;
     const chosen: Unit[] = [];
     let pow = 0;
-    const left = new Map<number, number>();
     for (const u of cands.sort((a, b) => unitValue(b) - unitValue(a))) {
-      const threat = w.provs[u.loc].nb.some((q) => (enemyStr.get(q) || 0) > 0);
-      const remain = left.get(u.loc) ?? g.unitsAt(u.loc).filter((x) => x.owner === idx && isLand(x)).length;
-      if (threat && remain <= 1 && !enemies.has(s.provinces[u.loc].ctrl)) continue;
-      left.set(u.loc, remain - 1);
+      if (!enemies.has(s.provinces[u.loc].ctrl)) {
+        // leave a garrison big enough to hold against the enemies next door (more at the capital)
+        let threat = 0;
+        for (const q of w.provs[u.loc].nb) threat = Math.max(threat, enemyStr.get(q) || 0);
+        const keep = threat > 0 ? Math.max(0.01, threat * (u.loc === n.capital ? 0.9 : 0.6) * caution) : 0;
+        const remain = left.get(u.loc) ?? ownStr.get(u.loc) ?? 0;
+        if (keep > 0 && remain - unitValue(u) < keep) continue;
+        left.set(u.loc, remain - unitValue(u));
+      }
       chosen.push(u);
       pow += UNITS[u.type].atk * (u.hp / 100);
       if (pow > tg.def * 2 + 10) break;
@@ -264,7 +252,11 @@ function tactical(g: Game, n: Nation, atWar: boolean) {
     }
   }
   // 2) reserves reinforce the most threatened fronts
-  const reserves = idle.filter((u) => !busy.has(u) && !front.includes(u.loc) && u.loc !== n.capital);
+  // the capital keeps a garrison; the rest of its troops can go to the front
+  const atCap = idle.filter((u) => u.loc === n.capital && !busy.has(u));
+  const capKeep = front.includes(n.capital) ? atCap.length : Math.max(2, Math.ceil(atCap.length * 0.35));
+  const spare = new Set(atCap.slice(capKeep));
+  const reserves = idle.filter((u) => !busy.has(u) && !front.includes(u.loc) && (u.loc !== n.capital || spare.has(u)));
   if (front.length && reserves.length) {
     const need = front.map((p) => {
       let threat = 0;
@@ -368,7 +360,7 @@ function navalWar(g: Game, n: Nation, units: Unit[], enemies: Set<number>) {
   const home = s.provinces.findIndex((p, i) => p.ctrl === n.idx && (p.b.port ?? 0) > 0 && w.provs[i].sea.length);
   for (const u of ships) {
     if (u.hp < 40 && home >= 0) { orderMove(g, [u], seaLoc(w.provs[home].sea[0])); continue; }
-    if (mine < theirs * 0.8 && u.type !== 'submarine') continue;
+    if (mine < theirs * 0.8) continue;
     let t = -1, td = 5000;
     for (const p of targets) {
       const d = g.locDist(u.loc, p);

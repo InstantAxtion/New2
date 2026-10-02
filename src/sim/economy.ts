@@ -1,37 +1,37 @@
-// Money, the three resources, the world market, buildings and recruitment.
-import { BUILDINGS, NUKE, TERRAIN, UNITS } from '../data/units';
+// Money: taxes from regions, resources sold on the world market, buildings and recruitment.
+//
+// Everything costs money only. Regions dig up resources (more with mines) that are sold
+// automatically to every country that trades with you; countries at war with you or
+// that embargo you don't buy.
+import { SCENARIO_BY_ID } from '../data/scenarios';
+import { BUILDINGS, UNITS } from '../data/units';
 import type { Game } from './ctx';
-import type { BuildingType, Nation, ProdItem, ResMap, Resource, Unit, UnitType } from './types';
-import { RESOURCES, seaLoc } from './types';
+import { headline } from './headlines';
+import type { BuildingType, Nation, ProdItem, Unit, UnitType } from './types';
+import { seaLoc } from './types';
 
-export const BASE_PRICE: ResMap = { materials: 0.15, ammo: 0.4, uranium: 1.5 };
-const zero = (): ResMap => ({ materials: 0, ammo: 0, uranium: 0 });
+/** $B one unit of resources fetches at a price index of 1. */
+export const RES_VALUE = 0.025;
 
 // ------------------------------------------------------------------ region output
-/** Daily money ($B) a region earns for whoever controls it. */
-export function regionIncome(g: Game, i: number): number {
+/** Daily taxes ($B) a region pays to whoever controls it. */
+export function regionTaxes(g: Game, i: number): number {
   const p = g.s.provinces[i];
   let v = (p.gdp * 0.04 + (p.pop / 1000) * 0.4) / 365;
   if (p.ctrl !== p.owner) v *= 0.5;
-  v *= (1 - p.dmg * 0.6) * (1 - p.rad * 0.9);
-  v *= 1 + 0.1 * (p.b.factory ?? 0);
+  v *= 1 - p.dmg * 0.6;
+  v *= 1 + 0.25 * (p.b.factory ?? 0);
   if (blockaded(g, i)) v *= 0.6;
   return v;
 }
 
-/** Daily materials from a region (natural output + mines). */
-export function regionMaterials(g: Game, i: number): number {
+/** Resources a region digs up per day (natural output + mines). */
+export function regionResources(g: Game, i: number): number {
   const p = g.s.provinces[i];
-  const tm = TERRAIN[g.w.provs[i].terrain].mat;
-  let v = p.mat + (p.b.mine ?? 0) * 3 * tm;
+  // each mine level digs 1.5x what the ground gives naturally (at least +1.5 a day)
+  let v = p.res + (p.b.mine ?? 0) * 1.5 * Math.max(1, p.res);
   if (p.ctrl !== p.owner) v *= 0.5;
-  return v * (1 - p.dmg * 0.5) * (1 - p.rad * 0.9);
-}
-
-export function regionUranium(g: Game, i: number): number {
-  const p = g.s.provinces[i];
-  if (!p.ura || !p.b.mine) return 0;
-  return p.ura * p.b.mine * (p.ctrl !== p.owner ? 0.5 : 1) * (1 - p.dmg * 0.5);
+  return v * (1 - p.dmg * 0.5);
 }
 
 /** Enemy warships next to this coastal region cut its trade. */
@@ -43,127 +43,116 @@ export function blockaded(g: Game, i: number): boolean {
   return false;
 }
 
-/** Warehouses are not endless: stockpiles stop growing at these limits. */
-export function storage(g: Game, n: number): ResMap {
-  let regions = 0, units = 0;
-  for (const p of g.s.provinces) if (p.ctrl === n) regions++;
-  for (const u of g.s.units) if (u.owner === n) units++;
-  return storageFor(regions, units);
-}
-function storageFor(regions: number, units: number): ResMap {
-  return { materials: 300 + regions * 40, ammo: 200 + units * 12, uranium: 100 };
+export function embargoed(g: Game, by: number, target: number) {
+  return g.s.embargo.includes(by + '>' + target);
 }
 
-export function tradeBonus(g: Game, n: number) {
-  let deals = 0;
-  for (const k of g.s.trade) {
-    const [a, b] = k.split('|').map(Number);
-    if (a === n || b === n) deals++;
+/** Share of the world market (by income) that still buys a nation's resources. */
+export function marketAccess(g: Game, n: number): number {
+  return marketAccessAll(g)[n];
+}
+
+/** marketAccess for every nation at once (one pass instead of one per nation). */
+export function marketAccessAll(g: Game): Float64Array {
+  const N = g.N;
+  const out = new Float64Array(N).fill(1);
+  const emb = new Set<number>();
+  for (const k of g.s.embargo) {
+    const [a, b] = k.split('>');
+    emb.add(+a * N + +b);
   }
-  return Math.min(0.15, deals * 0.03);
+  let world = 0;
+  const alive: number[] = [];
+  for (const m of g.s.nations) if (m.alive) { world += m.income; alive.push(m.idx); }
+  for (const n of alive) {
+    const others = world - g.s.nations[n].income;
+    if (others <= 0) continue;
+    let blocked = 0;
+    for (const m of alive) if (m !== n && (emb.has(m * N + n) || g.atWar(m, n))) blocked += g.s.nations[m].income;
+    out[n] = Math.max(0, 1 - blocked / others);
+  }
+  return out;
 }
 
-export function armyUpkeep(g: Game, n: number): number {
-  let y = 0;
-  for (const u of g.s.units) if (u.owner === n) y += UNITS[u.type].upkeep;
-  const diff = n === g.s.player ? { easy: 0.8, normal: 1, hard: 1.15 }[g.s.settings.difficulty] : 1;
-  return (y * diff) / 365;
-}
-
-/** Daily: income, upkeep, resource output, construction, training. */
+/** Daily: taxes, resource sales, upkeep, construction, training, world price. */
 export function economyDay(g: Game) {
   const { s } = g;
-  const income = new Float64Array(g.N);
-  const made: ResMap[] = s.nations.map(zero);
-  const factories = new Float64Array(g.N);
+  const taxes = new Float64Array(g.N);
+  const mined = new Float64Array(g.N);
   for (let i = 0; i < s.provinces.length; i++) {
     const p = s.provinces[i];
     const c = p.ctrl;
     if (c < 0) continue;
-    income[c] += regionIncome(g, i);
-    made[c].materials += regionMaterials(g, i);
-    made[c].uranium += regionUranium(g, i);
-    if (p.ctrl === p.owner) factories[c] += p.b.factory ?? 0;
-    // construction
+    taxes[c] += regionTaxes(g, i);
+    mined[c] += regionResources(g, i);
     if (p.build) {
       if (p.ctrl !== p.owner) p.build = null;
       else if (--p.build.days <= 0) finishBuilding(g, i);
     }
-    // repairs
     if (p.dmg > 0 && p.ctrl === p.owner && !g.rt.battleAt.has(i)) p.dmg = Math.max(0, p.dmg - 0.01);
-    if (p.rad > 0) p.rad = Math.max(0, p.rad - 0.002);
   }
-  // per-nation aggregates in single passes
-  const upkeep = new Float64Array(g.N), units = new Int32Array(g.N), regions = new Int32Array(g.N), deals = new Int32Array(g.N);
-  for (const u of s.units) { upkeep[u.owner] += UNITS[u.type].upkeep; units[u.owner]++; }
-  for (const p of s.provinces) regions[p.ctrl]++;
-  for (const k of s.trade) { const i = k.indexOf('|'); deals[+k.slice(0, i)]++; deals[+k.slice(i + 1)]++; }
-  const diff = { easy: 0.8, normal: 1, hard: 1.15 }[s.settings.difficulty];
+  const upkeep = new Float64Array(g.N);
+  for (const u of s.units) upkeep[u.owner] += UNITS[u.type].upkeep;
+  const diff = { easy: 0.75, normal: 1, hard: 1.15 }[s.settings.difficulty];
+  const access = marketAccessAll(g);
   for (const n of s.nations) {
     if (!n.alive || !n.active) continue;
-    const m = made[n.idx];
-    // factories make ammo; the capital's arsenal makes a little for free
-    m.ammo = factories[n.idx] * 3 + (n.capital >= 0 && s.provinces[n.capital].ctrl === n.idx ? 1 : 0);
-    n.made = m;
-    const cap = storageFor(regions[n.idx], units[n.idx]);
-    for (const r of RESOURCES) n.res[r] = Math.min(cap[r], n.res[r] + m[r]);
-    n.income = income[n.idx] * (1 + Math.min(0.15, deals[n.idx] * 0.03));
+    n.access = access[n.idx];
+    n.taxes = taxes[n.idx];
+    n.mined = mined[n.idx];
+    n.exports = mined[n.idx] * RES_VALUE * s.price * n.access;
+    n.income = n.taxes + n.exports;
     n.upkeep = (upkeep[n.idx] * (n.idx === s.player ? diff : 1)) / 365;
     n.money += n.income - n.upkeep;
     if (n.money < 0) {
       // unpaid troops slowly desert
       n.money = 0;
       for (const u of s.units) if (u.owner === n.idx) u.hp -= 0.5;
-      g.notify([n.idx], "We can't pay the army! Units are losing strength. Disband some or earn more.", 'danger');
+      g.notify([n.idx], "💸 We can't pay the army! Units are losing strength. Earn more or disband some.", 'danger');
     }
     trainingDay(g, n);
   }
-  updatePrices(g);
+  marketDay(g);
 }
 
-function updatePrices(g: Game) {
-  const { s } = g;
-  for (const r of RESOURCES) {
-    let stock = 0, flow = 0;
-    for (const n of s.nations) if (n.alive && n.active) { stock += Math.max(0, n.res[r]); flow += n.made[r] + 0.01; }
-    // scarce stockpiles (less than ~2 months of output) push prices up
-    const ratio = stock / (flow * 60);
-    const target = BASE_PRICE[r] * Math.max(0.6, Math.min(2.5, Math.pow(Math.max(0.05, ratio), -0.35)));
-    s.price[r] += (target - s.price[r]) * 0.05;
+/** The world resource price wanders, with the odd boom or crash. */
+function marketDay(g: Game) {
+  const s = g.s;
+  const base = SCENARIO_BY_ID[s.scenario]?.price ?? 1;
+  s.price += (base - s.price) * 0.01 + (g.rand() - 0.5) * 0.03 * base;
+  if (g.chance(1 / 200)) {
+    const boom = g.chance(0.5);
+    s.price *= boom ? 1.35 : 0.7;
+    g.news('economy', boom
+      ? g.pick(['📈 Resource prices skyrocket! Miners are buying gold-plated hard hats.', '📈 Commodities boom! Every shovel on Earth is suddenly worth a fortune.', '📈 Market frenzy: resource prices jump overnight.'])
+      : g.pick(['📉 Resource prices crash! Traders spotted crying into their spreadsheets.', '📉 Commodity slump: the world has too much stuff.', '📉 Markets tumble as resource prices fall.']), [], true);
+  }
+  s.price = Math.max(0.5 * base, Math.min(2 * base, s.price));
+  if (g.day % 7 === 0) {
+    s.priceHist.push(Math.round(s.price * 100) / 100);
+    if (s.priceHist.length > 104) s.priceHist.shift();
   }
 }
 
-// ------------------------------------------------------------------ market
-export function buyPrice(g: Game, r: Resource) {
-  return g.s.price[r] * 1.1;
-}
-export function sellPrice(g: Game, r: Resource) {
-  return g.s.price[r] * 0.9;
-}
-/** Buy (qty > 0) or sell (qty < 0) on the world market. */
-export function trade(g: Game, n: number, r: Resource, qty: number): string | null {
-  const nat = g.s.nations[n];
-  if (qty > 0) {
-    const cost = qty * buyPrice(g, r);
-    if (nat.money < cost) return 'Not enough money';
-    nat.money -= cost;
-    nat.res[r] += qty;
-    g.s.price[r] *= 1 + Math.min(0.05, qty * 0.0004);
-  } else if (qty < 0) {
-    const q = -qty;
-    if (nat.res[r] < q) return `Not enough ${r}`;
-    nat.res[r] -= q;
-    nat.money += q * sellPrice(g, r);
-    g.s.price[r] *= 1 - Math.min(0.05, q * 0.0004);
+// ------------------------------------------------------------------ embargoes
+export function setEmbargo(g: Game, by: number, target: number, on: boolean) {
+  const k = by + '>' + target;
+  if (on && !g.s.embargo.includes(k)) {
+    g.s.embargo.push(k);
+    g.addRel(by, target, -20);
+    g.news('economy', headline(g, 'embargo', { A: g.name(by), B: g.name(target) }), [by, target], target === g.s.player || by === g.s.player);
+    g.notify([target], `🚫 ${g.name(by)} has put an embargo on us: they won't buy our resources.`, 'warn');
+  } else if (!on && g.s.embargo.includes(k)) {
+    g.s.embargo = g.s.embargo.filter((x) => x !== k);
+    g.addRel(by, target, 5);
+    g.notify([target], `🤝 ${g.name(by)} lifted its embargo on us.`, 'good');
   }
-  return null;
 }
 
 // ------------------------------------------------------------------ buildings
 export function buildCost(type: BuildingType, level: number) {
   const d = BUILDINGS[type];
-  const k = 1 + level * 0.5; // each level costs a bit more
-  return { money: d.cost * k, mat: Math.round(d.mat * k), days: d.days };
+  return { money: d.cost * (1 + level * 0.6), days: d.days };
 }
 
 export function canConstruct(g: Game, n: number, type: BuildingType, p: number): string | null {
@@ -175,23 +164,15 @@ export function canConstruct(g: Game, n: number, type: BuildingType, p: number):
   if (lvl >= d.max) return d.max > 1 ? 'Already at max level' : 'Already built';
   if (type === 'port' && !g.w.provs[p].sea.length) return 'Needs a coastline';
   if (g.year < d.year) return `Not invented until ${d.year}`;
-  if (type === 'nuclear') {
-    if (!g.s.settings.nukes) return 'Nuclear weapons are off in this game';
-    if (g.s.provinces.some((q) => q.ctrl === n && q.b.nuclear)) return 'You already have one';
-  }
-  const c = buildCost(type, lvl);
-  if (g.s.nations[n].money < c.money) return 'Not enough money';
-  if (g.s.nations[n].res.materials < c.mat) return 'Not enough materials';
+  if (g.s.nations[n].money < buildCost(type, lvl).money) return 'Not enough money';
   return null;
 }
 
 export function construct(g: Game, n: number, type: BuildingType, p: number): string | null {
   const err = canConstruct(g, n, type, p);
   if (err) return err;
-  const nat = g.s.nations[n];
   const c = buildCost(type, g.s.provinces[p].b[type] ?? 0);
-  nat.money -= c.money;
-  nat.res.materials -= c.mat;
+  g.s.nations[n].money -= c.money;
   g.s.provinces[p].build = { type, days: c.days, total: c.days };
   g.rt.dirtyBuildings = true;
   return null;
@@ -200,10 +181,7 @@ export function construct(g: Game, n: number, type: BuildingType, p: number): st
 export function cancelConstruction(g: Game, p: number) {
   const prov = g.s.provinces[p];
   if (!prov.build) return;
-  const c = buildCost(prov.build.type, prov.b[prov.build.type] ?? 0);
-  const nat = g.s.nations[prov.owner];
-  nat.money += c.money * 0.5;
-  nat.res.materials += c.mat * 0.5;
+  g.s.nations[prov.owner].money += buildCost(prov.build.type, prov.b[prov.build.type] ?? 0).money * 0.5;
   prov.build = null;
   g.rt.dirtyBuildings = true;
 }
@@ -220,14 +198,13 @@ function finishBuilding(g: Game, i: number) {
 }
 
 // ------------------------------------------------------------------ recruitment
-export function unitAvailable(g: Game, type: UnitType | 'nuke') {
-  if (type === 'nuke') return g.s.settings.nukes && g.year >= NUKE.year;
+export function unitAvailable(g: Game, type: UnitType) {
   return g.year >= UNITS[type].year;
 }
 
 /** Where a nation can train this kind of unit. */
-export function trainingSites(g: Game, n: number, type: UnitType | 'nuke'): number[] {
-  const b = type === 'nuke' ? 'nuclear' : UNITS[type].needs;
+export function trainingSites(g: Game, n: number, type: UnitType): number[] {
+  const b = UNITS[type].needs;
   const out: number[] = [];
   g.s.provinces.forEach((p, i) => {
     if (p.ctrl === n && p.owner === n && (p.b[b] ?? 0) > 0) out.push(i);
@@ -235,60 +212,41 @@ export function trainingSites(g: Game, n: number, type: UnitType | 'nuke'): numb
   return out;
 }
 
-export function slotsAt(g: Game, p: number, type: UnitType | 'nuke') {
-  if (type === 'nuke') return 1;
+export function slotsAt(g: Game, p: number, type: UnitType) {
   const need = UNITS[type].needs;
   const lvl = g.level(p, need);
   return need === 'barracks' ? lvl : lvl * 2;
 }
 
-export function recruitCost(type: UnitType | 'nuke') {
-  if (type === 'nuke') return { money: NUKE.cost, mat: 0, uranium: NUKE.uranium, days: NUKE.days };
-  const d = UNITS[type];
-  return { money: d.cost, mat: d.mat, uranium: 0, days: d.days };
-}
-
-export function canRecruit(g: Game, n: number, type: UnitType | 'nuke', at?: number): string | null {
-  if (!unitAvailable(g, type)) return type === 'nuke' ? (g.s.settings.nukes ? `Not invented until ${NUKE.year}` : 'Nuclear weapons are off') : `Not invented until ${UNITS[type].year}`;
+export function canRecruit(g: Game, n: number, type: UnitType, at?: number): string | null {
+  if (!unitAvailable(g, type)) return `Not invented until ${UNITS[type].year}`;
   const sites = trainingSites(g, n, type);
-  const bname = type === 'nuke' ? 'Nuclear Facility' : BUILDINGS[UNITS[type].needs].name;
+  const bname = BUILDINGS[UNITS[type].needs].name;
   if (!sites.length) return `Build a ${bname} first`;
   if (at !== undefined && !sites.includes(at)) return `This region has no ${bname}`;
-  const nat = g.s.nations[n];
-  const c = recruitCost(type);
-  if (nat.money < c.money) return 'Not enough money';
-  if (nat.res.materials < c.mat) return 'Not enough materials';
-  if (nat.res.uranium < c.uranium) return `Needs ${c.uranium} uranium`;
+  if (g.s.nations[n].money < UNITS[type].cost) return 'Not enough money';
   return null;
 }
 
 /** Best site: the one that will finish soonest (fewest queued per slot), preferring the capital. */
-export function bestSite(g: Game, n: number, type: UnitType | 'nuke'): number {
+export function bestSite(g: Game, n: number, type: UnitType): number {
   const nat = g.s.nations[n];
   let best = -1, bs = Infinity;
   for (const p of trainingSites(g, n, type)) {
-    const queued = nat.queue.filter((q) => q.at === p && sameBuilding(q.type, type)).length;
+    const queued = nat.queue.filter((q) => q.at === p && UNITS[q.type].needs === UNITS[type].needs).length;
     const score = queued / Math.max(1, slotsAt(g, p, type)) + (p === nat.capital ? -0.1 : 0);
     if (score < bs) { bs = score; best = p; }
   }
   return best;
 }
 
-function sameBuilding(a: UnitType | 'nuke', b: UnitType | 'nuke') {
-  const need = (t: UnitType | 'nuke') => (t === 'nuke' ? 'nuclear' : UNITS[t].needs);
-  return need(a) === need(b);
-}
-
-export function recruit(g: Game, n: number, type: UnitType | 'nuke', at?: number): string | null {
+export function recruit(g: Game, n: number, type: UnitType, at?: number): string | null {
   const err = canRecruit(g, n, type, at);
   if (err) return err;
   const nat = g.s.nations[n];
-  const site = at ?? bestSite(g, n, type);
-  const c = recruitCost(type);
-  nat.money -= c.money;
-  nat.res.materials -= c.mat;
-  nat.res.uranium -= c.uranium;
-  nat.queue.push({ id: g.nextId(), type, at: site, days: c.days, total: c.days });
+  const d = UNITS[type];
+  nat.money -= d.cost;
+  nat.queue.push({ id: g.nextId(), type, at: at ?? bestSite(g, n, type), days: d.days, total: d.days });
   return null;
 }
 
@@ -296,16 +254,13 @@ export function cancelRecruit(g: Game, n: number, id: number) {
   const nat = g.s.nations[n];
   const q = nat.queue.find((x) => x.id === id);
   if (!q) return;
-  const c = recruitCost(q.type);
-  nat.money += c.money * 0.75;
-  nat.res.materials += c.mat * 0.75;
-  nat.res.uranium += c.uranium;
+  nat.money += UNITS[q.type].cost * 0.75;
   nat.queue = nat.queue.filter((x) => x !== q);
 }
 
 /** Position of an item in its training line (0 = training now). */
 export function queuePosition(g: Game, n: Nation, item: ProdItem) {
-  const same = n.queue.filter((q) => q.at === item.at && sameBuilding(q.type, item.type));
+  const same = n.queue.filter((q) => q.at === item.at && UNITS[q.type].needs === UNITS[item.type].needs);
   const slots = Math.max(1, slotsAt(g, item.at, item.type));
   const k = same.indexOf(item);
   return k < slots ? 0 : k - slots + 1;
@@ -318,12 +273,11 @@ function trainingDay(g: Game, n: Nation) {
   for (const q of n.queue) {
     const prov = g.s.provinces[q.at];
     if (!prov || prov.ctrl !== n.idx) {
-      // the site was lost: move the order to another site or refund it
       const alt = bestSite(g, n.idx, q.type);
       if (alt >= 0) q.at = alt;
-      else { done.push(q); continue; }
+      else { done.push(q); n.money += UNITS[q.type].cost * 0.5; continue; }
     }
-    const key = q.at + ':' + (q.type === 'nuke' ? 'nuclear' : UNITS[q.type].needs);
+    const key = q.at + ':' + UNITS[q.type].needs;
     const k = used.get(key) || 0;
     if (k >= Math.max(1, slotsAt(g, q.at, q.type))) continue;
     used.set(key, k + 1);
@@ -337,16 +291,11 @@ function trainingDay(g: Game, n: Nation) {
 
 export function makeUnit(g: Game, type: UnitType, owner: number, loc: number): Unit {
   const air = UNITS[type].domain === 'air';
-  return { id: g.nextId(), type, owner, loc, hp: 100, ammo: 1, xp: 0, path: [], progress: 0, pace: 0, dug: 0, target: -1, base: air ? loc : -1 };
+  return { id: g.nextId(), type, owner, loc, hp: 100, xp: 0, path: [], progress: 0, pace: 0, dug: 0, target: -1, base: air ? loc : -1 };
 }
 
 function spawn(g: Game, n: Nation, q: ProdItem) {
   if (g.s.provinces[q.at]?.ctrl !== n.idx) return;
-  if (q.type === 'nuke') {
-    n.nukes++;
-    g.notify([n.idx], '☢️ A nuclear warhead is ready.', 'warn');
-    return;
-  }
   const def = UNITS[q.type];
   let loc = q.at;
   if (def.domain === 'sea') {

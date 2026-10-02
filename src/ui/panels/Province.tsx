@@ -1,5 +1,5 @@
 import { BUILDING_TYPES, BUILDINGS, TERRAIN, UNIT_TYPES, UNITS } from '../../data/units';
-import { blockaded, buildCost, canConstruct, canRecruit, cancelConstruction, construct, recruit, recruitCost, regionIncome, regionMaterials, regionUranium, unitAvailable } from '../../sim/economy';
+import { blockaded, buildCost, canConstruct, canRecruit, cancelConstruction, construct, RES_VALUE, recruit, regionResources, regionTaxes, unitAvailable } from '../../sim/economy';
 import { unitVisible } from '../../sim/fog';
 import type { UnitType } from '../../sim/types';
 import { Bar, Cost, fmt, HpBar, NationDot, Sheet, UnitIcon } from '../common';
@@ -17,13 +17,12 @@ export function ProvincePanel() {
   const ctrl = g.s.nations[p.ctrl];
   const mine = p.owner === me && p.ctrl === me;
   const seen = g.rt.visible[i] === 1 || mine;
-  const units = g.unitsAt(i).filter((u) => unitVisible(g, u.owner, u.loc, u.type) && UNITS[u.type].domain !== 'air');
+  const units = g.unitsAt(i).filter((u) => unitVisible(g, u.owner, u.loc) && UNITS[u.type].domain !== 'air');
   const planes = g.s.units.filter((u) => UNITS[u.type].domain === 'air' && u.base === i && (u.owner === me || seen));
-  const have = { money: n.money, mat: n.res.materials, uranium: n.res.uranium };
   const trainable = UNIT_TYPES.filter((t) => unitAvailable(g, t) && g.level(i, UNITS[t].needs) > 0);
-  const train = (t: UnitType | 'nuke') => {
+  const train = (t: UnitType) => {
     const e = recruit(g, me, t, i);
-    c.toast(e ?? `${t === 'nuke' ? 'Warhead' : UNITS[t].name} ordered in ${sp.name}`, e ? 'warn' : 'good');
+    c.toast(e ?? `${UNITS[t].name} ordered in ${sp.name}`, e ? 'warn' : 'good');
   };
   return (
     <Sheet title={<span>{owner.capital === i ? '★ ' : ''}{sp.name}</span>} onClose={() => c.selectProvince(-1)} tall>
@@ -36,9 +35,9 @@ export function ProvincePanel() {
       </div>
       <div class="tiny muted" style={{ marginTop: '4px' }}>{TERRAIN[sp.terrain].note}</div>
       <div class="grid3" style={{ marginTop: '8px' }}>
-        <div class="stat"><div class="l">💰 Income</div><div class="v">{fmt.money(regionIncome(g, i) * 30)}</div><div class="tiny muted">a month</div></div>
-        <div class="stat"><div class="l">⛏ Materials</div><div class="v">{regionMaterials(g, i).toFixed(1)}</div><div class="tiny muted">a day</div></div>
-        <div class="stat"><div class="l">☢ Uranium</div><div class="v">{p.ura > 0 ? (p.b.mine ? regionUranium(g, i).toFixed(1) : 'deposit') : '—'}</div><div class="tiny muted">{p.ura > 0 && !p.b.mine ? 'build a mine' : 'a day'}</div></div>
+        <div class="stat"><div class="l">🏛 Taxes</div><div class="v">{fmt.money(regionTaxes(g, i) * 30)}</div><div class="tiny muted">a month</div></div>
+        <div class="stat"><div class="l">⛏ Resources</div><div class="v">{regionResources(g, i).toFixed(1)}</div><div class="tiny muted">a day</div></div>
+        <div class="stat"><div class="l">💹 Sold for</div><div class="v">{fmt.money(regionResources(g, i) * RES_VALUE * g.s.price * owner.access * 30)}</div><div class="tiny muted">a month</div></div>
       </div>
       {p.cap > 0 && p.capBy >= 0 && (
         <div class="card small" style={{ marginTop: '8px' }}>
@@ -61,7 +60,7 @@ export function ProvincePanel() {
             </div>
           )}
           <div class="list">
-            {BUILDING_TYPES.filter((t) => g.year >= BUILDINGS[t].year && (t !== 'nuclear' || g.s.settings.nukes) && (t !== 'port' || sp.sea.length)).map((t) => {
+            {BUILDING_TYPES.filter((t) => g.year >= BUILDINGS[t].year && (t !== 'port' || sp.sea.length)).map((t) => {
               const d = BUILDINGS[t];
               const lvl = p.b[t] ?? 0;
               const err = canConstruct(g, me, t, i);
@@ -73,10 +72,10 @@ export function ProvincePanel() {
                   <div class="grow">
                     <div class="small"><b>{d.name}</b> {lvl > 0 && <span class="chip good">{d.max > 1 ? `level ${lvl}/${d.max}` : 'built'}</span>}</div>
                     <div class="tiny muted">{d.short}</div>
-                    {!maxed && <Cost money={cost.money} mat={cost.mat} days={cost.days} have={have} />}
+                    {!maxed && <Cost money={cost.money} days={cost.days} have={n.money} />}
                   </div>
                   {!maxed && (
-                    <button class={'btn sm ' + (err ? '' : 'primary')} disabled={!!err && !/money|materials/.test(err)} onClick={() => { const e = construct(g, me, t, i); c.toast(e ?? `${d.icon} ${d.name} started`, e ? 'warn' : 'good'); }}>
+                    <button class={'btn sm ' + (err ? '' : 'primary')} disabled={!!err && !/money/.test(err)} onClick={() => { const e = construct(g, me, t, i); c.toast(e ?? `${d.icon} ${d.name} started`, e ? 'warn' : 'good'); }}>
                       {lvl ? 'Upgrade' : 'Build'}
                     </button>
                   )}
@@ -84,34 +83,23 @@ export function ProvincePanel() {
               );
             })}
           </div>
-          {(trainable.length > 0 || g.level(i, 'nuclear') > 0) && (
+          {trainable.length > 0 && (
             <>
               <div class="section">🎖 Train here</div>
               <div class="list">
                 {trainable.map((t) => {
-                  const rc = recruitCost(t);
                   const err = canRecruit(g, me, t, i);
                   return (
                     <div class="item">
                       <UnitIcon type={t} color={n.color} size={30} />
                       <div class="grow">
                         <div class="small"><b>{UNITS[t].name}</b></div>
-                        <Cost money={rc.money} mat={rc.mat} days={rc.days} have={have} />
+                        <Cost money={UNITS[t].cost} days={UNITS[t].days} have={n.money} />
                       </div>
                       <button class="btn sm primary" disabled={!!err} onClick={() => train(t)}>Train</button>
                     </div>
                   );
                 })}
-                {g.level(i, 'nuclear') > 0 && (
-                  <div class="item">
-                    <span style={{ fontSize: '22px' }}>☢️</span>
-                    <div class="grow">
-                      <div class="small"><b>Nuclear warhead</b></div>
-                      <Cost money={recruitCost('nuke').money} uranium={recruitCost('nuke').uranium} days={recruitCost('nuke').days} have={have} />
-                    </div>
-                    <button class="btn sm danger" disabled={!!canRecruit(g, me, 'nuke', i)} onClick={() => train('nuke')}>Build</button>
-                  </div>
-                )}
               </div>
             </>
           )}
@@ -131,7 +119,7 @@ export function ProvincePanel() {
             <UnitIcon type={u.type} color={g.s.nations[u.owner].color} size={26} />
             <div class="grow">
               <div class="small ellipsis">{UNITS[u.type].name} <span class="muted">({g.name(u.owner)})</span></div>
-              <HpBar hp={u.hp} ammo={u.owner === me ? u.ammo : undefined} />
+              <HpBar hp={u.hp} />
             </div>
             {u.owner === me && <span class="tiny muted">select</span>}
           </div>

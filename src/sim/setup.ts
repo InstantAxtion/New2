@@ -1,10 +1,10 @@
 // Builds a new GameState from world geography + a scenario.
-import { PROFILES, URANIUM } from '../data/countries';
+import { PROFILES } from '../data/countries';
 import { SCENARIO_BY_ID, inRegion, type MilTuple, type ScenarioDef, type Selector } from '../data/scenarios';
 import { TERRAIN, UNITS } from '../data/units';
 import { Game } from './ctx';
-import { BASE_PRICE, makeUnit, regionIncome, regionMaterials, regionUranium } from './economy';
-import type { GameSettings, GameState, Gov, Nation, Personality, Province, ResMap, UnitType } from './types';
+import { makeUnit, marketAccessAll, RES_VALUE, regionResources, regionTaxes } from './economy';
+import type { GameSettings, GameState, Gov, Nation, Personality, Province, UnitType } from './types';
 import { seaLoc } from './types';
 import type { WorldData } from './world';
 
@@ -40,7 +40,6 @@ function hashStr(s: string) {
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return h >>> 0;
 }
-const zeroRes = (): ResMap => ({ materials: 0, ammo: 0, uranium: 0 });
 
 export function newGame(w: WorldData, opts: NewGameOptions): Game {
   const sc = SCENARIO_BY_ID[opts.scenario];
@@ -58,7 +57,7 @@ export function newGame(w: WorldData, opts: NewGameOptions): Game {
     sub: n.sub,
     color: FIXED_COLORS[n.id] || hsl((i * 137.508) % 360, 38 + (hashStr(n.id) % 22), 48 + (hashStr(n.id + 'l') % 14)),
     gov: PROFILES[n.id]?.gov ?? 'democracy',
-    pers: PROFILES[n.id]?.pers ?? defaultPersonality(n.pop, hashStr(n.id + seed)),
+    pers: sc.chaos ? 'expansionist' : PROFILES[n.id]?.pers ?? defaultPersonality(n.pop, hashStr(n.id + seed)),
   }));
   const idx = new Map(protos.map((p, i) => [p.id, i]));
   const select = (sel: Selector): number[] => selectProvinces(w, idx, sel);
@@ -106,12 +105,10 @@ export function newGame(w: WorldData, opts: NewGameOptions): Game {
     core: core[i],
     pop: Math.max(1, provPop[i]),
     gdp: Math.max(0.05, provGdp[i]),
-    mat: (0.4 + Math.sqrt(sp.area) / 700) * TERRAIN[sp.terrain].mat,
-    ura: 0,
+    res: (0.4 + Math.sqrt(sp.area) / 700) * TERRAIN[sp.terrain].res,
     b: {},
     build: null,
     dmg: 0,
-    rad: 0,
     cap: 0,
     capBy: -1,
   }));
@@ -135,11 +132,11 @@ export function newGame(w: WorldData, opts: NewGameOptions): Game {
       money: 0,
       income: 0,
       upkeep: 0,
-      res: zeroRes(),
-      made: zeroRes(),
-      used: zeroRes(),
+      taxes: 0,
+      exports: 0,
+      mined: 0,
+      access: 1,
       queue: [],
-      nukes: 0,
       aiNext: 0,
       lastWar: -9999,
       history: [],
@@ -149,7 +146,6 @@ export function newGame(w: WorldData, opts: NewGameOptions): Game {
   const playerIdx = idx.get(opts.player);
   if (playerIdx === undefined || !nations[playerIdx].alive) throw new Error('invalid player nation ' + opts.player);
   const settings: GameSettings = {
-    nukes: true,
     fog: true,
     difficulty: 'normal',
     victory: { conquest: 0.5, endYear: sc.year + 40, ...(sc.victory || {}) },
@@ -161,7 +157,7 @@ export function newGame(w: WorldData, opts: NewGameOptions): Game {
   };
 
   const s: GameState = {
-    version: 2,
+    version: 3,
     seed,
     rng: seed >>> 0,
     scenario: sc.id,
@@ -178,8 +174,9 @@ export function newGame(w: WorldData, opts: NewGameOptions): Game {
     battles: [],
     rel: new Array(N * N).fill(0),
     nap: [],
-    trade: [],
-    price: { ...BASE_PRICE },
+    embargo: [],
+    price: sc.price ?? 1,
+    priceHist: [],
     inbox: [],
     news: [],
     toasts: [],
@@ -194,9 +191,10 @@ export function newGame(w: WorldData, opts: NewGameOptions): Game {
     if (!nations[playerIdx].active) throw new Error('player nation is outside the quick-match region');
   }
   setupDiplomacy(g, sc, idx);
-  setupUranium(g);
   setupMilitary(g, sc);
   setupEconomy(g);
+  // the underdog gets a war chest
+  if (sc.vsPlayer) nations[playerIdx].money += 40 + nations[playerIdx].income * 240;
   for (const n of nations) n.aiNext = Math.floor(g.rand() * 24 * 5);
   g.rebuildDiplomacy();
   g.indexUnits();
@@ -249,18 +247,6 @@ function pickCapital(w: WorldData, provinces: Province[], n: number, home: strin
   return best;
 }
 
-function setupUranium(g: Game) {
-  const { s, w } = g;
-  for (const [id, share] of Object.entries(URANIUM)) {
-    const provs = w.provs.map((p, i) => (w.nations[p.baseOwner].id === id ? i : -1)).filter((i) => i >= 0);
-    if (!provs.length) continue;
-    // deposits sit in one to three regions
-    const k = Math.min(provs.length, share > 5 ? 3 : share > 1 ? 2 : 1);
-    const chosen = provs.slice().sort((a, b) => (hashStr(w.provs[a].name + 'u') % 997) * Math.sqrt(w.provs[a].area) - (hashStr(w.provs[b].name + 'u') % 997) * Math.sqrt(w.provs[b].area)).reverse().slice(0, k);
-    for (const p of chosen) s.provinces[p].ura = Math.max(0.3, (share / 10 / k));
-  }
-}
-
 // ------------------------------------------------------------------ diplomacy
 function setupDiplomacy(g: Game, sc: ScenarioDef, idx: Map<string, number>) {
   const { s, w } = g;
@@ -291,8 +277,13 @@ function setupDiplomacy(g: Game, sc: ScenarioDef, idx: Map<string, number>) {
   }
   for (const [a, b] of sc.sanctions || []) {
     const x = id(a), y = id(b);
-    if (x >= 0 && y >= 0) { s.rel[x * N + y] = Math.min(s.rel[x * N + y], -30); s.rel[y * N + x] = Math.min(s.rel[y * N + x], -30); }
+    if (x >= 0 && y >= 0) {
+      s.rel[x * N + y] = Math.min(s.rel[x * N + y], -30);
+      s.rel[y * N + x] = Math.min(s.rel[y * N + x], -30);
+      if (!s.embargo.includes(x + '>' + y)) s.embargo.push(x + '>' + y);
+    }
   }
+  if (sc.chaos) for (let i = 0; i < N * N; i++) s.rel[i] = Math.min(s.rel[i], -25 - Math.floor(g.rand() * 30));
   let bid = 1;
   for (const b of sc.blocs || []) {
     const members = b.members.map(id).filter((x) => x >= 0);
@@ -309,13 +300,15 @@ function setupDiplomacy(g: Game, sc: ScenarioDef, idx: Map<string, number>) {
     s.wars.push({ id: wid++, name: war.name, att, def, start: 0, score: 0, lost: [0, 0] });
     for (const x of att) for (const y of def) { s.rel[x * N + y] = -90; s.rel[y * N + x] = -90; }
   }
-  for (const group of sc.trade || []) {
-    const ids = group.map(id).filter((x) => x >= 0);
-    for (let i = 0; i < ids.length; i++)
-      for (let j = i + 1; j < ids.length; j++) {
-        const k = g.pairKey(ids[i], ids[j]);
-        if (!s.trade.includes(k)) s.trade.push(k);
-      }
+  if (sc.vsPlayer) {
+    const me = s.player;
+    const def = [me];
+    const att: number[] = [];
+    for (let b = 0; b < N; b++) if (b !== me && s.nations[b].alive && neighbours.has(me * N + b)) att.push(b);
+    if (att.length) {
+      s.wars.push({ id: wid++, name: `Everyone vs ${s.nations[me].name}`, att, def, start: 0, score: 0, lost: [0, 0] });
+      for (const x of att) { s.rel[x * N + me] = -90; s.rel[me * N + x] = -90; }
+    }
   }
   s.nextId = 1000;
   g.rebuildDiplomacy();
@@ -341,7 +334,7 @@ function setupMilitary(g: Game, sc: ScenarioDef) {
       const govF = n.gov === 'democracy' ? 1 : 1.5;
       m = [Math.max(3, Math.min((pop / 1000) * 2 * govF, gdp * 1.5)) * scale, gdp * 0.3 * scale, gdp * 0.2 * scale, 0, 0, gdp * 0.01 * scale, 0, 0, 0, 0, 0, 0];
     }
-    const [pers, tanks, air, bombers, carriers, surface, subs, , warheads, , , bbs = 0] = m;
+    const [pers, tanks, air, bombers, carriers, surface, subs, , , , , bbs = 0] = m;
     const coast = provs.filter((p) => w.provs[p].sea.length);
     const avail = (t: UnitType) => year >= UNITS[t].year;
     const counts: Partial<Record<UnitType, number>> = {};
@@ -355,9 +348,8 @@ function setupMilitary(g: Game, sc: ScenarioDef) {
     if (coast.length) {
       counts.carrier = avail('carrier') ? Math.min(11, Math.round(carriers)) : 0;
       counts.warship = Math.round(surface / 6) + (avail('carrier') ? 0 : Math.round(carriers)) + Math.round(bbs / 2);
-      counts.submarine = avail('submarine') ? Math.round(subs / 8) : 0;
+      counts.warship += Math.round(subs / 12);
     }
-    if (warheads > 0 && year >= 1945) n.nukes = Math.min(30, Math.ceil(warheads / 150));
 
     // ---- starting buildings
     const byPop = provs.slice().sort((a, b) => s.provinces[b].pop - s.provinces[a].pop);
@@ -369,7 +361,6 @@ function setupMilitary(g: Game, sc: ScenarioDef) {
     if (big) set(cap, 'fort', 1);
     for (const p of byPop.slice(1, Math.ceil(provs.length * 0.35))) set(p, 'barracks', 1);
     for (const p of provs) if (s.provinces[p].gdp > 150 && p !== cap) set(p, 'factory', s.provinces[p].gdp > 600 ? 2 : 1);
-    for (const p of provs) if (s.provinces[p].ura > 0 && s.provinces[p].owner === n.idx) set(p, 'mine', 1);
     for (const p of provs) if (big && (w.provs[p].terrain === 'mountain' || w.provs[p].terrain === 'hills') && hashStr(w.provs[p].name) % 2 === 0) set(p, 'mine', 1);
     const airCount = (counts.fighter ?? 0) + (counts.bomber ?? 0);
     const bases: number[] = [];
@@ -377,14 +368,13 @@ function setupMilitary(g: Game, sc: ScenarioDef) {
       const nb = Math.max(1, Math.min(provs.length, Math.ceil(airCount / 6)));
       for (const p of [cap, ...byPop.filter((x) => x !== cap)].slice(0, nb)) { set(p, 'airbase', 1); bases.push(p); }
     }
-    const shipCount = (counts.warship ?? 0) + (counts.submarine ?? 0) + (counts.carrier ?? 0);
+    const shipCount = (counts.warship ?? 0) + (counts.carrier ?? 0);
     const ports: number[] = [];
     if (coast.length) {
       const np = shipCount > 0 ? Math.max(1, Math.min(coast.length, Math.ceil(shipCount / 8))) : 1;
       const sorted = coast.slice().sort((a, b) => s.provinces[b].pop - s.provinces[a].pop);
       for (const p of sorted.slice(0, np)) { set(p, 'port', 1); ports.push(p); }
     }
-    if (n.nukes > 0) set(cap, 'nuclear', 1);
 
     // ---- units
     const enemies = new Set<number>();
@@ -430,23 +420,24 @@ function setupEconomy(g: Game) {
   const { s } = g;
   for (const n of s.nations) {
     if (!n.alive) continue;
-    let income = 0, regions = 0, units = 0, mat = 0, upkeep = 0, factories = 0;
+    let taxes = 0, mined = 0, upkeep = 0;
     s.provinces.forEach((p, i) => {
       if (p.ctrl !== n.idx) return;
-      income += regionIncome(g, i);
-      regions++;
-      mat += p.mat;
-      n.made.materials += regionMaterials(g, i);
-      n.made.uranium += regionUranium(g, i);
-      factories += p.b.factory ?? 0;
+      taxes += regionTaxes(g, i);
+      mined += regionResources(g, i);
     });
-    for (const u of s.units) if (u.owner === n.idx) { units++; upkeep += UNITS[u.type].upkeep; }
-    n.made.ammo = factories * 3 + 1;
+    for (const u of s.units) if (u.owner === n.idx) upkeep += UNITS[u.type].upkeep;
+    n.taxes = taxes;
+    n.mined = mined;
+    n.income = taxes + mined * RES_VALUE;
     n.upkeep = upkeep / 365;
-    n.money = Math.max(10, income * 120);
-    n.res.materials = Math.round(60 + mat * 20 + regions * 10);
-    n.res.ammo = Math.round(80 + units * 6);
-    n.res.uranium = n.nukes > 0 ? 20 : 0;
-    n.income = income;
+  }
+  const access = marketAccessAll(g);
+  for (const n of s.nations) {
+    if (!n.alive) continue;
+    n.access = access[n.idx];
+    n.exports = n.mined * RES_VALUE * s.price * n.access;
+    n.income = n.taxes + n.exports;
+    n.money = Math.max(10, n.income * 120);
   }
 }

@@ -52,16 +52,9 @@ export function locVisible(g: Game, l: Loc) {
   return l >= 0 ? g.rt.visible[l] === 1 : g.rt.seaVisible[-l - 1] === 1;
 }
 
-/** Can the player see this unit? Submarines are only seen up close. */
-export function unitVisible(g: Game, owner: number, l: Loc, type?: string) {
+/** Can the player see this unit? */
+export function unitVisible(g: Game, owner: number, l: Loc) {
   const me = g.s.player;
   if (owner === me || g.allied(owner, me)) return true;
-  if (!locVisible(g, l)) return false;
-  if (type === 'submarine' && l < 0) {
-    // need one of our ships in this or an adjacent cell
-    const c = -l - 1;
-    const cells = [c, ...g.w.cells[c].nb];
-    return cells.some((x) => g.unitsAt(-(x + 1)).some((u) => u.owner === me && UNITS[u.type].domain === 'sea'));
-  }
-  return true;
+  return locVisible(g, l);
 }

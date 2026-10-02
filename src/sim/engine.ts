@@ -1,7 +1,7 @@
 // Simulation loop orchestration, offline catch-up, save/load serialisation.
 import { aiHour } from './ai';
 import { Game } from './ctx';
-import { rallyAllies, warsDay } from './diplomacy';
+import { foreignAid, rallyAllies, relationsDrift, warsDay } from './diplomacy';
 import { economyDay, economyMonth } from './economy';
 import { updateVisibility } from './fog';
 import { militaryHour, supplyTick } from './military';
@@ -19,7 +19,7 @@ export function createGame(w: WorldData, opts: NewGameOptions): Game {
   for (const war of g.s.wars.slice()) rallyAllies(g, war);
   initRuntime(g);
   economyMonth(g);
-  g.news('diplomacy', `The year is ${g.year}. ${g.player.name} awaits your orders.`, [g.s.player]);
+  g.news('fun', `📰 ${g.year}: the world wonders what ${g.player.name}'s new leader will do next.`, [g.s.player]);
   return g;
 }
 
@@ -54,7 +54,6 @@ function dayPhase(g: Game, h: number) {
   const s = g.s;
   switch (h) {
     case 4:
-      for (const n of s.nations) n.used.ammo = 0;
       economyDay(g);
       break;
     case 8:
@@ -63,7 +62,7 @@ function dayPhase(g: Game, h: number) {
       if (s.inbox.length > 60) s.inbox = s.inbox.filter((m, i) => !m.resolved || i > s.inbox.length - 30);
       break;
     case 12:
-      if (g.date().getUTCDate() === 1) economyMonth(g);
+      if (g.date().getUTCDate() === 1) { economyMonth(g); foreignAid(g); relationsDrift(g); }
       break;
     case 18:
       checkVictory(g);
@@ -89,13 +88,13 @@ export function catchUp(g: Game, hours: number): string[] {
   const after = { money: p.money, regions: g.s.provinces.filter((x) => x.ctrl === p.idx).length, units: g.unitsOf(p.idx).length };
   report.push(`Money $${before.money.toFixed(0)}B → $${after.money.toFixed(0)}B · Regions ${before.regions} → ${after.regions} · Units ${before.units} → ${after.units}`);
   for (const t of g.s.toasts.filter((t) => t.id > toastStart && (t.kind === 'danger' || t.kind === 'good')).slice(-8)) report.push(t.text);
-  for (const n of g.s.news.slice(newsStart).filter((n) => n.kind === 'war' || n.kind === 'nuclear' || n.kind === 'peace').slice(-5)) report.push('📰 ' + n.text);
+  for (const n of g.s.news.slice(newsStart).filter((n) => n.kind === 'war' || n.kind === 'peace').slice(-5)) report.push('📰 ' + n.text);
   g.s.awayReport = report;
   return report;
 }
 
 // ------------------------------------------------------------------ save/load
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export function serialize(g: Game): string {
   return JSON.stringify(g.s);

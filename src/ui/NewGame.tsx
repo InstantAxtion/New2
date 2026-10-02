@@ -29,7 +29,7 @@ export function NewGame() {
   const [picked, setPicked] = useState<number>(-1);
   const [search, setSearch] = useState('');
   const [seed] = useState(() => (Date.now() & 0x7fffffff));
-  const [opts, setOpts] = useState<Partial<GameSettings>>({ nukes: true, fog: true, difficulty: 'normal', notifications: true, offlineProgress: true });
+  const [opts, setOpts] = useState<Partial<GameSettings>>({ fog: true, difficulty: 'normal', notifications: true, offlineProgress: true });
 
   const g = c.game;
   const chooseScenario = (s: ScenarioDef) => {
@@ -119,7 +119,6 @@ export function NewGame() {
           </div>
           <div class="section">Rules</div>
           <Toggle label="🌫 Fog of war" desc="You only see enemy troops near your own land and units." on={!!opts.fog} onChange={(v) => setOpts({ ...opts, fog: v })} />
-          <Toggle label="☢️ Nuclear weapons" desc="Turn off to remove nukes from the game." on={!!opts.nukes} onChange={(v) => setOpts({ ...opts, nukes: v })} />
           <button class="btn primary block" style={{ marginTop: '12px' }} disabled={!n} onClick={() => n && start()}>
             ▶ Start as {n?.name}
           </button>
@@ -211,7 +210,6 @@ export function NationCard({ g, idx }: { g: Game; idx: number }) {
         <div><div class="tiny muted">Style</div><b style={{ textTransform: 'capitalize' }}>{n.gov}</b></div>
       </div>
       <div class="row wrap" style={{ marginTop: '8px' }}>
-        {n.nukes > 0 && <span class="chip warn">☢️ {n.nukes} warheads</span>}
         {bloc && <span class="chip" style={{ borderColor: bloc.color }}>🛡 {bloc.name}</span>}
         {wars.map((w) => <span class="chip bad">⚔️ {w.name}</span>)}
       </div>

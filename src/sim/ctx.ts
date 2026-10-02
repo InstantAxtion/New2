@@ -6,7 +6,7 @@ import { haversine } from './world';
 
 /** Visual events for the renderer (explosions, captures...). Not saved. */
 export interface Fx {
-  kind: 'hit' | 'boom' | 'capture' | 'nuke' | 'bomb' | 'sunk' | 'built';
+  kind: 'hit' | 'boom' | 'capture' | 'bomb' | 'sunk' | 'built';
   loc: Loc;
   owner: number;
   hour: number;
@@ -213,8 +213,8 @@ export class Game {
   }
 
   // ------------------------------------------------------------ messages
-  news(kind: NewsKind, text: string, nations: number[] = []) {
-    this.s.news.push({ day: this.day, kind, text, nations });
+  news(kind: NewsKind, text: string, nations: number[] = [], big = false, loc?: number) {
+    this.s.news.push({ day: this.day, kind, text, nations, big: big || undefined, loc });
     if (this.s.news.length > 300) this.s.news.splice(0, this.s.news.length - 300);
   }
   toast(text: string, kind: Toast['kind'] = 'info', loc?: Loc) {

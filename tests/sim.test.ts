@@ -3,13 +3,11 @@ import { SCENARIOS } from '../src/data/scenarios';
 import { UNITS } from '../src/data/units';
 import type { Game } from '../src/sim/ctx';
 import { declareWar, propose, warOf } from '../src/sim/diplomacy';
-import { canConstruct, construct, recruit, trade } from '../src/sim/economy';
+import { canConstruct, construct, marketAccess, recruit, setEmbargo } from '../src/sim/economy';
 import { catchUp, createGame, deserialize, loadGame, serialize, tickHour } from '../src/sim/engine';
 import { updateVisibility } from '../src/sim/fog';
 import { airOrder, isLand, orderMove } from '../src/sim/military';
-import { launchNuke } from '../src/sim/nuclear';
 import { landPath } from '../src/sim/path';
-import { RESOURCES } from '../src/sim/types';
 import { world } from './helpers';
 
 function run(g: Game, days: number) {
@@ -19,8 +17,8 @@ function run(g: Game, days: number) {
 function checkInvariants(g: Game) {
   const N = g.s.nations.length;
   for (const n of g.s.nations) {
-    for (const k of ['money', 'income', 'upkeep'] as const) expect(Number.isFinite(n[k]), `${n.id}.${k}=${n[k]}`).toBe(true);
-    for (const r of RESOURCES) expect(Number.isFinite(n.res[r]) && n.res[r] >= -1e-6, `${n.id}.${r}=${n.res[r]}`).toBe(true);
+    for (const k of ['money', 'income', 'upkeep', 'exports', 'taxes', 'access'] as const) expect(Number.isFinite(n[k]), `${n.id}.${k}=${n[k]}`).toBe(true);
+    expect(n.money).toBeGreaterThanOrEqual(0);
   }
   for (const p of g.s.provinces) {
     expect(p.owner).toBeGreaterThanOrEqual(0);
@@ -33,11 +31,10 @@ function checkInvariants(g: Game) {
     if (u.loc >= 0) expect(u.loc).toBeLessThan(g.w.provs.length);
     else expect(-u.loc - 1).toBeLessThan(g.w.cells.length);
     expect(Number.isFinite(u.hp) && u.hp > 0 && u.hp <= 100).toBe(true);
-    expect(u.ammo >= 0 && u.ammo <= 1.0001).toBe(true);
     if (UNITS[u.type].domain === 'sea') expect(u.loc).toBeLessThan(0);
   }
   for (const b of g.s.battles) expect(g.atWar(b.att, b.def)).toBe(true);
-  for (const r of RESOURCES) expect(Number.isFinite(g.s.price[r]) && g.s.price[r] > 0).toBe(true);
+  expect(g.s.price).toBeGreaterThan(0.4);
 }
 
 describe('map', () => {
@@ -117,7 +114,6 @@ describe('mechanics', () => {
     const me = g.s.player;
     const n = g.player;
     n.money = 500;
-    n.res.materials = 500;
     const site = g.s.provinces.findIndex((p, i) => p.owner === me && !p.b.mine && !canConstruct(g, me, 'mine', i));
     expect(site).toBeGreaterThanOrEqual(0);
     const before = n.money;
@@ -133,22 +129,24 @@ describe('mechanics', () => {
     const g = createGame(world(), { scenario: 'modern', player: 'GBR', seed: 4 });
     const n = g.player;
     n.money = 200;
-    n.res.materials = 300;
     const before = g.unitsOf(n.idx).filter((u) => u.type === 'infantry').length;
     expect(recruit(g, n.idx, 'infantry')).toBeNull();
     run(g, 15);
     expect(g.unitsOf(n.idx).filter((u) => u.type === 'infantry').length).toBeGreaterThan(before);
   });
 
-  test('market buys and sells', () => {
+  test('resources sell automatically; embargoes and wars cut sales', () => {
     const g = createGame(world(), { scenario: 'modern', player: 'FRA', seed: 2 });
-    const n = g.player;
-    n.money = 100;
-    const ammo = n.res.ammo;
-    expect(trade(g, n.idx, 'ammo', 10)).toBeNull();
-    expect(n.res.ammo).toBe(ammo + 10);
-    expect(n.money).toBeLessThan(100);
-    expect(trade(g, n.idx, 'uranium', -1000)).toMatch(/Not enough/);
+    const me = g.s.player;
+    run(g, 2);
+    expect(g.player.exports).toBeGreaterThan(0);
+    expect(g.player.income).toBeCloseTo(g.player.taxes + g.player.exports, 5);
+    const before = marketAccess(g, me);
+    const usa = g.s.nations.findIndex((n) => n.id === 'USA');
+    setEmbargo(g, usa, me, true);
+    expect(marketAccess(g, me)).toBeLessThan(before - 0.05);
+    setEmbargo(g, usa, me, false);
+    expect(marketAccess(g, me)).toBeCloseTo(before, 5);
   });
 
   test('fog of war hides far-away regions', () => {
@@ -165,21 +163,6 @@ describe('mechanics', () => {
     expect(f).toBeDefined();
     const tokyo = g.s.nations.find((n) => n.id === 'JPN')!.capital;
     expect(airOrder(g, f, tokyo)).toMatch(/Too far/);
-  });
-
-  test('a nuclear strike devastates a region', () => {
-    const g = createGame(world(), { scenario: 'modern', player: 'USA', seed: 5 });
-    const usa = g.s.player;
-    const prk = g.s.nations.findIndex((n) => n.id === 'PRK');
-    declareWar(g, usa, prk);
-    const target = g.s.nations[prk].capital;
-    const popBefore = g.s.provinces[target].pop;
-    const nukes = g.player.nukes;
-    expect(launchNuke(g, usa, target)).toBeNull();
-    expect(g.player.nukes).toBe(nukes - 1);
-    expect(g.s.provinces[target].pop).toBeLessThan(popBefore);
-    expect(g.s.provinces[target].rad).toBe(1);
-    checkInvariants(g);
   });
 
   test('peace deal ends a war', () => {

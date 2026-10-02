@@ -112,7 +112,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
         <Toggle label="Battery saver" desc="30 fps, lower resolution map and lighter simulation bursts." on={pref('batterySaver', false)} onChange={(v) => set('batterySaver', v)} />
         <Toggle label="Auto-pause when war is declared on you" on={pref('autoPauseWar', true)} onChange={(v) => set('autoPauseWar', v)} />
       </div>
-      <div class="tiny muted">Difficulty, fog of war and nuclear weapons are chosen when you start a new game.</div>
+      <div class="tiny muted">Difficulty and fog of war are chosen when you start a new game.</div>
     </>
   );
 }
@@ -130,15 +130,15 @@ export function HowToPlay({ onBack }: { onBack: () => void }) {
         <b>🎯 The goal</b>
         <div>Grow your country into the strongest power — mostly by taking land. Check your progress in 🏛 Country.</div>
         <b>🗺 The map</b>
-        <div>Drag to move, pinch to zoom. Your country has a gold border. Dark striped areas are hidden by fog of war. 🗂 View switches the map colours (terrain, resources, alliances). 🌐 shows a globe.</div>
+        <div>Swipe (and flick) to move, pinch or double-tap to zoom. Your country has a gold border. Dark striped areas are hidden by fog of war. 🗂 View switches the map colours (terrain, resources, alliances). 🌐 shows a globe.</div>
         <b>⚔️ Moving troops</b>
-        <div>Drag one of your round counters onto a region — or tap it, then tap the region. Going into enemy land attacks it. Tap the bar above a battle to see who is winning and why.</div>
+        <div>Drag one of your counters onto a region (or tap 🪖 All troops to grab every land unit) — or tap it, then tap the region. Going into enemy land attacks it. Tap the bar above a battle to see who is winning and why.</div>
         <b>🔨 Building</b>
-        <div>Tap Build, pick a building, then tap a green region. Mines dig materials, factories make ammo, barracks/airbases/ports train units, forts help defence.</div>
-        <b>📦 Resources</b>
-        <div>💰 Money comes from your regions and pays for everything. ⛏ Materials build units and buildings. 💥 Ammo is used up in battles. ☢ Uranium makes nuclear warheads. Buy and sell in 🏛 Country.</div>
+        <div>Tap Build, pick a building, then tap a green region. Mines dig more resources to sell, factories raise taxes, barracks/airbases/ports train units, forts help defence. Everything costs only money.</div>
+        <b>💰 Money</b>
+        <div>Money comes from taxes plus ⛏ resources your country sells to the world automatically. Countries at war with you, or that put an embargo on you, stop buying. See the breakdown in 🏛 Country.</div>
         <b>🌍 Friends and enemies</b>
-        <div>In 🌍 World you can make allies, trade deals and peace, or declare war. Each option says whether they are likely to accept.</div>
+        <div>In 🌍 World you can make allies and peace, put embargoes on rivals, or declare war. Each option says whether they are likely to accept.</div>
         <b>📱 Away from the game?</b>
         <div>When you come back, the world will have moved on (1 real minute = 1 game day, up to 30 days). Your troops hold their positions.</div>
       </div>

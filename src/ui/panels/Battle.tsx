@@ -35,7 +35,6 @@ export function BattlePanel() {
   if (fort) reasons.push(`🏰 Fort level ${fort}: defenders +${fort * 30}%`);
   if (attackers.some((u) => u.loc >= 0 && g.w.provs[u.loc].river.has(loc))) reasons.push('🌊 Crossing a river: attackers −25%');
   if (attackers.some((u) => u.loc < 0)) reasons.push('🚢 Landing from the sea: attackers −50%');
-  if ([...attackers, ...defenders].some((u) => u.ammo < 0.05)) reasons.push('💥 Some units are out of ammo: −55%');
   if (attackers.some((u) => u.type === 'tank') && TERRAIN[sp.terrain].tank < 1) reasons.push(`🚜 Tanks struggle in ${TERRAIN[sp.terrain].name.toLowerCase()}`);
   reasons.push('🛡 Defenders get +30% (holding ground is easier), more if dug in');
   const hours = g.s.hour - b.start;
@@ -47,7 +46,7 @@ export function BattlePanel() {
         {units.map((u) => (
           <div class="row" style={{ gap: '6px' }}>
             <UnitIcon type={u.type} color={g.s.nations[u.owner].color} size={22} />
-            <HpBar hp={u.hp} ammo={u.owner === me ? u.ammo : undefined} />
+            <HpBar hp={u.hp} />
           </div>
         ))}
         {!units.length && <div class="tiny muted">—</div>}
@@ -72,7 +71,7 @@ export function BattlePanel() {
       <div class="tiny muted" style={{ marginTop: '6px' }}>Lost so far: attackers {b.attLost}, defenders {b.defLost} units. Units below ~20% health pull back.</div>
       <div class="section">Why</div>
       <div class="list">{reasons.map((r) => <div class="small">{r}</div>)}</div>
-      <div class="help">💡 Tip: attack from several sides, bring artillery next door, send fighters or bombers to this region, and keep factories making ammo.</div>
+      <div class="help">💡 Tip: attack from several sides, bring artillery next door, send fighters or bombers to this region, and dig in: units that wait a while get a defence bonus.</div>
       <div class="row wrap" style={{ marginTop: '8px' }}>
         {meAtt && <button class="btn sm" onClick={() => { for (const u of attackers.filter((x) => x.owner === me)) retreat(g, u); c.toast('Attack called off'); close(); }}>↩ Call off the attack</button>}
         <button class="btn sm primary" onClick={() => {

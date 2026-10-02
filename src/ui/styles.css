@@ -225,3 +225,29 @@ input[type=text], input[type=search], select { background: var(--bg2); border: 1
 .chip.click { cursor: pointer; }
 .legend { grid-template-columns: 30px 1fr; }
 @media (max-width: 360px) { .bgrid { grid-template-columns: 1fr; } .resbar { gap: 8px; } }
+
+/* breaking news banner */
+.breaking { position: absolute; left: 8px; right: 60px; top: calc(84px + var(--safe-top)); z-index: 25; display: flex; align-items: stretch; border-radius: 12px; overflow: hidden; background: linear-gradient(90deg, #1b0f14, #2a1220); border: 1px solid rgba(239,68,68,.6); box-shadow: 0 10px 30px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04) inset; animation: breakin .45s cubic-bezier(.2,1.4,.4,1); }
+.breaking .blabel { flex: none; background: var(--bad); color: #fff; font-weight: 900; font-size: 11px; letter-spacing: .08em; padding: 8px 9px; display: flex; align-items: center; animation: pulse 1.2s ease-in-out infinite; }
+.breaking .btext { padding: 8px 10px; font-size: 13px; font-weight: 700; line-height: 1.25; }
+@keyframes breakin { from { transform: translateY(-30px) scale(.95); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pulse { 50% { background: #b91c1c; } }
+
+/* pop-up offers (alliances, peace, ...) */
+.popup { text-align: center; gap: 10px; max-width: 360px; animation: popin .35s cubic-bezier(.2,1.5,.4,1); border-color: rgba(250,204,21,.35); }
+.popup h3 { margin: 0; font-size: 19px; }
+.picon { font-size: 46px; line-height: 1; margin: 2px auto 0; width: 76px; height: 76px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: radial-gradient(circle, rgba(250,204,21,.25), rgba(250,204,21,0) 70%); animation: bob 2s ease-in-out infinite; }
+.center { text-align: center; }
+@keyframes popin { from { transform: scale(.7); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes bob { 50% { transform: translateY(-4px); } }
+
+/* news feed */
+.chips { display: flex; gap: 6px; overflow-x: auto; margin-top: 10px; padding-bottom: 2px; }
+.chips .chip { flex: none; padding: 5px 11px; font-size: 13px; }
+.chip.on { background: var(--accent); border-color: var(--accent); font-weight: 700; }
+.newsday { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted, #8b9bb8); margin: 8px 2px 0; }
+.item.news { align-items: flex-start; }
+.item.news .nicon { font-size: 20px; width: 26px; text-align: center; }
+.item.news.big { border-color: rgba(239,68,68,.55); background: linear-gradient(90deg, rgba(239,68,68,.14), var(--panel2)); }
+.item.news.mine { box-shadow: 3px 0 0 var(--gold) inset; }
+.breaking-tag { color: #fca5a5; font-weight: 900; letter-spacing: .08em; }

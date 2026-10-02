@@ -9,7 +9,7 @@
 import { BUILDINGS, BUILDING_TYPES, TERRAIN, UNITS } from '../data/units';
 import type { Fx, Game } from '../sim/ctx';
 import { locVisible, unitVisible } from '../sim/fog';
-import { edgeLen, etaHours } from '../sim/military';
+import { edgeLen, etaHours, unitSpeed } from '../sim/military';
 import type { Loc, Unit, UnitType } from '../sim/types';
 import type { MapGeo } from './geo';
 import { buildRaster, poles, type Pole, type Raster } from './raster';
@@ -31,7 +31,7 @@ const WORLD_SCALE = 1.024; // world layer pixels per map unit (2048 px wide)
 const PAD = 140; // base layer margin around the screen (CSS px)
 
 type Fill = string | { a: string; b: string };
-interface Effect { kind: Fx['kind'] | 'ping'; x: number; y: number; t0: number; dur: number; value?: number; color?: string; seed: number }
+interface Effect { kind: Fx['kind'] | 'ping' | 'confetti'; x: number; y: number; t0: number; dur: number; value?: number; color?: string; seed: number }
 
 export class MapRenderer {
   root: HTMLDivElement;
@@ -192,6 +192,74 @@ export class MapRenderer {
     this.lastViewChange = performance.now();
     this.overlayDirty = true;
   }
+
+  // ------------------------------------------------------------ camera motion
+  private vel = { x: 0, y: 0 }; // fling velocity, CSS px per ms
+  private anim: { from: View; to: View; t0: number; dur: number } | null = null;
+  private lastMotion = 0;
+  /** Keep gliding after a swipe. */
+  fling(vx: number, vy: number) {
+    this.anim = null;
+    const max = 4;
+    this.vel = { x: Math.max(-max, Math.min(max, vx)), y: Math.max(-max, Math.min(max, vy)) };
+    this.lastMotion = performance.now();
+  }
+  stopMotion() {
+    this.vel = { x: 0, y: 0 };
+    this.anim = null;
+  }
+  get moving() {
+    return this.anim !== null || Math.abs(this.vel.x) + Math.abs(this.vel.y) > 0.01;
+  }
+  /** Smoothly fly the camera to centre a map point (and zoom). */
+  flyTo(wx: number, wy: number, k = this.view.k, dur = 550) {
+    const from = { ...this.view };
+    this.view.k = k;
+    this.clampView();
+    this.view.x = wx - this.w / 2 / this.view.k;
+    this.view.y = wy - this.h / 2 / this.view.k;
+    this.clampView();
+    const to = { ...this.view };
+    this.view = from;
+    this.vel = { x: 0, y: 0 };
+    this.anim = { from, to, t0: performance.now(), dur };
+  }
+  flyToProvince(p: number, k?: number) {
+    this.flyTo(this.geo.center[p * 2], this.geo.center[p * 2 + 1], k);
+  }
+  /** Smooth zoom around a screen point (double tap). */
+  zoomSmooth(sx: number, sy: number, f: number) {
+    const [wx, wy] = this.toWorld(sx, sy);
+    const k = Math.max(this.minK(), Math.min(40, this.view.k * f));
+    // keep the tapped point under the finger: centre = point shifted by its offset from the screen centre
+    this.flyTo(wx - (sx - this.w / 2) / k, wy - (sy - this.h / 2) / k, k, 350);
+  }
+  private stepMotion(now: number) {
+    const dt = Math.min(50, now - (this.lastMotion || now));
+    this.lastMotion = now;
+    if (this.anim) {
+      const a = this.anim;
+      const t = Math.min(1, (now - a.t0) / a.dur);
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      // interpolate the screen centre and zoom (in log space) so flights look natural
+      const cf = [a.from.x + this.w / 2 / a.from.k, a.from.y + this.h / 2 / a.from.k];
+      const ct = [a.to.x + this.w / 2 / a.to.k, a.to.y + this.h / 2 / a.to.k];
+      const k = Math.exp(Math.log(a.from.k) + (Math.log(a.to.k) - Math.log(a.from.k)) * e);
+      const cx = cf[0] + (ct[0] - cf[0]) * e, cy = cf[1] + (ct[1] - cf[1]) * e;
+      this.view = { k, x: cx - this.w / 2 / k, y: cy - this.h / 2 / k };
+      if (t >= 1) { this.view = { ...a.to }; this.anim = null; }
+      this.viewChanged();
+      return;
+    }
+    if (Math.abs(this.vel.x) + Math.abs(this.vel.y) > 0.01) {
+      const before = { ...this.view };
+      this.pan(this.vel.x * dt, this.vel.y * dt);
+      const decay = Math.exp(-dt / 320);
+      // stop dead against the map edge
+      this.vel.x = before.x === this.view.x ? 0 : this.vel.x * decay;
+      this.vel.y = before.y === this.view.y ? 0 : this.vel.y * decay;
+    }
+  }
   /** Map data changed (borders, layer). `now` forces an immediate redraw. */
   invalidate(now = false) {
     this.fills = null;
@@ -215,13 +283,20 @@ export class MapRenderer {
     return [this.geo.cellXY[c * 2], this.geo.cellXY[c * 2 + 1]];
   }
 
-  /** Map position of a unit, part-way along its current step. Attackers wait at the border. */
+  /** Fraction of a game hour that has passed since the last tick (for smooth movement). */
+  tickFrac = 0;
+
+  /** Map position of a unit, part-way along its current step. Attackers stop at the border. */
   unitXY(u: Unit): [number, number] {
     const [x, y] = this.locXY(u.loc);
-    if (!u.path.length || !this.game || UNITS[u.type].domain === 'air') return [x, y];
-    const [x2, y2] = this.locXY(u.path[0]);
-    const len = edgeLen(this.game, u.loc, u.path[0]);
-    const t = Math.min(1, u.progress / len) * 0.45;
+    const g = this.game;
+    if (!u.path.length || !g || UNITS[u.type].domain === 'air') return [x, y];
+    const next = u.path[0];
+    const [x2, y2] = this.locXY(next);
+    const len = edgeLen(g, u.loc, next);
+    const hostile = next >= 0 && (g.atWar(u.owner, g.s.provinces[next].ctrl) || g.rt.battleAt.has(next));
+    const prog = u.progress + (u.progress < len ? unitSpeed(g, u, next) * this.tickFrac : 0);
+    const t = Math.min(1, prog / len) * (hostile ? 0.45 : 1);
     return [x + (x2 - x) * t, y + (y2 - y) * t];
   }
 
@@ -251,6 +326,7 @@ export class MapRenderer {
       }
     }
     if (!this.mapVisible) return false;
+    this.stepMotion(now);
     const gesturing = now - this.lastViewChange < 160;
     const useBase = this.view.k * this.dpr > WORLD_SCALE * 1.3;
     let drew = false;
@@ -271,8 +347,8 @@ export class MapRenderer {
     }
     this.baseCv.style.display = useBase && this.baseView ? '' : 'none';
     this.applyTransforms();
-    const animating = this.effects.length > 0 || this.drag !== null || this.selectedUnits.size > 0 || (g ? g.s.battles.length > 0 : false);
-    const interval = gesturing ? 0 : animating ? 33 : running ? 66 : 0;
+    const animating = this.effects.length > 0 || this.drag !== null || this.selectedUnits.size > 0 || running || (g ? g.s.battles.length > 0 : false);
+    const interval = gesturing ? 0 : animating ? 33 : 0;
     if ((this.overlayDirty || animating) && now - this.lastOverlay >= interval) {
       this.renderOverlay(now);
       this.lastOverlay = now;
@@ -310,10 +386,11 @@ export class MapRenderer {
     if (this.fxSeen > fx.length) this.fxSeen = 0;
     for (let i = this.fxSeen; i < fx.length; i++) {
       const e = fx[i];
-      if (!locVisible(g, e.loc) && e.kind !== 'nuke') continue;
+      if (!locVisible(g, e.loc)) continue;
       const [x, y] = this.locXY(e.loc);
       const color = g.s.nations[e.owner]?.color;
-      const dur = { hit: 900, boom: 1300, capture: 1800, nuke: 4500, bomb: 1100, sunk: 1500, built: 1500 }[e.kind];
+      const dur = { hit: 900, boom: 1300, capture: 1800, bomb: 1100, sunk: 1500, built: 1500 }[e.kind];
+      if (e.kind === 'capture' && e.owner === g.s.player) this.effects.push({ kind: 'confetti', x, y, t0: now, dur: 2200, seed: Math.random() });
       if (e.kind === 'hit') {
         // one explosion burst and one damage number per place at a time: add up the rest
         const live = this.effects.find((x2) => x2.kind === 'hit' && x2.x === x && x2.y === y && now - x2.t0 < 450);
@@ -343,9 +420,8 @@ export class MapRenderer {
         return bloc ? bloc.color : '#4b5563';
       }
       case 'resources': {
-        if (p.ura > 0) return '#a3e635';
-        const m = Math.min(1, p.mat / 3);
-        return `hsl(32, ${30 + m * 50}%, ${22 + m * 38}%)`;
+        const m = Math.min(1, p.res / 3);
+        return `hsl(${42 - m * 20}, ${35 + m * 50}%, ${20 + m * 40}%)`;
       }
       default: {
         const owner = g.s.nations[p.owner];
@@ -436,6 +512,14 @@ export class MapRenderer {
     if (!this.fills) this.buildFills();
     if (!this.borders) this.buildBorders();
     if (!this.fog) this.buildFog();
+    // shallow water glow around every coast
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(96,165,250,0.16)';
+    ctx.lineWidth = 9 / px;
+    ctx.stroke(this.coast);
+    ctx.strokeStyle = 'rgba(147,197,253,0.14)';
+    ctx.lineWidth = 4 / px;
+    ctx.stroke(this.coast);
     for (const [key, path] of this.fills!) {
       const st = this.fillStyles.get(key);
       ctx.fillStyle = st && typeof st !== 'string' ? this.stripe(st.a, st.b, ctx) : typeof st === 'string' ? st : key;
@@ -833,7 +917,7 @@ export class MapRenderer {
       const air = UNITS[u.type].domain === 'air';
       if (!mine && air) continue;
       if (!mine && k < 1.2 && !g.atWar(me, u.owner)) continue;
-      if (!unitVisible(g, u.owner, u.loc, u.type)) continue;
+      if (!unitVisible(g, u.owner, u.loc)) continue;
       const moving = !air && u.path.length > 0 && u.progress > 0;
       const [wx, wy] = moving ? this.unitXY(u) : this.locXY(air ? u.base : u.loc);
       if (wx < vx0 || wy < vy0 || wx > vx1 || wy > vy1) continue;
@@ -905,10 +989,6 @@ export class MapRenderer {
       ctx.textBaseline = 'middle';
       ctx.fillText(label, x + R - 7 + w / 2, y - R + 1.5);
     }
-    // out of ammo warning on our units
-    if (owner === me && units.some((u) => u.ammo < 0.15)) {
-      ctx.drawImage(this.emoji('⚠️', 11), x - R - 5, y + R - 9, 12, 12);
-    }
     this.badges.push({ x, y, r: R + 8, units: units.map((u) => u.id), loc, owner });
   }
 
@@ -918,44 +998,57 @@ export class MapRenderer {
     let c = this.sprites.get(key);
     if (c) return c;
     const s = this.dpr;
-    const size = Math.ceil((R * 2 + 8) * s);
+    const size = Math.ceil((R * 2 + 10) * s);
     c = document.createElement('canvas');
     c.width = c.height = size;
     const x = c.getContext('2d')!;
     x.scale(s, s);
     const m = size / s / 2;
-    // shadow
+    const r = R * 0.38;
+    const tok = () => { x.beginPath(); roundRect(x, m - R, m - R, R * 2, R * 2, r); };
+    // drop shadow
+    x.save();
+    x.translate(0, 2);
     x.fillStyle = 'rgba(0,0,0,0.45)';
-    x.beginPath();
-    x.arc(m, m + 1.5, R, 0, Math.PI * 2);
+    tok();
     x.fill();
-    // plate with a subtle gradient
-    const grad = x.createRadialGradient(m - R * 0.4, m - R * 0.5, R * 0.2, m, m, R);
-    grad.addColorStop(0, shade(color, 0.25));
-    grad.addColorStop(1, shade(color, -0.25));
+    x.restore();
+    // body: nation colour, lit from the top
+    const grad = x.createLinearGradient(0, m - R, 0, m + R);
+    grad.addColorStop(0, shade(color, 0.32));
+    grad.addColorStop(0.55, color);
+    grad.addColorStop(1, shade(color, -0.35));
     x.fillStyle = grad;
-    x.beginPath();
-    x.arc(m, m, R, 0, Math.PI * 2);
+    tok();
     x.fill();
+    // glossy highlight
+    x.save();
+    tok();
+    x.clip();
+    x.fillStyle = 'rgba(255,255,255,0.18)';
+    x.beginPath();
+    x.ellipse(m, m - R * 0.75, R * 1.1, R * 0.55, 0, 0, Math.PI * 2);
+    x.fill();
+    x.restore();
+    // ownership rim
     x.lineWidth = ring === 'other' ? 1.5 : 3;
     x.strokeStyle = ring === 'sel' ? '#4ade80' : ring === 'me' ? '#ffd34d' : ring === 'enemy' ? '#ef4444' : ring === 'ally' ? '#7dd3fc' : 'rgba(0,0,0,0.85)';
+    tok();
     x.stroke();
     if (ring === 'enemy') {
-      // a second thin red ring makes enemies unmistakable
       x.lineWidth = 1;
       x.beginPath();
-      x.arc(m, m, R + 2.5, 0, Math.PI * 2);
+      roundRect(x, m - R - 2.5, m - R - 2.5, R * 2 + 5, R * 2 + 5, r + 2);
       x.stroke();
     }
-    // icon
+    // icon with a dark outline so it reads on any colour
     x.save();
-    x.translate(m, m);
+    x.translate(m, m + 0.5);
     x.scale(R / 14, R / 14);
-    x.fillStyle = 'rgba(0,0,0,0.35)';
-    drawIcon(x, type, 0.8, 1);
+    x.fillStyle = 'rgba(0,0,0,0.55)';
+    for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1.4]]) drawIcon(x, type, ox, oy);
     x.fillStyle = '#ffffff';
-    x.strokeStyle = '#ffffff';
-    drawIcon(x, type, 0, 0);
+    drawIcon(x, type, 0, 0, color);
     x.restore();
     this.sprites.set(key, c);
     return c;
@@ -1006,7 +1099,7 @@ export class MapRenderer {
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      ctx.drawImage(this.emoji('⚔️', 12), sx - 7.5, y - 22.5, 15, 15);
+      swords(ctx, sx, y - 15, 6.5);
       // ambient explosions
       const t = now / 1000;
       for (let i = 0; i < 2; i++) {
@@ -1110,21 +1203,23 @@ export class MapRenderer {
           ctx.fillText('✔ Built', sx, sy + 46 - t * 18);
           ctx.globalAlpha = 1;
           break;
-        case 'nuke': {
-          const r = 10 + t * 160;
-          const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-          grad.addColorStop(0, `rgba(255,255,230,${1 - t})`);
-          grad.addColorStop(0.3, `rgba(255,170,0,${0.9 * (1 - t)})`);
-          grad.addColorStop(1, 'rgba(255,60,0,0)');
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(sx, sy, r, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = `rgba(255,255,255,${(1 - t) * 0.8})`;
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.arc(sx, sy, t * 220, 0, Math.PI * 2);
-          ctx.stroke();
+        case 'confetti': {
+          // a burst of colourful paper for our victories
+          const cols = ['#facc15', '#f87171', '#60a5fa', '#4ade80', '#f472b6', '#fff'];
+          for (let i = 0; i < 26; i++) {
+            const a = (i / 26) * Math.PI * 2 + e.seed * 6;
+            const v = 50 + ((i * 37) % 23) * 3;
+            const px = sx + Math.cos(a) * v * t;
+            const py = sy - 20 + Math.sin(a) * v * t * 0.8 + 90 * t * t;
+            ctx.globalAlpha = Math.max(0, 1 - t);
+            ctx.fillStyle = cols[i % cols.length];
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(a + t * 8);
+            ctx.fillRect(-3, -1.5, 6, 3);
+            ctx.restore();
+          }
+          ctx.globalAlpha = 1;
           break;
         }
         case 'ping':
@@ -1200,6 +1295,30 @@ function fogColor(c: string) {
   return `rgb(${mix(r)},${mix(g)},${mix(b) + 6})`;
 }
 
+/** Two crossed swords. */
+function swords(ctx: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = '#fff';
+  ctx.lineCap = 'round';
+  for (const a of [Math.PI / 4, -Math.PI / 4]) {
+    ctx.save();
+    ctx.rotate(a);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 1.1);
+    ctx.lineTo(0, s * 0.7);
+    ctx.stroke();
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.45, s * 0.55);
+    ctx.lineTo(s * 0.45, s * 0.55);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function shade(hex: string, amt: number) {
   const n = parseInt(hex.slice(1), 16);
   let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
@@ -1227,129 +1346,97 @@ function arrowHead(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: nu
   ctx.fill();
 }
 
-/** Unit pictograms, drawn white on the counter, centred on (x, y), about 22 px wide. */
-export function drawIcon(ctx: CanvasRenderingContext2D, type: UnitType, x: number, y: number) {
+/** Unit pictograms (filled with the current fillStyle), centred on (x, y), about 22 px wide. */
+export function drawIcon(ctx: CanvasRenderingContext2D, type: UnitType, x: number, y: number, hole?: string) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.beginPath();
+  const P = (pts: number[]) => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+    ctx.closePath();
+    ctx.fill();
+  };
+  const C = (cx: number, cy: number, r: number) => { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); };
+  const R = (rx: number, ry: number, w: number, h: number, rr = 0) => { ctx.beginPath(); roundRect(ctx, rx, ry, w, h, rr); ctx.fill(); };
+  // details punched out of the shape (wheels...) are painted in the background colour
+  const holes = (f: () => void) => {
+    if (!hole) return;
+    ctx.save();
+    ctx.fillStyle = hole;
+    f();
+    ctx.restore();
+  };
   switch (type) {
-    case 'infantry': // helmeted soldier
-      ctx.arc(0, -1.5, 6.5, Math.PI, 0);
-      ctx.lineTo(8.5, -1.5);
-      ctx.lineTo(8.5, 0.5);
-      ctx.lineTo(-8.5, 0.5);
-      ctx.lineTo(-8.5, -1.5);
-      ctx.closePath();
-      ctx.fill();
+    case 'infantry': // soldier: helmet, head, shoulders and a rifle
       ctx.beginPath();
-      ctx.moveTo(-6.5, 9);
-      ctx.quadraticCurveTo(-6, 2.5, 0, 2.5);
-      ctx.quadraticCurveTo(6, 2.5, 6.5, 9);
-      ctx.closePath();
+      ctx.ellipse(0, -5.2, 6.4, 4.6, 0, Math.PI, 0);
       ctx.fill();
-      break;
-    case 'tank':
-      roundRect(ctx, -10, 1, 20, 6.5, 3.2);
-      ctx.fill();
+      R(-7.6, -5.6, 15.2, 1.8, 0.9);
+      C(0, -2.2, 3.3);
       ctx.beginPath();
-      roundRect(ctx, -5.5, -4.5, 10, 5, 2);
-      ctx.fill();
-      ctx.fillRect(4, -3.2, 8, 2.2);
-      break;
-    case 'artillery':
-      ctx.arc(-3, 4.5, 3.8, 0, Math.PI * 2);
+      ctx.moveTo(-8, 10);
+      ctx.quadraticCurveTo(-7.5, 2.5, 0, 2);
+      ctx.quadraticCurveTo(7.5, 2.5, 8, 10);
+      ctx.closePath();
       ctx.fill();
       ctx.save();
-      ctx.translate(-3, 3);
-      ctx.rotate(-0.62);
-      ctx.fillRect(-1, -1.8, 15, 3.6);
+      ctx.rotate(-0.55);
+      R(1, -11, 1.8, 15, 0.6);
       ctx.restore();
-      ctx.beginPath();
-      ctx.moveTo(-3, 4);
-      ctx.lineTo(-11, 8.5);
-      ctx.lineTo(-9.5, 9.5);
-      ctx.closePath();
-      ctx.fill();
       break;
-    case 'antiair':
-      roundRect(ctx, -9, 4, 18, 5, 2);
-      ctx.fill();
+    case 'tank': // side view: tracks, hull, turret, gun
+      R(-11, 2.5, 22, 6.5, 3.25);
+      P([-10, 2.8, -7, -1.5, 8.5, -1.5, 10.5, 2.8]);
+      R(-5.5, -6, 10, 5, 2.2);
+      R(3.5, -4.8, 9.5, 2, 1);
+      holes(() => { for (const wx of [-7, -2.4, 2.2, 6.8]) C(wx, 5.75, 1.6); });
+      break;
+    case 'artillery': // big gun on wheels
+      ctx.save();
+      ctx.translate(-2, 2);
+      ctx.rotate(-0.55);
+      R(-2, -2.1, 15, 4.2, 1.5);
+      R(11, -2.6, 2.5, 5.2, 0.8);
+      ctx.restore();
+      P([-1, 2, -11, 8.5, -10, 10, 1, 4.5]);
+      C(-1.5, 5.5, 4.4);
+      holes(() => C(-1.5, 5.5, 1.6));
+      break;
+    case 'antiair': // truck with twin barrels aimed at the sky
+      R(-11, 3, 22, 4.5, 1.5);
+      C(-6.5, 8.5, 2.3);
+      C(6.5, 8.5, 2.3);
       ctx.beginPath();
-      ctx.arc(-1, 3, 4, Math.PI, 0);
+      ctx.arc(-1, 3, 4.8, Math.PI, 0);
       ctx.fill();
       ctx.save();
-      ctx.translate(-1, 1);
-      ctx.rotate(-0.9);
-      ctx.fillRect(0, -3, 12, 1.8);
-      ctx.fillRect(0, 0.6, 12, 1.8);
+      ctx.translate(-1, 0.5);
+      ctx.rotate(-0.95);
+      R(0, -3.4, 13, 1.9, 0.9);
+      R(0, 0.6, 13, 1.9, 0.9);
       ctx.restore();
       break;
-    case 'fighter': // jet, pointing up
-      ctx.moveTo(0, -11);
-      ctx.lineTo(2, -4);
-      ctx.lineTo(10, 3);
-      ctx.lineTo(10, 5);
-      ctx.lineTo(2, 3);
-      ctx.lineTo(2.5, 8);
-      ctx.lineTo(5, 10);
-      ctx.lineTo(-5, 10);
-      ctx.lineTo(-2.5, 8);
-      ctx.lineTo(-2, 3);
-      ctx.lineTo(-10, 5);
-      ctx.lineTo(-10, 3);
-      ctx.lineTo(-2, -4);
-      ctx.closePath();
-      ctx.fill();
+    case 'fighter': // swept-wing jet, nose up
+      P([0, -12, 2.2, -5, 2.4, -1.5, 11, 4.5, 11, 6.5, 2.4, 4, 2.2, 7.5, 5.5, 10.5, 5.5, 11.8, 0, 10.3, -5.5, 11.8, -5.5, 10.5, -2.2, 7.5, -2.4, 4, -11, 6.5, -11, 4.5, -2.4, -1.5, -2.2, -5]);
       break;
-    case 'bomber': // wide straight wings
-      ctx.moveTo(0, -10);
-      ctx.lineTo(2, -6);
-      ctx.lineTo(2, -2);
-      ctx.lineTo(12, 1);
-      ctx.lineTo(12, 3.5);
-      ctx.lineTo(2, 2.5);
-      ctx.lineTo(2, 7);
-      ctx.lineTo(6, 9.5);
-      ctx.lineTo(-6, 9.5);
-      ctx.lineTo(-2, 7);
-      ctx.lineTo(-2, 2.5);
-      ctx.lineTo(-12, 3.5);
-      ctx.lineTo(-12, 1);
-      ctx.lineTo(-2, -2);
-      ctx.lineTo(-2, -6);
-      ctx.closePath();
-      ctx.fill();
+    case 'bomber': // long straight wings with engines
+      P([0, -11, 1.9, -7, 1.9, -2.5, 12.5, 0.5, 12.5, 3.3, 1.9, 2.3, 1.9, 7.5, 6, 10, 6, 11.5, 0, 10.2, -6, 11.5, -6, 10, -1.9, 7.5, -1.9, 2.3, -12.5, 3.3, -12.5, 0.5, -1.9, -2.5, -1.9, -7]);
+      for (const ex of [-7.5, -4.2, 4.2, 7.5]) R(ex - 0.9, -2.6, 1.8, 4, 0.9);
       break;
-    case 'warship':
-      ctx.moveTo(-12, 2);
-      ctx.lineTo(12, 2);
-      ctx.lineTo(8, 8);
-      ctx.lineTo(-9, 8);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillRect(-5, -3, 8, 5);
-      ctx.fillRect(-2, -8, 2, 5);
-      ctx.fillRect(3, -1.5, 7, 1.6);
+    case 'warship': // destroyer side view
+      P([-12.5, 2.5, 12.5, 2.5, 9.5, 8, -9.5, 8]);
+      R(-6, -2.5, 9, 5.2, 1);
+      R(-3.5, -6.5, 4.5, 4.2, 0.8);
+      R(-1.9, -11, 1.4, 5, 0.5);
+      R(3, -1.2, 8.5, 1.6, 0.8);
+      R(-11, 0, 4.5, 1.4, 0.7);
       break;
-    case 'submarine':
-      ctx.ellipse(0, 4, 12, 3.6, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      roundRect(ctx, -3, -3, 6, 6, 1.5);
-      ctx.fill();
-      ctx.fillRect(0.5, -7, 1.3, 4.5);
-      break;
-    case 'carrier':
-      ctx.moveTo(-13, 0);
-      ctx.lineTo(13, 0);
-      ctx.lineTo(13, 2.5);
-      ctx.lineTo(9, 7.5);
-      ctx.lineTo(-9, 7.5);
-      ctx.lineTo(-13, 2.5);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillRect(4, -6, 4, 6);
-      ctx.fillRect(-10, -2, 6, 1.4);
+    case 'carrier': // flat-top with an island
+      P([-13.5, -0.5, 13.5, -0.5, 13.5, 2.5, 10, 8.5, -10, 8.5, -13.5, 2.5]);
+      R(5.5, -7.5, 4, 7, 0.8);
+      R(6.8, -10.5, 1.3, 3.5, 0.5);
+      holes(() => R(-11, 0.6, 14, 0.9));
       break;
   }
   ctx.restore();

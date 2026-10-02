@@ -11,27 +11,31 @@ It is single-player and fully offline, with no in-game purchases.
 - Terrain (plains, forest, hills, mountains, desert, jungle, marsh, arctic) affects movement and defence.
 - River crossings, narrow straits and naval chokepoints (Suez, Panama, Bosphorus, Malacca, Hormuz...).
 - Map views: countries, terrain, resources and alliances, plus a rotating 3D globe.
+- Smooth camera: flick the map and it glides, double-tap to zoom, and the camera flies to events.
 - Fog of war: you only see enemy troops and buildings near your own land and units.
 
-**Economy (kept simple)**
-- Money comes from the regions you control; every unit costs upkeep.
-- Three resources: ⛏ materials (from every region, more with mines), 💥 ammunition (from factories, used up in battle) and ☢ uranium (mined in a few regions, used for warheads).
-- A world market to buy and sell resources.
+**Economy (just money)**
+- Everything costs only 💰 money. Money comes from taxes in your regions plus ⛏ resource exports.
+- Your country digs up resources and sells them to the world automatically. Mines dig more; the world price goes up and down, with booms and crashes.
+- Everyone buys from you by default, except countries at war with you or that put an embargo on you. You can embargo others too.
+- Countries fighting a stronger enemy get foreign aid from their friends.
 
 **Buildings**
-- Mine, factory, barracks, airbase, port, fort and nuclear facility, several with up to three levels.
+- Mine (more resources to sell), factory (more taxes), barracks, airbase, port and fort, several with up to three levels.
 - Build mode: pick a building, valid regions light up green, tap to place. Progress shows on the map.
 
 **Military**
-- Infantry, tanks, artillery, anti-air, fighters, bombers, warships, submarines and aircraft carriers.
-- One counter per army per region. Drag it onto a region to move or attack, or tap then tap.
-- Battles show a tug-of-war bar, explosions and damage; tap a battle to see who is winning and why (terrain, forts, rivers, air support, ammo).
+- Infantry, tanks, artillery, anti-air, fighters, bombers, warships and aircraft carriers.
+- One counter per army per region. Drag it onto a region to move or attack, or tap then tap. "🪖 All troops" selects every land unit at once.
+- Units glide smoothly between regions.
+- Battles show a tug-of-war bar, explosions and damage; tap a battle to see who is winning and why (terrain, forts, rivers, air support, dug-in defenders).
 - Empty enemy regions are captured over a few hours. Artillery shells battles next door; ships shell coasts; planes patrol or bomb regions within range of an airbase.
 - Troops sail from ports; enemy warships blockade coasts.
-- Nuclear weapons (optional).
 
 **Diplomacy**
-- Alliances, promises not to attack, trade deals, war and peace (white peace or keeping captured land). Every option shows whether they are likely to accept.
+- Alliances, promises not to attack, embargoes, war and peace (white peace or keeping captured land). Every option shows whether they are likely to accept.
+- Alliance offers, peace offers and surrenders pop up on screen. Friendships and rivalries with your country grow over time.
+- A light-hearted news feed with BREAKING banners, filters (wars, deals, money, you) and tap-to-see locations.
 
 **Victory**
 - Control half the world, finish scenario goals, or be in the top three when the era ends.
@@ -41,8 +45,8 @@ It is single-player and fully offline, with no in-game purchases.
 | Mode | Contents |
 |---|---|
 | Sandbox | Modern day (2026) |
-| Scenarios | World War I (1914), World War II (1939), Cold War (1962), World War III (2030), Pacific Crisis (2027), Collapse of the EU (2028) |
-| Challenges | Unify Africa, Survive as Taiwan, Microstate Rising, Restore the Union |
+| Scenarios | World War I (1914), World War II (1939), Cold War (1962), World War III (2030), Pacific Crisis (2027), Collapse of the EU (2028), Free-for-All!, Superpower Showdown, Korean Flashpoint, Southern Showdown, Resource Gold Rush, Empires Strike Back |
+| Challenges | Everyone vs You, Island Empire, Unify Africa, Survive as Taiwan, Microstate Rising, Restore the Union |
 | Quick Match | Regional maps of Europe, Asia, Africa, the Americas and the Middle East, played over about 3 in-game years |
 
 **Mobile-friendly**
@@ -66,7 +70,7 @@ Requirements: Node 22+. Building the APK also needs JDK 21 and the Android SDK.
 ```bash
 npm install
 npm run dev          # play in the browser at http://localhost:5173
-npm test             # simulation tests (all scenarios, battles, buildings, fog, nukes, saves, a 1-year world run)
+npm test             # simulation tests (all scenarios, battles, buildings, embargoes, fog, saves, a 1-year world run)
 npm run build        # production web build in dist/
 npx cap sync android # copy the build into the Android project
 cd android && ./gradlew assembleDebug   # APK at android/app/build/outputs/apk/debug/
@@ -84,13 +88,14 @@ scripts/dev/            headless simulation runs and profiling
 src/data/               countries, units, buildings, scenarios
 src/sim/                the simulation (pure TypeScript, runs headless in tests)
   engine.ts             hourly/daily/monthly tick loop, offline catch-up, save format
-  economy.ts            money, resources, market, buildings, recruitment
-  military.ts           movement, battles, captures, air, naval, ammo supply
+  economy.ts            taxes, resource exports, embargoes, buildings, recruitment
+  military.ts           movement, battles, captures, air, naval
   fog.ts                fog of war
   path.ts               A* over regions and sea zones, chokepoints
-  diplomacy.ts          wars, peace, alliances, treaties
+  diplomacy.ts          wars, peace, alliances, treaties, foreign aid
   ai.ts                 AI nations
-  nuclear.ts, victory.ts
+  headlines.ts          fun news headline templates
+  victory.ts
 src/render/             canvas map renderer, WebGL globe, touch gestures
 src/ui/                 Preact UI: menus, HUD, panels
 android/                Capacitor Android project

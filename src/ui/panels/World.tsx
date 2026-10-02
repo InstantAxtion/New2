@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { Game } from '../../sim/ctx';
+import { embargoed, setEmbargo } from '../../sim/economy';
 import { breakTreaty, cededRegions, declareWar, evaluate, improveRelations, militaryPower, propose, regionCount, relationsCost, warOf } from '../../sim/diplomacy';
 import type { PeaceTerms, ProposalKind } from '../../sim/types';
 import { Action, Bar, fmt, Help, Likely, NationDot, relColor, Sheet } from '../common';
@@ -68,7 +69,8 @@ function NationList({ g, onPick }: { g: Game; onPick: (i: number) => void }) {
                 <div class="row" style={{ gap: '4px' }}>
                   {g.atWar(me, n.idx) && <span class="chip bad">At war</span>}
                   {g.allied(me, n.idx) && <span class="chip good">Ally</span>}
-                  {g.hasPair(g.s.trade, me, n.idx) && <span class="chip">Trade</span>}
+                  {embargoed(g, n.idx, me) && <span class="chip warn">Embargo on you</span>}
+                  {embargoed(g, me, n.idx) && <span class="chip">You embargo</span>}
                   {g.hasPair(g.s.nap, me, n.idx) && <span class="chip">No attack</span>}
                 </div>
               </div>
@@ -126,11 +128,18 @@ function CountryView({ idx }: { idx: number }) {
           <div class="section">🤝 Diplomacy</div>
           <div class="list">
             <Action icon="💐" title="Improve relations" desc={`Gifts and visits. Costs ${fmt.money(relationsCost(g, me))}.`} onClick={() => { const e = improveRelations(g, me, idx); setMsg(e ?? `${n.name} likes you more.`); c.emit(); }} />
-            {!g.hasPair(g.s.trade, me, idx) && <Action icon="📦" title="Trade deal" desc="+3% income for both of you." onClick={() => act('trade')}><Likely ok={likely('trade')} /></Action>}
             {!g.hasPair(g.s.nap, me, idx) && !allied && <Action icon="🕊" title="Promise not to attack" desc="Neither of you may attack the other without breaking it." onClick={() => act('nap')}><Likely ok={likely('nap')} /></Action>}
             {!allied && <Action icon="🛡" title="Alliance" desc="You fight together: if one is attacked, the other joins." onClick={() => act('alliance')}><Likely ok={likely('alliance')} /></Action>}
             {allied && <Action icon="💔" title="Leave your alliance" desc="You will no longer defend each other." onClick={() => { breakTreaty(g, me, idx, 'alliance'); setMsg('You left the alliance.'); c.emit(); }} />}
-            {g.hasPair(g.s.trade, me, idx) && <Action icon="✂️" title="Cancel trade deal" desc="Both of you lose the bonus." onClick={() => { breakTreaty(g, me, idx, 'trade'); c.emit(); }} />}
+          </div>
+          <div class="section">📦 Trade</div>
+          <div class="small" style={{ marginBottom: '6px' }}>
+            {embargoed(g, idx, me) ? <span class="warn">🚫 {n.name} has an embargo on you — they won't buy your resources. Improve relations and they may lift it.</span> : <span class="good">✅ {n.name} buys your resources.</span>}
+          </div>
+          <div class="list">
+            {embargoed(g, me, idx)
+              ? <Action icon="✅" title="Lift your embargo" desc="Trade with them again. They'll like you a bit more." onClick={() => { setEmbargo(g, me, idx, false); setMsg(`You lifted the embargo on ${n.name}.`); c.emit(); }} />
+              : <Action icon="🚫" tone="bad" title="Embargo them" desc={`Stop buying from ${n.name}: their exports drop by your share of the world market. They will dislike you.`} onClick={() => { setEmbargo(g, me, idx, true); setMsg(`🚫 Embargo on ${n.name}.`); c.emit(); }} />}
           </div>
           {!allied && (
             <>

@@ -41,10 +41,12 @@ export interface ScenarioDef {
   occupy?: [Selector, string][];
   blocs?: { name: string; leader: string; members: string[]; color: string }[];
   wars?: { name: string; att: string[]; def: string[] }[];
-  sanctions?: [string, string][];
+  sanctions?: [string, string][]; // [by, target]: an embargo at the start
   relations?: [string, string, number][];
-  trade?: string[][]; // groups with pairwise trade deals
-  defcon?: number;
+  price?: number; // starting world resource price (1 = normal)
+  chaos?: boolean; // everyone is hungry for land and dislikes everyone
+  hot?: number; // how often AI nations start wars (1 = normal)
+  vsPlayer?: boolean; // all of the player's neighbours attack at the start
   mil?: Record<string, MilTuple>;
   milScale?: number; // scale for nations without explicit numbers (historical eras)
   gdp?: Record<string, number>; // $B overrides
@@ -57,12 +59,7 @@ export interface ScenarioDef {
 }
 
 const NATO = ['USA', 'CAN', 'GBR', 'FRA', 'DEU', 'ITA', 'ESP', 'PRT', 'NLD', 'BEL', 'LUX', 'DNK', 'NOR', 'ISL', 'POL', 'CZE', 'SVK', 'HUN', 'ROU', 'BGR', 'GRC', 'TUR', 'SVN', 'HRV', 'ALB', 'MNE', 'MKD', 'EST', 'LVA', 'LTU', 'FIN', 'SWE'];
-const EU = ['DEU', 'FRA', 'ITA', 'ESP', 'PRT', 'NLD', 'BEL', 'LUX', 'DNK', 'IRL', 'AUT', 'POL', 'CZE', 'SVK', 'HUN', 'ROU', 'BGR', 'GRC', 'SVN', 'HRV', 'EST', 'LVA', 'LTU', 'FIN', 'SWE', 'CYP', 'MLT'];
 const CSTO = ['RUS', 'BLR', 'KAZ', 'KGZ', 'TJK', 'ARM'];
-const ASEAN = ['IDN', 'THA', 'MYS', 'SGP', 'PHL', 'VNM', 'BRN', 'KHM', 'LAO', 'MMR'];
-const MERCOSUR = ['BRA', 'ARG', 'URY', 'PRY'];
-const USMCA = ['USA', 'CAN', 'MEX'];
-const GCC = ['SAU', 'ARE', 'QAT', 'KWT', 'OMN', 'BHR'];
 const SOVIET = ['RUS', 'UKR', 'BLR', 'MDA', 'GEO', 'ARM', 'AZE', 'KAZ', 'UZB', 'TKM', 'KGZ', 'TJK', 'EST', 'LVA', 'LTU'];
 
 const MODERN_RELATIONS: [string, string, number][] = [
@@ -84,7 +81,7 @@ export const SCENARIOS: ScenarioDef[] = [
     name: 'Modern Day (2026)',
     category: 'sandbox',
     year: 2026, month: 0, day: 1,
-    desc: 'The world as it is today. Pick any nation and shape the century — through trade, diplomacy or war.',
+    desc: 'The world as it is today. Pick any nation and shape the century — get rich, make friends, or paint the map your colour.',
     blocs: [
       { name: 'NATO', leader: 'USA', members: NATO, color: '#3b82f6' },
       { name: 'CSTO', leader: 'RUS', members: CSTO, color: '#ef4444' },
@@ -98,15 +95,13 @@ export const SCENARIOS: ScenarioDef[] = [
       ['JPN', 'PRK'], ['KOR', 'PRK'], ['GBR', 'IRN'], ['FRA', 'IRN'], ['DEU', 'IRN'],
     ],
     relations: MODERN_RELATIONS,
-    trade: [EU, USMCA, ASEAN, MERCOSUR, GCC, ['CHN', 'RUS', 'IRN'], ['USA', 'JPN', 'KOR', 'AUS', 'GBR']],
-    defcon: 4,
   },
   {
     id: 'ww3',
     name: 'World War III (2030)',
     category: 'scenario',
     year: 2030, month: 4, day: 1,
-    desc: 'Tensions boil over. China moves on Taiwan while Russia probes NATO\'s eastern flank. Alliances will be tested — and nukes are on the table.',
+    desc: 'Tensions boil over. China moves on Taiwan while Russia probes NATO\'s eastern flank. Alliances will be tested. Pick a side — or watch the fireworks from afar.',
     blocs: [
       { name: 'NATO', leader: 'USA', members: NATO, color: '#3b82f6' },
       { name: 'Pacific Alliance', leader: 'JPN', members: ['JPN', 'KOR', 'AUS', 'PHL', 'TWN', 'NZL'], color: '#22c55e' },
@@ -118,8 +113,6 @@ export const SCENARIOS: ScenarioDef[] = [
     ],
     relations: [...MODERN_RELATIONS, ['CHN', 'USA', -70]],
     sanctions: [...NATO.map((n) => [n, 'RUS'] as [string, string]), ...NATO.map((n) => [n, 'CHN'] as [string, string])],
-    trade: [EU, USMCA, ['CHN', 'RUS', 'IRN', 'PRK']],
-    defcon: 2,
   },
   {
     id: 'pacific',
@@ -133,8 +126,6 @@ export const SCENARIOS: ScenarioDef[] = [
     ],
     wars: [{ name: 'Second Taiwan Strait Crisis', att: ['CHN'], def: ['TWN'] }],
     relations: [...MODERN_RELATIONS, ['CHN', 'PHL', -60], ['CHN', 'JPN', -60], ['USA', 'TWN', 70]],
-    trade: [EU, USMCA, ASEAN],
-    defcon: 3,
   },
   {
     id: 'eu_collapse',
@@ -148,15 +139,13 @@ export const SCENARIOS: ScenarioDef[] = [
       TUR: { pers: 'expansionist' }, RUS: { pers: 'expansionist' }, DEU: { pers: 'opportunist' },
     },
     relations: [...MODERN_RELATIONS, ['DEU', 'FRA', 10], ['HUN', 'ROU', -40], ['SRB', 'HRV', -40], ['GRC', 'TUR', -50], ['POL', 'DEU', -20]],
-    trade: [USMCA, ASEAN],
-    defcon: 4,
   },
   {
     id: 'coldwar',
     name: 'Cold War (1962)',
     category: 'scenario',
     year: 1962, month: 9, day: 16,
-    desc: 'October 1962. Soviet missiles in Cuba. NATO and the Warsaw Pact stand on the brink. Nuclear arsenals are vast — and fingers hover over the button.',
+    desc: 'October 1962. Soviet missiles in Cuba. NATO and the Warsaw Pact stand on the brink. Two giant blocs, one tiny spark. Who blinks first?',
     newNations: [
       { id: 'SOV', name: 'Soviet Union', color: '#c81e1e', gov: 'communist', pers: 'expansionist', from: SOVIET },
       { id: 'DDR', name: 'East Germany', color: '#9b2c2c', gov: 'communist', pers: 'defensive', from: ['DEU:Berlin|Brandenburg|Sachsen|Sachsen-Anhalt|Thüringen|Mecklenburg-Vorpommern'] },
@@ -187,7 +176,6 @@ export const SCENARIOS: ScenarioDef[] = [
     wars: [{ name: 'Vietnam War', att: ['VDR'], def: ['VNM'] }],
     relations: [['USA', 'SOV', -70], ['USA', 'CUB', -80], ['SOV', 'CUB', 70], ['CHN', 'SOV', -10], ['CHN', 'USA', -70], ['CHN', 'TWN', -90], ['PRK', 'KOR', -90], ['ISR', 'EGY', -70], ['IND', 'PAK', -60], ['IND', 'CHN', -60], ['VDR', 'VNM', -90], ['USA', 'VNM', 60], ['SOV', 'VDR', 60]],
     sanctions: [['USA', 'CUB']],
-    defcon: 2,
     milScale: 0.6,
     mil: {
       USA: [2800, 12000, 3500, 1600, 15, 300, 110, 60, 27000, 4, 0, 0],
@@ -257,7 +245,6 @@ export const SCENARIOS: ScenarioDef[] = [
       { name: 'Second Sino-Japanese War', att: ['JPN', 'MAN'], def: ['CHN'] },
     ],
     relations: [['DEU', 'POL', -90], ['DEU', 'SOV', 10], ['DEU', 'FRA', -70], ['DEU', 'GBR', -60], ['JPN', 'USA', -40], ['JPN', 'SOV', -50], ['SOV', 'FIN', -50], ['USA', 'GBR', 60], ['ITA', 'GRC', -40]],
-    defcon: 5,
     milScale: 0.5,
     mil: {
       DEU: [2700, 2500, 1200, 1100, 0, 30, 57, 2, 0, 0, 0, 5],
@@ -316,7 +303,6 @@ export const SCENARIOS: ScenarioDef[] = [
     ],
     wars: [{ name: 'The Great War', att: ['AUH', 'DEU', 'OTT'], def: ['SRB', 'RUE', 'FRA', 'BEL', 'GBR', 'MNE', 'JPN'] }],
     relations: [['AUH', 'SRB', -90], ['DEU', 'FRA', -80], ['DEU', 'RUE', -60], ['DEU', 'GBR', -40], ['ITA', 'AUH', -30], ['BGR', 'SRB', -50], ['OTT', 'RUE', -60]],
-    defcon: 5,
     milScale: 0.4,
     mil: {
       DEU: [3800, 0, 230, 0, 0, 40, 28, 0, 0, 0, 0, 17],
@@ -335,6 +321,105 @@ export const SCENARIOS: ScenarioDef[] = [
     gdpScale: { Europe: 0.05, Asia: 0.02, Africa: 0.05, 'North America': 0.05, 'South America': 0.08, Oceania: 0.05 },
     popScale: { Europe: 0.6, Asia: 0.25, Africa: 0.12, 'North America': 0.3, 'South America': 0.2, Oceania: 0.2 },
   },
+  // ---------------------------------------------------------------- fun what-ifs
+  {
+    id: 'free_for_all',
+    name: 'Free-for-All! (2026)',
+    category: 'scenario',
+    year: 2026, month: 0, day: 1,
+    desc: 'No alliances. No friends. Every country wakes up hungry for land and grumpy at its neighbours. Total chaos — last empire standing wins.',
+    chaos: true,
+    hot: 4,
+    victory: { conquest: 0.3, endYear: 2046 },
+  },
+  {
+    id: 'superpowers',
+    name: 'Superpower Showdown (2028)',
+    category: 'scenario',
+    year: 2028, month: 5, day: 1,
+    desc: 'Team America vs Team China, worldwide. Everyone else picks a side… or sells resources to both and gets rich.',
+    blocs: [
+      { name: 'Team America', leader: 'USA', members: ['USA', 'CAN', 'GBR', 'JPN', 'KOR', 'AUS', 'TWN', 'PHL', 'NZL'], color: '#3b82f6' },
+      { name: 'Team China', leader: 'CHN', members: ['CHN', 'RUS', 'PRK', 'IRN', 'PAK', 'BLR'], color: '#ef4444' },
+    ],
+    wars: [{ name: 'The Big One', att: ['CHN', 'RUS', 'PRK'], def: ['USA', 'JPN', 'KOR', 'TWN'] }],
+    relations: [...MODERN_RELATIONS, ['CHN', 'USA', -90]],
+    sanctions: [['USA', 'CHN'], ['CHN', 'USA'], ['USA', 'RUS'], ['JPN', 'CHN'], ['GBR', 'CHN'], ['CHN', 'JPN']],
+  },
+  {
+    id: 'korea',
+    name: 'Korean Flashpoint (2027)',
+    category: 'scenario',
+    year: 2027, month: 2, day: 1,
+    desc: 'North Korea rolls south! Seoul is minutes from the border. Does China jump in? Does Japan? A fast, tight war on a small map.',
+    blocs: [{ name: 'Pacific Pals', leader: 'USA', members: ['USA', 'KOR', 'JPN'], color: '#22c55e' }],
+    wars: [{ name: 'Second Korean War', att: ['PRK'], def: ['KOR'] }],
+    relations: [...MODERN_RELATIONS, ['PRK', 'KOR', -100], ['CHN', 'KOR', -30]],
+  },
+  {
+    id: 'south_america',
+    name: 'Southern Showdown (2028)',
+    category: 'scenario',
+    year: 2028, month: 0, day: 1,
+    desc: 'Venezuela marches into Guyana, Brazil and Argentina are flexing, and the jungle is full of surprises. South America gets spicy.',
+    wars: [{ name: 'Essequibo War', att: ['VEN'], def: ['GUY'] }],
+    hot: 2,
+    rename: { VEN: { pers: 'expansionist' }, BRA: { pers: 'opportunist' }, ARG: { pers: 'opportunist' }, BOL: { pers: 'expansionist' }, CHL: { pers: 'defensive' } },
+    relations: [...MODERN_RELATIONS, ['BRA', 'ARG', -45], ['BOL', 'CHL', -60], ['PER', 'CHL', -30], ['COL', 'VEN', -50]],
+  },
+  {
+    id: 'gold_rush',
+    name: 'Resource Gold Rush (2026)',
+    category: 'scenario',
+    year: 2026, month: 0, day: 1,
+    desc: 'Prices for resources just went to the moon 🚀. Every mine is a money printer. Dig, sell, get rich — and guard your mines from jealous neighbours.',
+    price: 2.6,
+    relations: MODERN_RELATIONS,
+    blocs: [
+      { name: 'NATO', leader: 'USA', members: NATO, color: '#3b82f6' },
+      { name: 'CSTO', leader: 'RUS', members: CSTO, color: '#ef4444' },
+    ],
+    rename: { RUS: { pers: 'expansionist' }, CHN: { pers: 'opportunist' }, SAU: { pers: 'opportunist' }, AUS: { pers: 'opportunist' } },
+  },
+  {
+    id: 'empires',
+    name: 'Empires Strike Back (2026)',
+    category: 'scenario',
+    year: 2026, month: 0, day: 1,
+    desc: 'What if the old empires were back — today? The Russian Empire, the Ottomans, Austria-Hungary, Gran Colombia and more, all in the modern world.',
+    newNations: [
+      { id: 'RUE', name: 'Russian Empire', color: '#2f855a', gov: 'monarchy', pers: 'expansionist', from: ['RUS', 'UKR', 'BLR', 'KAZ', 'UZB', 'TKM', 'KGZ', 'TJK', 'GEO', 'ARM', 'AZE', 'MDA'] },
+      { id: 'OTT', name: 'Ottoman Empire', color: '#7f1d1d', gov: 'monarchy', pers: 'expansionist', from: ['TUR', 'SYR', 'IRQ', 'LBN', 'JOR', 'PSX', 'CYN'] },
+      { id: 'AUH', name: 'Austria-Hungary', color: '#d4a017', gov: 'monarchy', pers: 'opportunist', from: ['AUT', 'HUN', 'CZE', 'SVK', 'SVN', 'HRV', 'BIH'] },
+      { id: 'GCO', name: 'Gran Colombia', color: '#facc15', gov: 'democracy', pers: 'expansionist', from: ['COL', 'VEN', 'ECU', 'PAN'] },
+      { id: 'UAR', name: 'United Arab Republic', color: '#15803d', gov: 'authoritarian', pers: 'expansionist', from: ['EGY', 'LBY', 'SDN'] },
+      { id: 'MUG', name: 'Mughal Empire', color: '#0f766e', gov: 'monarchy', pers: 'expansionist', from: ['PAK', 'AFG', 'BGD'] },
+    ],
+    hot: 2,
+    relations: [['RUE', 'OTT', -60], ['RUE', 'AUH', -40], ['OTT', 'GRC', -50], ['MUG', 'IND', -70], ['UAR', 'ISR', -70], ['GCO', 'BRA', -20]],
+  },
+  {
+    id: 'vs_world',
+    name: 'Challenge: Everyone vs You',
+    category: 'challenge',
+    year: 2026, month: 0, day: 1,
+    desc: 'Your neighbours have ganged up on you. Every single one. Keep your capital for 3 years — bonus points for making them regret it.',
+    vsPlayer: true,
+    relations: MODERN_RELATIONS,
+    goal: { kind: 'survive', years: 3 },
+    victory: { conquest: 0, endYear: 2029 },
+  },
+  {
+    id: 'island_empire',
+    name: 'Challenge: Island Empire',
+    category: 'challenge',
+    year: 2026, month: 0, day: 1,
+    desc: 'Start on an island and become one of the world\'s 5 richest countries within 25 years. Ships, ports and mines are your friends.',
+    playerChoices: ['GBR', 'JPN', 'IDN', 'PHL', 'NZL', 'MDG', 'LKA', 'CUB', 'ISL', 'IRL', 'TWN', 'SGP', 'JAM', 'DOM', 'HTI', 'PNG', 'FJI', 'CYP'],
+    relations: MODERN_RELATIONS,
+    goal: { kind: 'gdp_rank', rank: 5, years: 25 },
+    victory: { conquest: 0, endYear: 2051 },
+  },
   // ---------------------------------------------------------------- challenges
   {
     id: 'unify_africa',
@@ -343,8 +428,6 @@ export const SCENARIOS: ScenarioDef[] = [
     year: 2026, month: 0, day: 1,
     desc: 'Start as any African nation and bring at least 75% of the continent under your control — by conquest, vassals or diplomacy.',
     relations: MODERN_RELATIONS,
-    trade: [EU, USMCA],
-    defcon: 5,
     goal: { kind: 'continent', cont: 'Africa', share: 0.75 },
     victory: { conquest: 0, endYear: 2060 },
   },
@@ -357,8 +440,6 @@ export const SCENARIOS: ScenarioDef[] = [
     playerChoices: ['TWN'],
     wars: [{ name: 'Taiwan Invasion', att: ['CHN'], def: ['TWN'] }],
     relations: [...MODERN_RELATIONS, ['CHN', 'TWN', -100]],
-    trade: [EU, USMCA],
-    defcon: 3,
     goal: { kind: 'survive', years: 5 },
     victory: { conquest: 0, endYear: 2032 },
   },
@@ -370,8 +451,6 @@ export const SCENARIOS: ScenarioDef[] = [
     desc: 'Pick one of the world\'s smallest nations and climb into the world\'s top 25 economies within 20 years.',
     playerChoices: ['LUX', 'MLT', 'SGP', 'LIE', 'AND', 'MCO', 'SMR', 'TUV', 'NRU', 'BHR', 'BRN', 'MDV', 'SYC', 'KIR', 'PLW', 'ISL', 'MNE', 'CPV', 'BLZ', 'BRB'],
     relations: MODERN_RELATIONS,
-    trade: [EU, USMCA, ASEAN],
-    defcon: 5,
     goal: { kind: 'gdp_rank', rank: 25, years: 20 },
     victory: { conquest: 0, endYear: 2046 },
   },
@@ -390,8 +469,6 @@ export const SCENARIOS: ScenarioDef[] = [
     occupy: [['UKR:Donets\'k|Zaporizhzhya', 'RUS']],
     relations: MODERN_RELATIONS,
     sanctions: NATO.map((n) => [n, 'RUS'] as [string, string]),
-    trade: [EU, USMCA],
-    defcon: 4,
     goal: { kind: 'restore', nations: SOVIET.filter((n) => n !== 'RUS') },
     victory: { conquest: 0, endYear: 2046 },
   },
@@ -403,7 +480,6 @@ export const SCENARIOS: ScenarioDef[] = [
     year: 2026, month: 0, day: 1,
     desc: `A short regional war game (~1–2 hours). Only ${region} is in play. Highest score after 3 years wins — or control 40% of the region first.`,
     relations: MODERN_RELATIONS,
-    defcon: 4,
     region,
     goal: { kind: 'region_score', years: 3 },
     victory: { conquest: 0.4, endYear: 2029 },

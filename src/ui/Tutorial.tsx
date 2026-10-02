@@ -17,7 +17,7 @@ export function Tutorial({ onDone }: { onDone: () => void }) {
       title: `Welcome, leader of ${g.player.name}!`,
       body: (
         <>
-          <p>Your country has a <b class="gold">gold border</b>. Drag to look around, pinch to zoom.</p>
+          <p>Your country has a <b class="gold">gold border</b>. Swipe to look around (flick it — the map glides!), pinch or double-tap to zoom.</p>
           <p>The darker, striped areas are covered by <b>fog of war</b>: you can't see enemy troops there until your own units get close.</p>
           <p>Time is <b>paused</b>. Press <b>▶</b> (top right) to start. ▶▶ and ▶▶▶ go faster.</p>
         </>
@@ -27,7 +27,7 @@ export function Tutorial({ onDone }: { onDone: () => void }) {
       title: 'Your army',
       body: (
         <>
-          <p>Each round counter is an army in a region. The number shows how many units are in it; the ring shows their health (green → red).</p>
+          <p>Each counter is an army in a region. The number shows how many units are in it; the bar shows their health (green → red). Tap <b>🪖 All troops</b> to grab every land unit at once.</p>
           <div class="legend">
             <UnitIcon type="infantry" color={col} /> <span>Infantry — cheap, holds ground</span>
             <UnitIcon type="tank" color={col} /> <span>Tanks — fast, hit hard</span>
@@ -44,7 +44,7 @@ export function Tutorial({ onDone }: { onDone: () => void }) {
         <>
           <p><b>Drag</b> one of your counters onto a region to send it there. Or <b>tap</b> it, then tap where it should go.</p>
           <p>Moving into enemy land <b class="bad">attacks</b> it. A battle starts if they defend it. The bar over the battle shows who is winning — tap it for details.</p>
-          <p>Empty enemy regions are captured after a few hours. Troops use up <b>💥 ammo</b> in battle, so keep making it.</p>
+          <p>Empty enemy regions are captured after a few hours. Hurt units heal when they rest in your own land.</p>
         </>
       ),
     },
@@ -53,8 +53,18 @@ export function Tutorial({ onDone }: { onDone: () => void }) {
       body: (
         <>
           <p>Tap <b>🔨 Build</b>, pick a building, then tap a <b class="good">green</b> region on the map:</p>
-          <p>⛏️ <b>Mine</b> → materials · 🏭 <b>Factory</b> → ammo · 🪖 <b>Barracks</b> → trains troops · ✈️ <b>Airbase</b> → planes · ⚓ <b>Port</b> → ships · 🏰 <b>Fort</b> → defence</p>
-          <p>Train new units in <b>⚔️ Army</b>. Your money comes from your regions — take more land, earn more.</p>
+          <p>⛏️ <b>Mine</b> → more resources to sell · 🏭 <b>Factory</b> → more taxes · 🪖 <b>Barracks</b> → troops · ✈️ <b>Airbase</b> → planes · ⚓ <b>Port</b> → ships · 🏰 <b>Fort</b> → defence</p>
+          <p>Everything costs only <b>💰 money</b>. Train new units in <b>⚔️ Army</b>.</p>
+        </>
+      ),
+    },
+    {
+      title: 'Getting rich',
+      body: (
+        <>
+          <p>💰 Money comes from <b>taxes</b> in your regions, plus <b>⛏ resources</b> your country digs up and sells to the world automatically.</p>
+          <p>Everyone trades with you by default — unless they're at war with you or slap an <b class="warn">🚫 embargo</b> on you. Keep friends, keep sales!</p>
+          <p>Watch for <b class="bad">BREAKING</b> news and pop-ups: when a country wants to be your ally, you'll be asked right away. Have fun, Commander! 🎖</p>
         </>
       ),
     },
