@@ -64,8 +64,10 @@ export function economyAI(g: Game, n: Nation) {
   n.budget.military += (Math.min(0.15, mil) - n.budget.military) * 0.5;
   // keep deficits manageable
   const ratio = n.debt / Math.max(1, n.gdp);
-  const balance = n.income - n.expense;
-  if (balance < 0 && (ratio > 1 || n.creditCrisis > 0)) {
+  // trade (imports paid from the treasury) is part of the real balance
+  const balance = n.income - n.expense + n.tradeIncome;
+  const lowCash = n.treasury < n.gdp * 0.02;
+  if (balance < 0 && (ratio > 1 || n.creditCrisis > 0 || lowCash)) {
     n.taxRate = Math.min(0.45, n.taxRate + 0.01);
     n.budget.welfare = Math.max(0.03, n.budget.welfare - 0.01);
     n.budget.infrastructure = Math.max(0.01, n.budget.infrastructure - 0.005);

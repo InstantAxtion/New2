@@ -128,24 +128,24 @@ export function HowToPlay({ onBack }: { onBack: () => void }) {
         </button>
       </div>
       <div class="card small col">
+        <b>🎯 The goal</b>
+        <div>Lead your country to the top — by conquest, by building the biggest economy, through diplomacy, or by winning the space race. Check your progress in 🏛 Country.</div>
         <b>🗺 The map</b>
-        <div>Drag to pan, pinch to zoom. Double-tap to zoom in. The 🌐 button shows a rotating globe — tap anywhere on it to dive in. Use the 🗂 button to switch map layers: political, terrain, resources, supply, unrest, alliances and weather.</div>
+        <div>Drag to move, pinch to zoom, double-tap to zoom in. Your country has a gold border. 🗂 View changes what the map shows (terrain, supply, alliances, weather). 🌐 shows a globe.</div>
         <b>⚔️ Moving troops</b>
-        <div>Tap one of your unit counters (gold border) to select it, then tap a province to move there. Moving into an enemy province attacks it. Long-press a province for more orders: encircle, hold, retreat, air missions, missile strikes and nuclear strikes. Turn on "Queue" to chain several moves.</div>
-        <b>✏️ Front lines</b>
-        <div>Tap the pencil, then drag your finger across provinces to draw a front. Choose "Hold" to spread your units along it, or "Advance" to push into the enemy beyond it.</div>
-        <b>🛢 Supply</b>
-        <div>Troops far from your capital, depots and ports lose supply and strength. Build supply depots, keep your sea lanes open, and use airlift wings. Cutting enemy supply lines and encircling them forces surrenders.</div>
-        <b>💰 Economy</b>
-        <div>Set taxes and spending, invest in sectors, and watch your resources. Shortages of oil, food, steel or electronics hurt your armies and your people. Sanctions and blockades are powerful weapons — for and against you.</div>
-        <b>🤝 Diplomacy</b>
-        <div>Form alliances, sign trade deals and non-aggression pacts, demand territory, impose sanctions, vote at the UN and make peace. Allies may betray you — and aggressive expansion makes neighbours band together against you.</div>
-        <b>☢️ Nuclear weapons</b>
-        <div>Arming warheads raises DEFCON and alarms the world. A launch devastates a province, crashes markets and may trigger retaliation. You can disable nukes when starting a game.</div>
-        <b>🏆 Winning</b>
-        <div>Military, economic, diplomatic, technology or survival victories — or complete a challenge. Lose your capital and most of your land, get overthrown in a coup, or let a rival conquer the world, and it's over.</div>
-        <b>📱 Busy?</b>
-        <div>Turn on advisors (Nation tab) to automate the economy, production, research, diplomacy or your armies. While the app is closed, your advisors keep running the country (up to 30 days) and you get a report when you return.</div>
+        <div>Tap one of your counters (gold outline) to select it, then tap a province to send it there. Tapping enemy land attacks it. In ⚔️ Army you can select your whole army, air force or navy at once.</div>
+        <b>👆 Long-press</b>
+        <div>Hold your finger on any province for more options: surround enemies, bomb, build defenses, talk to its owner or declare war.</div>
+        <b>📦 Supply</b>
+        <div>Troops far from your land run out of supplies and weaken. Build supply depots near the front (long-press your province).</div>
+        <b>🏛 Running the country</b>
+        <div>Advisors manage your budget and research from the start. You can take over in 🏛 Country. Keep people happy (approval) or you may lose elections — or face a coup.</div>
+        <b>🌍 Friends and enemies</b>
+        <div>In 🌍 World you can trade, make alliances, put sanctions on rivals, send spies, declare war and make peace. Each option says whether they are likely to accept.</div>
+        <b>☢️ Nukes</b>
+        <div>Some countries have nuclear weapons. Using them is devastating and turns the whole world against you. You can turn them off when starting a game.</div>
+        <b>📱 Away from the game?</b>
+        <div>When you come back, your advisors will have played for you (1 real minute = 1 game day, up to 30 days) and you get a report.</div>
       </div>
     </>
   );

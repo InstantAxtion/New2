@@ -16,7 +16,7 @@ import type { AirMission, Loc, NavalMission, Unit } from '../sim/types';
 import { seaLoc } from '../sim/types';
 import type { WorldData } from '../sim/world';
 
-export type Panel = null | 'nation' | 'economy' | 'military' | 'diplomacy' | 'research' | 'intel' | 'news' | 'menu' | 'province';
+export type Panel = null | 'country' | 'army' | 'world' | 'news' | 'menu' | 'province';
 export type Tool = 'none' | 'frontline' | 'encircle';
 
 export interface ContextMenu {
@@ -30,7 +30,7 @@ class Controller {
   geo!: MapGeo;
   renderer: MapRenderer | null = null;
   globe: GlobeRenderer | null = null;
-  canvas: HTMLCanvasElement | null = null;
+  mapEl: HTMLElement | null = null;
   game: Game | null = null;
   speed = 0;
   lastSpeed = 1;
@@ -84,13 +84,13 @@ class Controller {
     this.emit();
   }
 
-  attachCanvas(canvas: HTMLCanvasElement) {
-    if (this.canvas === canvas) return;
-    this.canvas = canvas;
-    this.renderer = new MapRenderer(canvas, this.geo);
+  attachMap(el: HTMLElement) {
+    if (this.mapEl === el) return;
+    this.mapEl = el;
+    this.renderer = new MapRenderer(el, this.geo);
     this.renderer.lowDetail = pref('batterySaver', false);
     this.renderer.layer = this.layer;
-    this.globe = new GlobeRenderer(canvas, this.world);
+    this.globe = new GlobeRenderer(this.renderer.overCv, this.world);
     this.renderer.setGame(this.game);
     this.renderer.showUnits = this.screen !== 'newgame';
     this.renderer.resize();
@@ -98,8 +98,9 @@ class Controller {
       const cap = this.game.player.capital;
       if (cap >= 0) this.renderer.centerOnProvince(cap, Math.max(this.renderer.minK() * 3, 2.5));
     } else this.renderer.fitWorld();
-    new ResizeObserver(() => { this.renderer?.resize(); this.globe?.touch(); }).observe(canvas);
-    attachGestures(canvas, {
+    const root = this.renderer.root;
+    new ResizeObserver(() => { this.renderer?.resize(); this.globe?.touch(); }).observe(root);
+    attachGestures(root, {
       pan: (dx, dy) => {
         if (this.mode === 'globe') this.globe!.drag(dx, dy);
         else this.renderer!.pan(dx, dy);
@@ -137,7 +138,7 @@ class Controller {
     if (g && this.screen === 'game' && this.speed > 0 && !g.s.over && !this.awayReport) {
       this.acc += (dt / 1000) * SPEEDS[this.speed];
       this.acc = Math.min(this.acc, 24);
-      const budget = now + (saver ? 6 : 10);
+      const budget = now + (saver ? 5 : 8);
       let ticked = false;
       while (this.acc >= 1 && performance.now() < budget) {
         tickHour(g);
@@ -148,13 +149,18 @@ class Controller {
     }
     if (this.screen === 'game' || this.screen === 'newgame') {
       if (this.mode === 'globe') this.globe?.frame(this.game, dt);
-      else this.renderer?.frame(now);
+      else this.renderer?.frame(now, this.speed > 0 && this.screen === 'game');
     }
     if (g && performance.now() - this.lastEmit > 300) this.emit();
   }
 
+  private lastLayerDay = -1;
   private afterTick() {
     const g = this.game!;
+    if ((this.layer === 'supply' || this.layer === 'weather') && g.day !== this.lastLayerDay) {
+      this.lastLayerDay = g.day;
+      this.renderer?.invalidate();
+    }
     // drop selection of dead units
     for (const id of this.selected) if (!g.rt.unitById.has(id)) this.selected.delete(id);
     // notifications for important toasts while backgrounded
@@ -249,6 +255,14 @@ class Controller {
     this.emit();
   }
 
+  /** Open a bottom sheet (or close it if it is already open). */
+  open(p: Panel, arg: number | null = null) {
+    this.panel = this.panel === p && arg === this.panelArg ? null : p;
+    this.panelArg = arg;
+    this.menu = null;
+    this.emit();
+  }
+
   setSpeed(s: number) {
     this.speed = s;
     if (s > 0) this.lastSpeed = s;
@@ -298,11 +312,13 @@ class Controller {
   }
   enterGlobe() {
     this.mode = 'globe';
+    this.renderer?.setMapVisible(false);
     if (this.globe) { this.globe.zoom = 1; this.globe.spin = true; this.globe.touch(); }
     this.emit();
   }
   exitGlobe(sx?: number, sy?: number) {
     this.mode = 'map';
+    this.renderer?.setMapVisible(true);
     if (sx !== undefined && sy !== undefined && this.globe && this.renderer) {
       const ll = this.globe.invert(sx, sy);
       if (ll) {
@@ -310,7 +326,6 @@ class Controller {
         if (p) this.renderer.centerOn(p[0], p[1], Math.max(this.renderer.minK() * 2.5, 2));
       }
     }
-    this.renderer?.invalidate();
     this.emit();
   }
   setTool(t: Tool) {

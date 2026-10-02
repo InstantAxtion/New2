@@ -672,7 +672,14 @@ export function supplyDay(g: Game) {
   const { s, w } = g;
   const P = w.provs.length;
   const owners = new Set<number>();
-  for (const u of s.units) if (UNITS[u.type].domain === 'land') owners.add(u.owner);
+  const landBy = new Map<number, Unit[]>();
+  for (const u of s.units) {
+    if (UNITS[u.type].domain !== 'land') continue;
+    owners.add(u.owner);
+    let l = landBy.get(u.owner);
+    if (!l) landBy.set(u.owner, (l = []));
+    l.push(u);
+  }
   owners.add(s.player);
   const airlift = new Map<number, Map<number, number>>();
   for (const u of s.units) if (u.type === 'transport' && u.mission === 'airlift' && u.target >= 0 && !u.path.length) {
@@ -688,12 +695,10 @@ export function supplyDay(g: Game) {
   for (const n of owners) {
     const nat = s.nations[n];
     if (!nat.alive) continue;
+    const mine = landBy.get(n) || [];
     if (n !== s.player && !g.atWarAny(n)) {
       // peacetime: units at home are fully supplied
-      for (const u of s.units) {
-        if (u.owner !== n || UNITS[u.type].domain !== 'land') continue;
-        u.supply = u.loc >= 0 && (s.provinces[u.loc].ctrl === n || g.friendly(n, s.provinces[u.loc].ctrl)) ? 1 : 0.5;
-      }
+      for (const u of mine) u.supply = u.loc >= 0 && (s.provinces[u.loc].ctrl === n || g.friendly(n, s.provinces[u.loc].ctrl)) ? 1 : 0.5;
       continue;
     }
     const sup = new Float32Array(P);
@@ -729,8 +734,7 @@ export function supplyDay(g: Game) {
     const al = airlift.get(n);
     if (al) for (const [p, v] of al) sup[p] = Math.min(1, sup[p] + v);
     // apply to units
-    for (const u of s.units) {
-      if (u.owner !== n || UNITS[u.type].domain !== 'land') continue;
+    for (const u of mine) {
       if (u.loc < 0) { u.supply = 0.3; continue; }
       let v = sup[u.loc];
       // adjacent to supplied territory (attacking into enemy land)

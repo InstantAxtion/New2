@@ -244,6 +244,8 @@ export function newGame(w: WorldData, opts: NewGameOptions): Game {
   // ------------------------------------------------------------ state
   const playerIdx = idx.get(opts.player);
   if (playerIdx === undefined || !nations[playerIdx].alive) throw new Error('invalid player nation ' + opts.player);
+  // new players start with the budget and research handled by advisors (they can take over any time)
+  nations[playerIdx].advisors = { economy: true, research: true, production: false, diplomacy: false, military: false };
   const settings: GameSettings = {
     nukes: true,
     fog: true,
@@ -627,6 +629,7 @@ function setupMilitary(g: Game, sc: ScenarioDef, idx: Map<string, number>) {
     const landUnits = Math.round(pers / 35);
     const ng = Math.max(1, Math.min(8, Math.round(landUnits / 8) + 1));
     for (let k = 0; k < ng; k++) addGeneral(g, n.idx, k === ng - 1 && coast.length > 0);
+    for (const u of s.units) if (u.owner === n.idx) autoAssignGeneral(g, u);
     void idx;
   }
 }
@@ -656,6 +659,17 @@ export function makeUnit(g: Game, type: UnitType, owner: number, loc: number, na
     carriedBy: -1,
     name,
   };
+}
+
+/** Give a unit the general (of the right kind) currently commanding the fewest units. */
+export function autoAssignGeneral(g: Game, u: Unit) {
+  const domain = UNITS[u.type].domain;
+  if (domain === 'air') return;
+  const gens = g.s.generals.filter((x) => x.owner === u.owner && x.alive && (domain === 'sea') === x.traits.includes('naval'));
+  if (!gens.length) return;
+  const load = new Map<number, number>(gens.map((x) => [x.id, 0]));
+  for (const v of g.s.units) if (v.owner === u.owner && load.has(v.gen)) load.set(v.gen, load.get(v.gen)! + 1);
+  u.gen = gens.slice().sort((a, b) => load.get(a.id)! - load.get(b.id)!)[0].id;
 }
 
 export function addGeneral(g: Game, owner: number, admiral = false) {

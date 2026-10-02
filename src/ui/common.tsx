@@ -120,3 +120,26 @@ export function NationDot({ color }: { color: string }) {
 export function relColor(r: number) {
   return r > 50 ? 'var(--good)' : r > 10 ? '#86efac' : r > -10 ? 'var(--muted)' : r > -50 ? '#fca5a5' : 'var(--bad)';
 }
+
+/** A row with an icon, a title, a plain-language explanation and an action on the right. */
+export function Action({ icon, title, desc, children, onClick, tone }: { icon: string; title: ComponentChildren; desc: ComponentChildren; children?: ComponentChildren; onClick?: () => void; tone?: 'bad' | 'good' }) {
+  return (
+    <div class={'item action' + (onClick ? ' click' : '') + (tone ? ' ' + tone : '')} onClick={onClick}>
+      <span class="aicon">{icon}</span>
+      <div class="grow">
+        <div class="atitle">{title}</div>
+        <div class="tiny muted">{desc}</div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Small "will they accept?" indicator for diplomacy. */
+export function Likely({ ok }: { ok: boolean }) {
+  return <span class={'chip ' + (ok ? 'good' : 'bad')} title={ok ? 'They would likely accept' : 'They would likely refuse'}>{ok ? '✓ likely' : '✗ unlikely'}</span>;
+}
+
+export function Help({ children }: { children: ComponentChildren }) {
+  return <div class="help">💡 {children}</div>;
+}

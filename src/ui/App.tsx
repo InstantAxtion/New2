@@ -6,8 +6,8 @@ import { NewGame } from './NewGame';
 
 export function App() {
   const c = useCtl();
-  const attach = useCallback((el: HTMLCanvasElement | null) => {
-    if (el) ctl.attachCanvas(el);
+  const attach = useCallback((el: HTMLDivElement | null) => {
+    if (el) ctl.attachMap(el);
   }, []);
   if (c.loadError) {
     return (
@@ -32,7 +32,7 @@ export function App() {
   const showMap = c.screen === 'game' || c.screen === 'newgame';
   return (
     <div class="screen">
-      {showMap && <canvas class="map" ref={attach} />}
+      {showMap && <div class="map" ref={attach} />}
       {c.screen === 'menu' && <MainMenu />}
       {c.screen === 'newgame' && <NewGame />}
       {c.screen === 'game' && c.game && <GameScreen />}

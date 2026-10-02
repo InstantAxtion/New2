@@ -54,43 +54,69 @@ export function loadGame(w: WorldData, state: GameState): Game {
   return g;
 }
 
-/** Advance one game hour. */
+/** Advance one game hour. Daily work is spread over the day so no single tick is slow. */
 export function tickHour(g: Game) {
   if (g.s.over) return;
   g.s.hour++;
   militaryHour(g);
   aiHour(g);
   if (g.s.hour % 6 === 0) updateVisibility(g);
-  if (g.s.hour % DAY_HOURS === 0) tickDay(g);
+  dayPhase(g, g.s.hour % DAY_HOURS);
 }
 
-export function tickDay(g: Game) {
+function dayPhase(g: Game, h: number) {
   const s = g.s;
   const day = g.day;
-  updateWeather(g);
-  supplyDay(g);
-  unitsDay(g);
-  blockadeDay(g);
-  economyDay(g);
-  researchDay(g);
-  politicsDay(g);
-  if (day % 5 === 0) politicsTick(g);
-  warsDay(g);
-  covertDay(g);
-  unDay(g);
-  defconDay(g);
-  for (const m of s.inbox) if (!m.resolved && m.expires <= day) m.resolved = 'expired';
-  if (s.inbox.length > 80) s.inbox = s.inbox.filter((m, i) => !m.resolved || i > s.inbox.length - 40);
-  const date = g.date();
-  if (date.getUTCDate() === 1) {
-    economyMonth(g);
-    unrestMonth(g);
-    eventsMonth(g);
-    recordReplay(g);
+  const firstOfMonth = h >= 10 && h <= 14 && g.date().getUTCDate() === 1;
+  switch (h) {
+    case 0:
+      updateWeather(g);
+      supplyDay(g);
+      break;
+    case 2:
+      unitsDay(g);
+      blockadeDay(g);
+      break;
+    case 4:
+      economyDay(g);
+      break;
+    case 6:
+      researchDay(g);
+      politicsDay(g);
+      if (day % 5 === 0) politicsTick(g);
+      break;
+    case 8:
+      warsDay(g);
+      covertDay(g);
+      unDay(g);
+      defconDay(g);
+      for (const m of s.inbox) if (!m.resolved && m.expires <= day) m.resolved = 'expired';
+      if (s.inbox.length > 80) s.inbox = s.inbox.filter((m, i) => !m.resolved || i > s.inbox.length - 40);
+      break;
+    case 10:
+      if (firstOfMonth) economyMonth(g);
+      break;
+    case 12:
+      if (firstOfMonth) unrestMonth(g);
+      break;
+    case 14:
+      if (firstOfMonth) {
+        eventsMonth(g);
+        recordReplay(g);
+      }
+      break;
+    case 16:
+      if (day % 7 === 0) socialWeek(g);
+      break;
+    case 18:
+      checkVictory(g);
+      break;
   }
-  if (day % 7 === 0) socialWeek(g);
-  checkVictory(g);
-  g.rt.dirtyOwners = true;
+}
+
+/** Run a whole day's bookkeeping at once (used when a day boundary must be processed immediately). */
+export function tickDay(g: Game) {
+  for (let h = 0; h < DAY_HOURS; h += 2) dayPhase(g, h);
 }
 
 /** Simulate `hours` with the player's advisors temporarily in charge. Returns a summary. */

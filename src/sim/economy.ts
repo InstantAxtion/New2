@@ -2,7 +2,7 @@
 import { BASE_PRICE, NUCLEAR_POWER, RES_NAMES } from '../data/countries';
 import { NUKE_COST, NUKE_DAYS, NUKE_URANIUM, UNITS } from '../data/units';
 import type { Game } from './ctx';
-import { costLevel, makeUnit } from './setup';
+import { autoAssignGeneral, costLevel, makeUnit } from './setup';
 import type { Nation, ProdItem, ResMap, Resource, UnitType } from './types';
 import { RESOURCES } from './types';
 
@@ -15,6 +15,7 @@ interface EcoCache {
   upkeep: Float64Array; // raw unit upkeep sum
   oil: Float64Array; // raw military oil use
   access: Float64Array; // market access 0..1
+  occ: Float64Array; // share of owned population under enemy occupation
 }
 const ecoCaches = new WeakMap<Game, EcoCache>();
 
@@ -23,8 +24,14 @@ export function eco(g: Game): EcoCache {
   let c = ecoCaches.get(g);
   if (c && c.hour === Math.floor(g.s.hour / 6) && c.pop.length === g.N) return c;
   const N = g.N;
-  c = { hour: Math.floor(g.s.hour / 6), pop: new Float64Array(N), upkeep: new Float64Array(N), oil: new Float64Array(N), access: new Float64Array(N) };
-  for (const p of g.s.provinces) if (p.owner === p.ctrl) c.pop[p.owner] += p.pop;
+  c = { hour: Math.floor(g.s.hour / 6), pop: new Float64Array(N), upkeep: new Float64Array(N), oil: new Float64Array(N), access: new Float64Array(N), occ: new Float64Array(N) };
+  const owned = new Float64Array(N);
+  for (const p of g.s.provinces) {
+    owned[p.owner] += p.pop;
+    if (p.owner === p.ctrl) c.pop[p.owner] += p.pop;
+    else c.occ[p.owner] += p.pop;
+  }
+  for (let n = 0; n < N; n++) c.occ[n] = owned[n] > 0 ? c.occ[n] / owned[n] : 0;
   const atWar = new Uint8Array(N);
   for (const w of g.s.wars) for (const x of [...w.att, ...w.def]) atWar[x] = 1;
   for (const u of g.s.units) {
@@ -174,6 +181,8 @@ export function economyDay(g: Game) {
     const pr = prod[p.ctrl];
     for (const r of RESOURCES) pr[r] += p.dep[r] * factor * (occupied ? 0.5 : 1);
   }
+  const growthMul = new Float64Array(g.N).fill(1);
+  const infraPts = new Float64Array(g.N);
   const buys: { n: Nation; r: Resource; q: number }[] = [];
   const sells: { n: Nation; r: Resource; q: number }[] = [];
   for (const n of s.nations) {
@@ -241,7 +250,7 @@ export function economyDay(g: Game) {
     // research points
     n.rp += (2 + 30 * Math.sqrt(Math.max(0, researchSpend))) * (1 + g.mod(n.idx, 'research')) * (1 + n.sectors.tech * 2) * (1 - n.shortage.electronics * 0.3);
     // infrastructure
-    infraDay(g, n, infraSpend);
+    infraPts[n.idx] = (infraSpend / Math.max(0.001, (n.gdp * 0.04) / 365)) * 0.0014;
     // production queue
     productionDay(g, n);
     // ---------- trade orders
@@ -263,9 +272,17 @@ export function economyDay(g: Game) {
         n.stock[r] = 0;
       } else n.shortage[r] = Math.max(0, n.shortage[r] - 0.05);
     }
-    // daily GDP growth applied to provinces it owns and controls
-    const daily = Math.pow(1 + n.growth / 100, 1 / 365);
-    for (const p of s.provinces) if (p.owner === n.idx && p.ctrl === n.idx) p.gdp *= daily;
+    growthMul[n.idx] = Math.pow(1 + n.growth / 100, 1 / 365);
+  }
+  // one pass over provinces: GDP growth and infrastructure for the owner who controls them
+  for (const p of s.provinces) {
+    if (p.owner !== p.ctrl) continue;
+    p.gdp *= growthMul[p.owner];
+    const pts = infraPts[p.owner];
+    if (pts > 0) {
+      p.infra = Math.min(10, p.infra + pts * (1 - p.infra / 12));
+      if (p.dmg > 0) p.dmg = Math.max(0, p.dmg - pts * 0.5);
+    }
   }
   if (day % 7 === 0) {
     s.priceHist.push({ day, p: { ...s.price } });
@@ -335,17 +352,6 @@ function clearMarket(g: Game, buys: { n: Nation; r: Resource; q: number }[], sel
 
 function militaryOilUse(g: Game, n: number) {
   return eco(g).oil[n] * 0.4;
-}
-
-function infraDay(g: Game, n: Nation, spend: number) {
-  // spending of 4% of GDP raises average infrastructure by ~1 level per 2 years
-  const pts = (spend / Math.max(0.001, (n.gdp * 0.04) / 365)) * 0.0014;
-  const provs = g.s.provinces.filter((p) => p.owner === n.idx && p.ctrl === n.idx);
-  if (!provs.length) return;
-  for (const p of provs) {
-    p.infra = Math.min(10, p.infra + pts * (1 - p.infra / 12));
-    if (p.dmg > 0) p.dmg = Math.max(0, p.dmg - pts * 0.5);
-  }
 }
 
 // ------------------------------------------------------------------ production
@@ -469,6 +475,7 @@ function completeItem(g: Game, n: Nation, item: ProdItem) {
   const u = makeUnit(g, type, n.idx, loc, `${count}${['th', 'st', 'nd', 'rd'][count % 10 > 3 || Math.floor(count / 10) === 1 ? 0 : count % 10]} ${def.name}`);
   u.org = 50;
   g.s.units.push(u);
+  autoAssignGeneral(g, u);
   g.rt.unitById.set(u.id, u);
   g.relocate(u, u.loc);
   g.notify([n.idx], `${def.name} ready in ${g.locName(u.loc)}.`, 'good', u.loc);
@@ -511,13 +518,7 @@ export function economyMonth(g: Game) {
 }
 
 export function occupiedShare(g: Game, n: number) {
-  let own = 0, occ = 0;
-  for (const p of g.s.provinces) {
-    if (p.owner !== n) continue;
-    own += p.pop;
-    if (p.ctrl !== n) occ += p.pop;
-  }
-  return own > 0 ? occ / own : 0;
+  return eco(g).occ[n];
 }
 
 export function resName(r: Resource) {

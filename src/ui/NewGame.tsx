@@ -30,14 +30,12 @@ export function NewGame() {
   const [search, setSearch] = useState('');
   const [seed] = useState(() => (Date.now() & 0x7fffffff));
   const [opts, setOpts] = useState<Partial<GameSettings>>({ nukes: true, fog: true, difficulty: 'normal', notifications: true, offlineProgress: true });
-  const [victory, setVictory] = useState({ conquest: 0.5, economic: 5, diplomatic: true, tech: true, survival: false, endYear: 0 });
 
   const g = c.game;
   const chooseScenario = (s: ScenarioDef) => {
     setSc(s);
     const pg = ctl.preview({ scenario: s.id, player: defaultPlayer(s), seed });
     setPicked(pg.s.player);
-    setVictory({ conquest: s.victory?.conquest ?? 0.5, economic: s.victory?.economic ?? 5, diplomatic: s.victory?.diplomatic ?? true, tech: s.victory?.tech ?? true, survival: s.victory?.survival ?? false, endYear: s.victory?.endYear ?? s.year + 40 });
     setStep('country');
   };
   const allowed = (idx: number) => {
@@ -112,33 +110,16 @@ export function NewGame() {
             </button>
           </div>
           <div class="section">Difficulty</div>
-          <Tabs tabs={[['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']]} value={opts.difficulty ?? 'normal'} onChange={(d) => setOpts({ ...opts, difficulty: d })} />
-          <div class="tiny muted">Affects how aggressive AI nations are, especially toward you.</div>
-          <div class="section">Rules</div>
           <div class="list">
-            <Toggle label="☢️ Nuclear weapons" desc="Disable to remove nukes from the game entirely." on={!!opts.nukes} onChange={(v) => setOpts({ ...opts, nukes: v })} />
-            <Toggle label="🌫 Fog of war" desc="Hide enemy units you cannot see." on={!!opts.fog} onChange={(v) => setOpts({ ...opts, fog: v })} />
-            <Toggle label="🔔 Notifications" desc="Alerts when attacked while the app is in the background." on={!!opts.notifications} onChange={(v) => setOpts({ ...opts, notifications: v })} />
-            <Toggle label="⏳ Offline progress" desc="Advisors run your nation while you're away (1 minute = 1 day, max 30)." on={!!opts.offlineProgress} onChange={(v) => setOpts({ ...opts, offlineProgress: v })} />
+            {([['easy', '😌 Easy', 'Other countries rarely attack you. Good for learning.'], ['normal', '⚖️ Normal', 'A realistic, balanced world.'], ['hard', '🔥 Hard', 'Aggressive rivals who will come for you.']] as const).map(([d, label, desc]) => (
+              <div class={'item click' + (opts.difficulty === d ? ' card sel' : '')} onClick={() => setOpts({ ...opts, difficulty: d })}>
+                <div class="grow"><b>{label}</b><div class="tiny muted">{desc}</div></div>
+                {opts.difficulty === d && <b class="good">✓</b>}
+              </div>
+            ))}
           </div>
-          {sc.category !== 'challenge' && sc.category !== 'quick' && (
-            <>
-              <div class="section">Victory conditions</div>
-              <div class="list">
-                <Toggle label={`⚔️ Military: control ${Math.round(victory.conquest * 100)}% of the world`} on={victory.conquest > 0} onChange={(v) => setVictory({ ...victory, conquest: v ? 0.5 : 0 })} />
-                {victory.conquest > 0 && <input type="range" min={0.2} max={0.9} step={0.05} value={victory.conquest} onInput={(e) => setVictory({ ...victory, conquest: +(e.target as HTMLInputElement).value })} />}
-                <Toggle label={`💰 Economic: #1 GDP for ${victory.economic || 5} years`} on={victory.economic > 0} onChange={(v) => setVictory({ ...victory, economic: v ? 5 : 0 })} />
-                <Toggle label="🤝 Diplomatic: lead the world council or a dominant alliance" on={victory.diplomatic} onChange={(v) => setVictory({ ...victory, diplomatic: v })} />
-                <Toggle label="🚀 Technology: complete the Mars program" on={victory.tech} onChange={(v) => setVictory({ ...victory, tech: v })} />
-                <Toggle label={`🛡 Survival: still standing in ${victory.endYear}`} on={victory.survival} onChange={(v) => setVictory({ ...victory, survival: v })} />
-              </div>
-              <div class="spread small" style={{ marginTop: '6px' }}>
-                <span>Game ends in</span>
-                <b>{victory.endYear}</b>
-              </div>
-              <input type="range" min={sc.year + 5} max={sc.year + 100} step={1} value={victory.endYear} onInput={(e) => setVictory({ ...victory, endYear: +(e.target as HTMLInputElement).value })} />
-            </>
-          )}
+          <div class="section">Rules</div>
+          <Toggle label="☢️ Nuclear weapons" desc="Turn off to remove nukes from the game." on={!!opts.nukes} onChange={(v) => setOpts({ ...opts, nukes: v })} />
           <button class="btn primary block" style={{ marginTop: '12px' }} disabled={!n} onClick={() => n && start()}>
             ▶ Start as {n?.name}
           </button>
@@ -149,8 +130,7 @@ export function NewGame() {
 
   function start() {
     if (!n || !sc) return;
-    const v = sc.category === 'challenge' || sc.category === 'quick' ? undefined : victory;
-    ctl.newGame({ scenario: sc.id, player: n.id, seed, settings: { ...opts, ...(v ? { victory: v } : {}) } });
+    ctl.newGame({ scenario: sc.id, player: n.id, seed, settings: opts });
   }
 
   return (
@@ -174,7 +154,7 @@ export function NewGame() {
         {n && !search && <NationCard g={g} idx={n.idx} />}
         <div class="row" style={{ marginTop: '10px' }}>
           <button class="btn" onClick={() => setStep('settings')}>
-            ⚙️ Settings
+            ⚙️ Difficulty
           </button>
           <button class="btn primary grow" disabled={!n} onClick={start}>
             ▶ Play as {n?.name ?? '…'}

@@ -4,103 +4,90 @@ import { pref } from '../platform/storage';
 import type { Layer } from '../render/renderer';
 import { declareWar } from '../sim/diplomacy';
 import { BUILDINGS, construct } from '../sim/economy';
-import { disband } from '../sim/military';
 import { defconName, launchNuke, nukeRangeOk } from '../sim/nuclear';
 import type { Toast } from '../sim/types';
 import { councilName, playerVote, RES_INFO } from '../sim/un';
 import { dateStr, fmt, NationDot } from './common';
 import { useCtl, type Panel } from './controller';
 import { EndScreen } from './EndScreen';
-import { DiplomacyPanel } from './panels/Diplomacy';
-import { EconomyPanel } from './panels/Economy';
+import { ArmyPanel } from './panels/Army';
+import { CountryPanel } from './panels/Country';
 import { GameMenu } from './panels/GameMenu';
-import { IntelPanel } from './panels/Intel';
-import { MilitaryPanel } from './panels/Military';
-import { NationPanel } from './panels/Nation';
 import { NewsPanel } from './panels/News';
 import { ProvincePanel } from './panels/Province';
-import { ResearchPanel } from './panels/Research';
+import { WorldPanel } from './panels/World';
+import { Tutorial } from './Tutorial';
 
-const LAYERS: [Layer, string][] = [
-  ['political', '🗺 Political'],
-  ['terrain', '⛰ Terrain'],
-  ['resources', '🛢 Resources'],
-  ['supply', '📦 Supply'],
-  ['unrest', '🔥 Unrest'],
-  ['alliances', '🛡 Alliances'],
-  ['weather', '🌦 Weather'],
+const LAYERS: [Layer, string, string][] = [
+  ['political', '🗺 Countries', 'Who owns what. Striped = occupied by an enemy.'],
+  ['terrain', '⛰ Terrain', 'Mountains, jungle and marsh slow attackers and help defenders.'],
+  ['supply', '📦 Supply', 'Green = your troops are well supplied. Red = they will weaken.'],
+  ['alliances', '🛡 Alliances', 'Military alliances, coloured by bloc.'],
+  ['weather', '🌦 Weather', 'Snow, monsoon and storms slow armies and ground planes.'],
 ];
 
 export function GameScreen() {
   const c = useCtl();
   const g = c.game!;
   const [showLayers, setShowLayers] = useState(false);
-  const inbox = g.s.inbox.filter((m) => !m.resolved && m.to === g.s.player).length;
+  const [tutorial, setTutorial] = useState(() => !pref('tutorialDone', false));
+  const inbox = g.s.inbox.filter((m) => !m.resolved && m.to === g.s.player).length + (g.s.un.res.some((r) => !r.resolved) ? 1 : 0);
   const tabs: [Panel, string, string, number?][] = [
-    ['nation', '🏛', 'Nation'],
-    ['economy', '💰', 'Economy'],
-    ['military', '⚔️', 'Military'],
-    ['diplomacy', '🤝', 'Diplomacy', inbox],
-    ['research', '🔬', 'Research'],
-    ['intel', '🕵️', 'Intel'],
+    ['country', '🏛', 'Country'],
+    ['army', '⚔️', 'Army'],
+    ['world', '🌍', 'World', inbox],
     ['news', '📰', 'News'],
   ];
-  const openPanel = (p: Panel) => {
-    c.panel = c.panel === p ? null : p;
-    c.menu = null;
-    c.emit();
-  };
+  useEffect(() => {
+    const f = () => setTutorial(true);
+    window.addEventListener('show-tutorial', f);
+    return () => window.removeEventListener('show-tutorial', f);
+  }, []);
   return (
     <>
       <Hud />
       {pref('ticker', true) && <Ticker />}
       <div class="fabs">
-        <button class={'fab' + (showLayers ? ' on' : '')} onClick={() => setShowLayers(!showLayers)} title="Map layers">
+        <button class={'fab' + (showLayers ? ' on' : '')} onClick={() => setShowLayers(!showLayers)} aria-label="Map view">
           🗂
+          <span class="fablabel">View</span>
         </button>
-        <button class={'fab' + (c.mode === 'globe' ? ' on' : '')} onClick={() => (c.mode === 'globe' ? c.exitGlobe() : c.enterGlobe())} title="Globe view">
+        <button class={'fab' + (c.mode === 'globe' ? ' on' : '')} onClick={() => (c.mode === 'globe' ? c.exitGlobe() : c.enterGlobe())} aria-label="Globe">
           🌐
+          <span class="fablabel">Globe</span>
         </button>
-        <button class={'fab' + (c.tool === 'frontline' ? ' on' : '')} onClick={() => c.setTool('frontline')} title="Draw front line">
-          ✏️
-        </button>
-        <button class="fab" onClick={() => c.selectAllInView('land')} title="Select all land units on screen">
-          🎯
-        </button>
-        <button class="fab" onClick={() => { const cap = g.player.capital; if (cap >= 0) c.focus(cap); }} title="Go to capital">
+        <button class="fab" onClick={() => { const cap = g.player.capital; if (cap >= 0) c.focus(cap); }} aria-label="My country">
           🏠
+          <span class="fablabel">Home</span>
         </button>
       </div>
       {showLayers && (
         <div class="layers">
-          {LAYERS.map(([l, label]) => (
+          {LAYERS.map(([l, label, desc]) => (
             <button class={c.layer === l ? 'on' : ''} onClick={() => { c.setLayer(l); setShowLayers(false); }}>
-              {label}
+              <b>{label}</b>
+              <div class="tiny" style={{ opacity: 0.8 }}>{desc}</div>
             </button>
           ))}
         </div>
       )}
       {c.tool === 'frontline' && !c.menu && (
         <div class="unbanner">
-          <div class="toast warn">✏️ Drag across provinces to draw a front line. Two fingers still pan & zoom.</div>
+          <div class="toast warn">✏️ Drag your finger across the provinces where you want your front line. Use two fingers to move the map.</div>
         </div>
       )}
       <Toasts />
-      <UnBanner />
       {c.selected.size > 0 && !c.panel && <SelectionBar />}
       {c.menu && <ContextMenu />}
-      {c.panel === 'nation' && <NationPanel />}
-      {c.panel === 'economy' && <EconomyPanel />}
-      {c.panel === 'military' && <MilitaryPanel />}
-      {c.panel === 'diplomacy' && <DiplomacyPanel />}
-      {c.panel === 'research' && <ResearchPanel />}
-      {c.panel === 'intel' && <IntelPanel />}
+      {c.panel === 'country' && <CountryPanel />}
+      {c.panel === 'army' && <ArmyPanel />}
+      {c.panel === 'world' && <WorldPanel />}
       {c.panel === 'news' && <NewsPanel />}
       {c.panel === 'province' && c.province >= 0 && <ProvincePanel />}
       {c.panel === 'menu' && <GameMenu />}
       <div class="tabbar">
         {tabs.map(([p, ic, label, badge]) => (
-          <button class={c.panel === p ? 'on' : ''} onClick={() => openPanel(p)}>
+          <button class={c.panel === p ? 'on' : ''} onClick={() => c.open(p)}>
             <span class="ic">{ic}</span>
             {label}
             {badge ? <span class="badge">{badge}</span> : null}
@@ -108,6 +95,7 @@ export function GameScreen() {
         ))}
       </div>
       {c.awayReport && <AwayReport />}
+      {tutorial && !g.s.over && <Tutorial onDone={() => setTutorial(false)} />}
       {g.s.over && <EndScreen />}
     </>
   );
@@ -121,26 +109,27 @@ function Hud() {
   return (
     <div class="hud">
       <div class="row" style={{ width: '100%' }}>
-        <button class="btn sm ghost" style={{ padding: '4px 8px' }} onClick={() => { c.panel = c.panel === 'menu' ? null : 'menu'; c.emit(); }}>
+        <button class="btn sm ghost" style={{ padding: '4px 8px' }} onClick={() => c.open('menu')} aria-label="Menu">
           ☰
         </button>
-        <div class="nation grow" onClick={() => { c.panel = 'nation'; c.emit(); }}>
+        <div class="nation grow" onClick={() => c.open('country')}>
           <NationDot color={n.color} />
-          <span class="ellipsis">{n.name}</span>
+          <div class="col" style={{ gap: 0, minWidth: 0 }}>
+            <span class="ellipsis">{n.name}</span>
+            <span class="date">{dateStr(g)}{g.s.defcon <= 3 && <span class={'defcon d' + g.s.defcon} style={{ marginLeft: '6px' }} title={defconName(g.s.defcon)}>DEFCON {g.s.defcon}</span>}</span>
+          </div>
+        </div>
+        <div class="money" onClick={() => c.open('country')}>
+          <b>{fmt.money(n.treasury)}</b>
+          <span class={bal >= 0 ? 'good' : 'bad'}>{bal >= 0 ? '+' : ''}{fmt.money(bal * 30)}/mo</span>
         </div>
         <div class="speed">
           {[0, 1, 2, 5].map((s) => (
             <button class={c.speed === s ? 'on' : ''} onClick={() => c.setSpeed(s)} aria-label={s === 0 ? 'Pause' : `Speed ${s}`}>
-              {s === 0 ? <b style={{ letterSpacing: '-2px' }}>❙❙</b> : s + '×'}
+              {s === 0 ? <b style={{ letterSpacing: '-2px' }}>❙❙</b> : s === 1 ? '▶' : s === 2 ? '▶▶' : '▶▶▶'}
             </button>
           ))}
         </div>
-      </div>
-      <div class="hudline">
-        <span class="date">{dateStr(g)}</span>
-        <span>💰 <b>{fmt.money(n.treasury)}</b> <span class={bal >= 0 ? 'good' : 'bad'}>{fmt.signed(bal * 30, 1)}B/mo</span></span>
-        <span>👍 <b class={n.approval > 50 ? 'good' : n.approval > 30 ? 'warn' : 'bad'}>{Math.round(n.approval)}%</b></span>
-        <span class={'defcon d' + g.s.defcon} title={defconName(g.s.defcon)}>DEFCON {g.s.defcon}</span>
       </div>
     </div>
   );
@@ -149,11 +138,11 @@ function Hud() {
 function Ticker() {
   const c = useCtl();
   const g = c.game!;
-  const items = g.s.news.slice(-10).reverse();
+  const items = g.s.news.slice(-8).reverse();
   const text = items.map((n) => n.text).join('   •   ');
   const key = items[0]?.text ?? '';
   return (
-    <div class="ticker" onClick={() => { c.panel = 'news'; c.emit(); }}>
+    <div class="ticker" onClick={() => c.open('news')}>
       <div class="label">NEWS</div>
       <div style={{ overflow: 'hidden', flex: 1 }}>
         <span class="track" key={key} style={{ animationDuration: Math.max(20, text.length / 7) + 's' }}>
@@ -177,18 +166,19 @@ function Toasts() {
     const id = setTimeout(() => tick((x) => x + 1), 1000);
     return () => clearTimeout(id);
   });
-  // auto-pause when attacked
   const last = show[show.length - 1];
   useEffect(() => {
     if (last && last.kind === 'danger' && /declared war on us|nuclear/i.test(last.text) && pref('autoPauseWar', true) && c.speed > 0) c.setSpeed(0);
   }, [last?.id]);
   return (
-    <div class="toasts" style={{ top: pref('ticker', true) ? undefined : 'calc(72px + var(--safe-top))' }}>
+    <div class="toasts" style={{ top: pref('ticker', true) ? undefined : 'calc(58px + var(--safe-top))' }}>
       {show.map((t: Toast) => (
         <div class={'toast ' + t.kind} onClick={() => { if (t.loc !== undefined) c.focus(t.loc); seen.current.set(t.id, -1e9); tick((x) => x + 1); }}>
           {t.text}
+          {t.loc !== undefined && <span class="tiny muted"> · tap to see</span>}
         </div>
       ))}
+      <UnBanner />
     </div>
   );
 }
@@ -203,16 +193,16 @@ function UnBanner() {
   const voted = r.yes.includes(me) ? 'yes' : r.no.includes(me) ? 'no' : r.abstain.includes(me) ? 'abstain' : null;
   const what = r.kind === 'peacekeep' ? g.s.wars.find((w) => w.id === r.target)?.name ?? 'war' : g.name(r.target);
   return (
-    <div class="toast" style={{ position: 'absolute', left: '8px', right: '60px', bottom: 'calc(64px + var(--safe-bottom))', zIndex: 23, borderLeftColor: '#60a5fa', maxWidth: '520px' }}>
+    <div class="toast" style={{ borderLeftColor: '#60a5fa' }}>
       <div class="spread">
-        <b>🏛 {councilName(g)} vote · {RES_INFO[r.kind].name}: {what}</b>
+        <b>🏛 {councilName(g)} vote: {RES_INFO[r.kind].name} — {what}</b>
         <button class="btn sm ghost" onClick={() => setHidden(r.id)}>✕</button>
       </div>
-      <div class="tiny muted">{RES_INFO[r.kind].desc} Proposed by {g.name(r.proposer)} · closes in {r.voteDay - g.day} days</div>
+      <div class="tiny muted">{RES_INFO[r.kind].desc} Vote closes in {r.voteDay - g.day} days.</div>
       <div class="row" style={{ marginTop: '6px' }}>
-        {(['yes', 'no', 'abstain'] as const).map((v) => (
+        {(['yes', 'no'] as const).map((v) => (
           <button class={'btn sm' + (voted === v ? ' on' : '')} onClick={() => { playerVote(g, r.id, v); c.emit(); }}>
-            {v === 'yes' ? '👍 Yes' : v === 'no' ? (g.s.un.permanent.includes(me) ? '🚫 Veto' : '👎 No') : '🤷 Abstain'}
+            {v === 'yes' ? '👍 Vote yes' : g.s.un.permanent.includes(me) ? '🚫 Veto' : '👎 Vote no'}
           </button>
         ))}
       </div>
@@ -226,49 +216,34 @@ function SelectionBar() {
   const units = c.selectedUnits();
   if (!units.length) return null;
   const counts = new Map<string, number>();
-  for (const u of units) counts.set(u.type, (counts.get(u.type) || 0) + 1);
+  for (const u of units) counts.set(UNITS[u.type].name.replace(/ (Division|Brigade|Wing|Squadron|Group|Flotilla|Battery)$/, ''), (counts.get(UNITS[u.type].name.replace(/ (Division|Brigade|Wing|Squadron|Group|Flotilla|Battery)$/, '')) || 0) + 1);
   const domains = new Set(units.map((u) => UNITS[u.type].domain));
-  const avgStr = units.reduce((a, u) => a + u.str, 0) / units.length;
-  const avgOrg = units.reduce((a, u) => a + u.org, 0) / units.length;
+  const health = units.reduce((a, u) => a + u.str, 0) / units.length;
   const gen = units[0].gen >= 0 ? g.general(units[0].gen) : null;
+  const hint = domains.has('land')
+    ? 'Tap a province to send them there — tapping enemy land attacks it.'
+    : domains.has('sea')
+      ? 'Tap the sea or a coast to sail there.'
+      : 'Tap a province to protect it from the air. Long-press for bombing.';
   return (
     <div class="selbar" onPointerDown={(e) => e.stopPropagation()}>
       <div class="spread">
         <div class="small grow">
-          <b>{units.length === 1 ? units[0].name : `${units.length} units`}</b>
-          <span class="muted"> · {[...counts.entries()].map(([t, n]) => `${n} ${UNITS[t as keyof typeof UNITS].icon}`).join(' ')}</span>
+          <b>{units.length === 1 ? units[0].name : `${units.length} units selected`}</b>
           <div class="tiny muted">
-            💪 {Math.round(avgStr)}% · 🎖 {Math.round(avgOrg)}% org{gen ? ` · ${gen.name}` : ''}
-            {units.length === 1 && units[0].path.length ? ` · → ${g.locName(units[0].path[units[0].path.length - 1])}` : ''}
+            {[...counts.entries()].map(([t, n]) => `${n}× ${t}`).join(', ')} · health {Math.round(health)}%{gen ? ` · led by ${gen.name}` : ''}
           </div>
         </div>
-        <button class="btn sm ghost" onClick={() => c.clearSelection()}>✕</button>
+        <button class="btn sm ghost" onClick={() => c.clearSelection()} aria-label="Deselect">✕</button>
       </div>
-      <div class="tiny muted" style={{ marginTop: '4px' }}>Tap the map to move/attack · long-press for more orders</div>
-      <div class="acts">
-        <button class={'btn sm' + (c.queueMode ? ' on' : '')} onClick={() => { c.queueMode = !c.queueMode; c.emit(); }}>
-          ➕ Queue
-        </button>
-        {domains.has('land') && <button class="btn sm" onClick={() => c.hold()}>🛡 Hold</button>}
-        {domains.has('land') && <button class="btn sm" onClick={() => c.retreat()}>↩ Retreat</button>}
-        {domains.has('land') && (
-          <button class={'btn sm' + (c.pendingEncircle ? ' on' : '')} onClick={() => { c.pendingEncircle = !c.pendingEncircle; c.toast('Tap the enemy province to encircle'); }}>
-            ⭕ Encircle
-          </button>
-        )}
-        <button class="btn sm" onClick={() => { c.panel = 'military'; c.panelArg = 2; c.emit(); }}>🎖 General</button>
-        <button class="btn sm" onClick={() => { const u = units[0]; c.focus(u.loc); }}>📍 Find</button>
-        <button
-          class="btn sm"
-          onClick={() => {
-            if (!confirm(`Disband ${units.length} unit(s)?`)) return;
-            for (const u of units) disband(g, u);
-            c.clearSelection();
-          }}
-        >
-          🗑 Disband
-        </button>
-      </div>
+      <div class="help" style={{ margin: '6px 0 0' }}>👆 {hint}</div>
+      {domains.has('land') && (
+        <div class="acts">
+          <button class="btn sm" onClick={() => c.hold()} title="Stop moving and dig in">🛡 Stop &amp; defend</button>
+          <button class="btn sm" onClick={() => c.retreat()} title="Pull back to safer friendly land">↩ Pull back</button>
+          <button class={'btn sm' + (c.tool === 'frontline' ? ' on' : '')} onClick={() => c.setTool('frontline')} title="Spread these units along a line you draw">✏️ Draw front</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -279,102 +254,92 @@ function ContextMenu() {
   const m = c.menu!;
   const me = g.s.player;
   const close = () => c.closeMenu();
-  const style = { left: Math.min(m.x, (c.renderer?.w ?? 400) - 290) + 'px', top: Math.max(60, Math.min(m.y, (c.renderer?.h ?? 600) - 360)) + 'px' };
+  const style = { left: Math.max(8, Math.min(m.x - 120, (c.renderer?.w ?? 400) - 290)) + 'px', top: Math.max(60, Math.min(m.y, (c.renderer?.h ?? 600) - 380)) + 'px' };
+  const Item = ({ icon, title, desc, onClick, bad }: { icon: string; title: string; desc: string; onClick: () => void; bad?: boolean }) => (
+    <button class={bad ? 'bad' : ''} onClick={() => { onClick(); close(); }}>
+      <span style={{ fontSize: '18px', width: '24px' }}>{icon}</span>
+      <span class="col" style={{ gap: 0, alignItems: 'flex-start' }}>
+        <b>{title}</b>
+        <span class="tiny muted">{desc}</span>
+      </span>
+    </button>
+  );
   if (m.loc === -999) {
-    // front line drawn
     return (
-      <div class="ctxmenu" style={style}>
-        <div class="ttl">✏️ Front line · {c.frontLine.length} provinces</div>
-        <div class="tiny muted" style={{ padding: '0 8px 4px' }}>{c.selected.size ? `${c.selected.size} selected units` : 'Uses idle land units nearby'}</div>
-        <button onClick={() => c.applyFrontline('hold')}>🛡 Hold this line</button>
-        <button onClick={() => c.applyFrontline('advance')}>⚔️ Advance from this line</button>
-        <button onClick={() => c.cancelDraw()}>✕ Cancel</button>
+      <div class="ctxmenu" style={style} onPointerDown={(e) => e.stopPropagation()}>
+        <div class="ttl">✏️ Front line ({c.frontLine.length} provinces)</div>
+        <Item icon="🛡" title="Hold this line" desc="Spread your units along it to defend." onClick={() => c.applyFrontline('hold')} />
+        <Item icon="⚔️" title="Attack from this line" desc="Units move to the line, then push into the enemy beyond it." onClick={() => c.applyFrontline('advance')} />
+        <Item icon="✕" title="Cancel" desc="Forget this line." onClick={() => c.cancelDraw()} />
       </div>
     );
   }
   const loc = m.loc;
   const units = c.selectedUnits();
   const has = (d: string) => units.some((u) => UNITS[u.type].domain === d);
-  const missiles = units.some((u) => u.type === 'missile');
   const isProv = loc >= 0;
   const p = isProv ? g.s.provinces[loc] : null;
   const ctrl = p ? p.ctrl : -1;
   const enemy = p ? g.atWar(me, ctrl) : false;
   const name = g.locName(loc);
-  const run = (f: () => void) => () => { f(); close(); };
   return (
     <div class="ctxmenu" style={style} onPointerDown={(e) => e.stopPropagation()}>
       <div class="ttl">
         {name}
-        {p && <div class="tiny muted">{g.name(p.owner)}{p.ctrl !== p.owner ? ` · occupied by ${g.name(p.ctrl)}` : ''}</div>}
+        {p && <div class="tiny muted">{g.name(p.owner)}{p.ctrl !== p.owner ? ` · occupied by ${g.name(p.ctrl)}` : ''}{enemy ? ' · ENEMY' : ''}</div>}
       </div>
       {units.length > 0 && (has('land') || has('sea')) && (
         <>
-          <button onClick={run(() => c.issueOrder(loc))}>{enemy ? '⚔️ Attack' : '➡️ Move here'}</button>
-          {has('land') && isProv && enemy && <button onClick={run(() => { c.pendingEncircle = true; c.onTapEncircle(loc); })}>⭕ Encircle</button>}
-          <button onClick={run(() => { c.queueMode = true; c.issueOrder(loc); c.queueMode = false; })}>➕ Queue move here</button>
+          <Item icon={enemy ? '⚔️' : '➡️'} title={enemy ? 'Attack here' : 'Move here'} desc={`Send your ${units.length} selected unit(s).`} onClick={() => c.issueOrder(loc)} />
+          {has('land') && isProv && enemy && <Item icon="⭕" title="Surround it" desc="Attack from several sides. Trapped enemies surrender." onClick={() => c.onTapEncircle(loc)} />}
         </>
       )}
       {has('air') && isProv && (
         <>
-          <button onClick={run(() => c.airMission('superiority', loc))}>✈️ Air superiority</button>
-          <button onClick={run(() => c.airMission('cas', loc))}>💥 Close air support</button>
-          {enemy && <button onClick={run(() => c.airMission('bomb', loc))}>💣 Strategic bombing</button>}
-          <button onClick={run(() => c.airMission('recon', loc))}>🔭 Recon</button>
-          <button onClick={run(() => c.airMission('airlift', loc))}>📦 Airlift supplies</button>
-          {!enemy && <button onClick={run(() => c.issueOrder(loc))}>🛬 Rebase here</button>}
+          <Item icon="🛡" title="Air cover here" desc="Fighters protect this area and support battles." onClick={() => c.airMission(enemy ? 'cas' : 'superiority', loc)} />
+          {enemy && <Item icon="💣" title="Bomb here" desc="Bombers and drones hit enemy troops and factories." onClick={() => c.airMission('bomb', loc)} />}
         </>
       )}
-      {has('sea') && (
-        <>
-          <button onClick={run(() => c.navalMission('patrol', loc))}>⚓ Patrol</button>
-          {isProv && <button onClick={run(() => c.navalMission('blockade', loc))}>🚫 Blockade coast</button>}
-          {isProv && enemy && <button onClick={run(() => c.navalMission('bombard', loc))}>💥 Shore bombardment</button>}
-          {units.some((u) => u.type === 'submarine') && <button onClick={run(() => c.navalMission('raid', loc))}>🌊 Raid shipping</button>}
-        </>
-      )}
-      {missiles && isProv && enemy && <button class="bad" onClick={run(() => c.fire(loc))}>🚀 Missile strike</button>}
+      {has('sea') && isProv && enemy && <Item icon="🚫" title="Blockade this coast" desc="Cut their sea trade and bombard their defenders." onClick={() => c.navalMission('blockade', loc)} />}
+      {units.some((u) => u.type === 'missile') && isProv && enemy && <Item icon="🚀" title="Missile strike" desc="Damage enemy troops here (reloads in 5 days)." onClick={() => c.fire(loc)} bad />}
       {isProv && enemy && g.player.nukes > 0 && g.s.settings.nukes && (
-        <button
-          class="bad"
-          onClick={run(() => {
-            if (!g.player.nukesArmed) { c.toast('Arm your nuclear forces first (Military → Nuclear)', 'warn'); return; }
-            if (!nukeRangeOk(g, me, loc)) { c.toast('No delivery system in range', 'warn'); return; }
+        <Item
+          icon="☢️"
+          title="Nuclear strike"
+          desc="Destroys this province. The whole world will turn against you."
+          bad
+          onClick={() => {
+            if (!g.player.nukesArmed) { c.toast('First arm your nukes in the ⚔️ Army tab.', 'warn'); return; }
+            if (!nukeRangeOk(g, me, loc)) { c.toast('None of your missiles or bombers can reach it.', 'warn'); return; }
             if (!confirm(`☢️ Launch a nuclear strike on ${name}? This cannot be undone.`)) return;
             const e = launchNuke(g, me, loc);
             if (e) c.toast(e, 'warn');
-            c.renderer?.invalidate();
-          })}
-        >
-          ☢️ Nuclear strike
-        </button>
+            c.renderer?.invalidate(true);
+          }}
+        />
       )}
-      {units.length > 0 && has('land') && <button onClick={run(() => c.hold())}>🛡 Hold position</button>}
       {isProv && p && p.owner === me && p.ctrl === me && (
         <>
-          {(['depot', 'fort', 'infra'] as const).map((b) => (
-            <button onClick={run(() => { const e = construct(g, me, b, loc); c.toast(e ?? `${BUILDINGS[b].name} ordered in ${name}`, e ? 'warn' : 'good'); })}>
-              🏗 Build {BUILDINGS[b].name}
-            </button>
-          ))}
+          <Item icon="📦" title="Build supply depot" desc={BUILDINGS.depot.desc} onClick={() => { const e = construct(g, me, 'depot', loc); c.toast(e ?? `Supply depot ordered in ${name}`, e ? 'warn' : 'good'); }} />
+          <Item icon="🏰" title="Build fortifications" desc={BUILDINGS.fort.desc} onClick={() => { const e = construct(g, me, 'fort', loc); c.toast(e ?? `Fortifications ordered in ${name}`, e ? 'warn' : 'good'); }} />
         </>
       )}
+      {isProv && p && ctrl !== me && <Item icon="🤝" title={`Talk to ${g.name(ctrl)}`} desc="Trade, alliances, threats or peace." onClick={() => c.open('world', ctrl)} />}
       {isProv && p && ctrl !== me && !g.atWar(me, ctrl) && !g.allied(me, ctrl) && (
-        <button
-          class="bad"
-          onClick={run(() => {
+        <Item
+          icon="⚔️"
+          title={`Declare war on ${g.name(ctrl)}`}
+          desc="Their allies will join them. Others will trust you less."
+          bad
+          onClick={() => {
             if (!confirm(`Declare war on ${g.name(ctrl)}?`)) return;
             const e = declareWar(g, me, ctrl);
             if (e) c.toast(e, 'warn');
-            c.renderer?.invalidate();
-          })}
-        >
-          ⚔️ Declare war on {g.name(ctrl)}
-        </button>
+            c.renderer?.invalidate(true);
+          }}
+        />
       )}
-      {isProv && p && ctrl !== me && <button onClick={run(() => { c.panel = 'diplomacy'; c.panelArg = ctrl; c.emit(); })}>🤝 Diplomacy with {g.name(ctrl)}</button>}
-      {isProv && <button onClick={run(() => c.selectProvince(loc))}>ℹ️ Province info</button>}
-      <button onClick={close}>✕ Close</button>
+      {isProv && <Item icon="ℹ️" title="Province details" desc="Population, defenses and who is stationed here." onClick={() => c.selectProvince(loc)} />}
     </div>
   );
 }
@@ -385,6 +350,7 @@ function AwayReport() {
     <div class="modal-bg">
       <div class="modal col">
         <h3>⏳ While you were away…</h3>
+        <div class="small muted">Your advisors kept the country running. Here is what happened:</div>
         <div class="list">
           {c.awayReport!.map((l) => (
             <div class="item small">{l}</div>

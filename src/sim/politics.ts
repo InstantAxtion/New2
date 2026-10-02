@@ -11,6 +11,8 @@ const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
 /** Every 5 days. */
 export function politicsTick(g: Game) {
   const { s } = g;
+  const unrestSum = new Float64Array(g.N), unrestCnt = new Float64Array(g.N);
+  for (const p of s.provinces) { unrestSum[p.owner] += p.unrest; unrestCnt[p.owner]++; }
   for (const n of s.nations) {
     if (!n.alive || !n.active) continue;
     const atWar = g.atWarAny(n.idx);
@@ -35,9 +37,7 @@ export function politicsTick(g: Game) {
 
     let st = 30 + n.approval * 0.5 + (g.mod(n.idx, 'stability') || 0);
     st += { democracy: 5, monarchy: 10, authoritarian: 5, communist: 5, theocracy: 8 }[n.gov];
-    let unrest = 0, cnt = 0;
-    for (const p of s.provinces) if (p.owner === n.idx) { unrest += p.unrest; cnt++; }
-    st -= cnt ? (unrest / cnt) * 0.3 : 0;
+    st -= unrestCnt[n.idx] ? (unrestSum[n.idx] / unrestCnt[n.idx]) * 0.3 : 0;
     st -= occ * 25;
     if (n.inflation > 10) st -= (n.inflation - 10) * 0.5;
     if (n.electionLost > 0) st -= 5;
