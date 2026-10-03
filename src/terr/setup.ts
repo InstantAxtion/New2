@@ -18,7 +18,7 @@ export interface ModeDef {
 
 export const MODES: ModeDef[] = [
   { id: 'world', name: 'World Conquest', icon: '🌍', start: 'country', desc: 'Every country on Earth, all at once. Pick yours and paint the map your colour.' },
-  { id: 'ffa', name: 'Free-for-All', icon: '🎯', start: 'spawn', desc: 'An empty world and 60 rival bots. Tap anywhere to land, grab empty land fast, then fight.' },
+  { id: 'ffa', name: 'Free-for-All', icon: '🎯', start: 'spawn', desc: 'An empty world and 90 rival bots. Tap anywhere to land, grab empty land fast, then fight.' },
   { id: 'europe', name: 'Europe Brawl', icon: '🏰', start: 'country', inPlay: (c, lon, lat) => (c === 'Europe' && lon > -30 && lon < 60) || (c === 'Asia' && lon < 45 && lon > 25 && lat > 37), desc: 'Only Europe is in play. Small map, quick and crowded.' },
   { id: 'asia', name: 'Asia Brawl', icon: '🐉', start: 'country', inPlay: (c, lon) => (c === 'Asia' && lon > 45) || (c === 'Europe' && lon >= 60), desc: 'Giants like China, India and Siberia — and lots of smaller rivals.' },
   { id: 'africa', name: 'Africa Brawl', icon: '🦁', start: 'country', inPlay: (c) => c === 'Africa', desc: 'Fifty-plus countries on one continent. Chaos guaranteed.' },
@@ -108,15 +108,15 @@ export function newTerrGame(world: WorldData, map: TerrMap, opts: NewTerrOptions
     s.players = [];
     const g0 = new TerrGame(s, map);
     const names = world.nations.filter((N) => N.pop > 500).map((N, i) => ({ id: N.id, name: N.name, color: colorOf(N.id, i), cont: N.cont }));
-    const bots = opts.bots ?? 60;
+    const bots = opts.bots ?? 90;
     for (let k = 0; k < bots && names.length; k++) {
       const N = names.splice(Math.floor(g0.rand() * names.length), 1)[0];
       const p = mk(N.id, N.name, N.color, N.cont);
       s.players.push(p);
       for (let tries = 0; tries < 200; tries++) {
         const c = Math.floor(g0.rand() * n);
-        if (owner[c] !== -1 || !farFromOthers(s, map, c, 18)) continue;
-        claimDisc(s, map, c, p.idx, 4);
+        if (owner[c] !== -1 || !farFromOthers(s, map, c, 30)) continue;
+        claimDisc(s, map, c, p.idx, 8);
         break;
       }
       p.troops = 800;
@@ -130,8 +130,8 @@ export function newTerrGame(world: WorldData, map: TerrMap, opts: NewTerrOptions
 
 function farFromOthers(s: TState, m: TerrMap, c: number, r: number) {
   const cx = c % m.w, cy = (c / m.w) | 0;
-  for (let y = Math.max(0, cy - r); y <= Math.min(m.h - 1, cy + r); y += 2)
-    for (let x = Math.max(0, cx - r); x <= Math.min(m.w - 1, cx + r); x += 2) if (s.owner[y * m.w + x] >= 0) return false;
+  for (let y = Math.max(0, cy - r); y <= Math.min(m.h - 1, cy + r); y += 3)
+    for (let x = Math.max(0, cx - r); x <= Math.min(m.w - 1, cx + r); x += 3) if (s.owner[y * m.w + x] >= 0) return false;
   return true;
 }
 
@@ -164,7 +164,7 @@ export function spawnHuman(g: TerrGame, cell: number, name = 'You', color = '#ff
   if (s.owner[cell] !== -1) return s.owner[cell] >= 0 ? 'Someone already lives there — pick empty land' : 'Pick a spot on land';
   const p: Player = { idx: s.players.length, id: 'YOU', name, color, cont: '', troops: 1200, land: 0, worth: 0, alive: true, bot: false, aggro: 0, nextThink: 0, killedBy: -1, peak: 0, grudge: -999 };
   s.players.push(p);
-  claimDisc(s, g.m, cell, p.idx, 5);
+  claimDisc(s, g.m, cell, p.idx, 10);
   p.peak = p.land;
   s.player = p.idx;
   g.rebuild();

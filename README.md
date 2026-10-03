@@ -9,12 +9,13 @@ It is single-player and fully offline, with no in-game purchases.
 A Territorial.io-style conquest game on a real world map.
 
 **How it plays**
-- The world is cut into ~150,000 small pixels. Every country owns its real land.
+- The world is cut into ~600,000 small land pixels (a 2000×1153 board). Every country owns its real land.
 - One resource: 🪖 troops. They grow on their own (land income + interest) up to a cap set by your land. Crowded land is worth more than empty tundra.
 - Attack by choosing a share of your troops on the slider and tapping a neighbour or empty land: your colour floods across the whole shared border, pixel by pixel, until the troops run out. Well-defended land and mountains cost more per pixel; the defender loses troops too.
 - ⛵ Boats: tap a coast you don't border to ship troops across the sea (up to 3 at a time).
 - 🤝 Alliances: neighbours offer to team up (a pop-up), and you can ask or break alliances by long-pressing a country. Allies can't attack each other — and bots sometimes betray.
-- Bots grab empty land, pick on weaker neighbours, gang up on a runaway leader and sail when stuck on islands. Big empires grow more slowly per pixel, so the leader can be caught.
+- Smart bots: they keep most of their troops at home (troops at home are your defence and earn interest) and attack with the surplus, go all-in on empty land when it's safe, keep reserves sized to threats and incoming attacks, estimate what each attack would actually win, finish off weak rivals, hit neighbours busy fighting elsewhere, strike back, gang up on the runaway leader, avoid poking giants, team up against a common threat, and sail to the weakest coast in reach. In head-to-head tests they take 80–90% of the land against the previous bots. Easy mode uses the simpler bots; hard bots think faster and target you more.
+- Big empires grow more slowly per pixel, so the leader can be caught.
 - Win with 60% of the land (or when no rivals are left); lose when your last pixel falls.
 
 **Modes**
@@ -63,6 +64,7 @@ To regenerate the icons and splash screens: `node resources/gen.mjs`.
 ```
 scripts/build-map.mjs   Natural Earth → regions, terrain, coastlines
 scripts/dev/terrrun.ts  headless match: npx tsx scripts/dev/terrrun.ts world 300 FRA
+scripts/dev/aibattle.ts smart vs simple bots in one match: npx tsx scripts/dev/aibattle.ts ffa 300 4
 src/terr/               the game (pure TypeScript, runs headless in tests)
   map.ts                the pixel board, terrain costs, coasts, sea routes for boats
   game.ts               troops, income, attacks spreading pixel by pixel, boats, alliances, saves

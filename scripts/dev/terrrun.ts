@@ -10,7 +10,7 @@ const w = buildWorld(JSON.parse(fs.readFileSync('public/data/world.json', 'utf8'
 const m = buildTerrMap(w, buildGeo(w));
 const mode = (process.argv[2] ?? 'world') as never;
 const secs = +(process.argv[3] ?? 300);
-const g = newTerrGame(w, m, { mode, seed: 9 });
+const g = newTerrGame(w, m, { mode, seed: 5 });
 if (mode === 'ffa') {
   for (let t = 0; t < 1000; t++) { const c = Math.floor(Math.random() * m.w * m.h); if (!spawnHuman(g, c)) break; }
 } else {

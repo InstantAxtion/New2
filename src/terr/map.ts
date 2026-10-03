@@ -4,8 +4,8 @@ import type { MapGeo } from '../render/geo';
 import { buildRaster } from '../render/raster';
 import type { WorldData } from '../sim/world';
 
-export const CELL = 2; // map units per cell (the map is 2000 units wide → 1000 cells)
-export const WATER_SCALE = 4; // boats path-find on a coarser grid (4×4 cells)
+export const CELL = 1; // map units per cell (the map is 2000 units wide → 2000 cells)
+export const WATER_SCALE = 8; // boats path-find on a coarser grid (8×8 cells)
 
 /** How hard each kind of ground is to take (multiplies the troop cost per cell). */
 const TERRAIN_COST: Record<string, number> = {

@@ -14,6 +14,7 @@ const EMPTY = '#ddd5bd';
 const EMPTY_EDGE = '#b8ae93';
 const VOID = '#3b4757';
 const ME_EDGE = '#ffd23f';
+const TILE_BITS = 6; // 64×64 pixel tiles
 
 interface View { x: number; y: number; k: number }
 
@@ -42,6 +43,9 @@ export class TerrRenderer {
   private tex: HTMLCanvasElement;
   private tctx: CanvasRenderingContext2D;
   private img: ImageData;
+  private half: HTMLCanvasElement;
+  private hctx: CanvasRenderingContext2D;
+  private halfAt = -1e9;
   private px: Uint32Array;
   private m: TerrMap;
   game: TerrGame | null = null;
@@ -51,7 +55,10 @@ export class TerrRenderer {
   lowDetail = false;
   view: View = { x: 0, y: 0, k: 1 };
   private dirty = true;
-  private texDirty: [number, number, number, number] | null = null;
+  // changed areas of the texture, in 64×64 tiles (uploading the whole map each frame is slow)
+  private tileW = 1;
+  private tileDirty: Uint8Array = new Uint8Array(1);
+  private tileList: number[] = [];
   private colors: { fill: number; edge: number; glow: number }[] = [];
   private glow: number[] = []; // cell, until(ms) pairs
   private glowHead = 0;
@@ -75,7 +82,13 @@ export class TerrRenderer {
     this.tex.height = m.h;
     this.tctx = this.tex.getContext('2d')!;
     this.img = this.tctx.createImageData(m.w, m.h);
+    this.half = document.createElement('canvas');
+    this.half.width = Math.ceil(m.w / 2);
+    this.half.height = Math.ceil(m.h / 2);
+    this.hctx = this.half.getContext('2d')!;
     this.px = new Uint32Array(this.img.data.buffer);
+    this.tileW = Math.ceil(m.w / (1 << TILE_BITS));
+    this.tileDirty = new Uint8Array(this.tileW * Math.ceil(m.h / (1 << TILE_BITS)));
     this.paintWater();
     this.resize();
     this.fitWorld();
@@ -151,15 +164,11 @@ export class TerrRenderer {
   }
 
   private touchTex(i: number) {
-    const x = i % this.m.w, y = (i / this.m.w) | 0;
-    const d = this.texDirty;
-    if (!d) this.texDirty = [x, y, x, y];
-    else {
-      if (x < d[0]) d[0] = x;
-      if (y < d[1]) d[1] = y;
-      if (x > d[2]) d[2] = x;
-      if (y > d[3]) d[3] = y;
-    }
+    const t = (((i / this.m.w) | 0) >> TILE_BITS) * this.tileW + ((i % this.m.w) >> TILE_BITS);
+    if (!this.tileDirty[t]) { this.tileDirty[t] = 1; this.tileList.push(t); }
+  }
+  private touchAll() {
+    for (let t = 0; t < this.tileDirty.length; t++) if (!this.tileDirty[t]) { this.tileDirty[t] = 1; this.tileList.push(t); }
   }
 
   private updateTexture(now: number) {
@@ -170,10 +179,12 @@ export class TerrRenderer {
       g.fullRedraw = false;
       g.changed.length = 0;
       for (let i = 0; i < m.w * m.h; i++) this.paint(i);
-      this.texDirty = [0, 0, m.w - 1, m.h - 1];
+      this.touchAll();
+      this.halfAt = -1e9;
     }
     if (g.changed.length) {
-      const glowing = g.changed.length < 3000; // skip the flash during huge sweeps
+      // skip the flash during huge sweeps and when zoomed out too far to see it
+      const glowing = g.changed.length < 10000 && this.view.k * this.dpr > 1.2;
       for (const i of g.changed) {
         this.paint(i, glowing);
         this.touchTex(i);
@@ -194,10 +205,12 @@ export class TerrRenderer {
       this.touchTex(i);
     }
     if (this.glowHead > 20000) { this.glow = this.glow.slice(this.glowHead); this.glowHead = 0; }
-    const d = this.texDirty;
-    if (d) {
-      this.tctx.putImageData(this.img, 0, 0, d[0], d[1], d[2] - d[0] + 1, d[3] - d[1] + 1);
-      this.texDirty = null;
+    if (this.tileList.length) {
+      const S = 1 << TILE_BITS;
+      if (this.tileList.length > this.tileDirty.length * 0.6) this.tctx.putImageData(this.img, 0, 0);
+      else for (const t of this.tileList) this.tctx.putImageData(this.img, 0, 0, (t % this.tileW) * S, Math.floor(t / this.tileW) * S, S, S);
+      for (const t of this.tileList) this.tileDirty[t] = 0;
+      this.tileList.length = 0;
       this.dirty = true;
     }
   }
@@ -332,7 +345,7 @@ export class TerrRenderer {
     this.updateTexture(now);
     const g = this.game;
     if (g && (now - this.lastLabels > (running ? 1200 : 4000) || !this.labels.length)) {
-      this.labels = g.labelSpots(2);
+      this.labels = g.labelSpots(4);
       this.lastLabels = now;
       this.dirty = true;
     }
@@ -351,8 +364,19 @@ export class TerrRenderer {
     ctx.fillRect(0, 0, this.cv.width, this.cv.height);
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     // crisp pixels when zoomed in, smooth when zoomed out
-    ctx.imageSmoothingEnabled = k * this.dpr < 2.5;
-    ctx.drawImage(this.tex, -x * k, -y * k, this.m.w * k, this.m.h * k);
+    ctx.imageSmoothingEnabled = false;
+    if (k * this.dpr < 1.1) {
+      // zoomed far out: shrinking the full map every frame is slow, so draw a half-size copy
+      // that is re-smoothed a few times a second
+      if (now - this.halfAt > 400) {
+        this.halfAt = now;
+        this.hctx.imageSmoothingEnabled = true;
+        this.hctx.drawImage(this.tex, 0, 0, this.half.width, this.half.height);
+      }
+      ctx.drawImage(this.half, -x * k, -y * k, this.m.w * k, this.m.h * k);
+    } else {
+      ctx.drawImage(this.tex, -x * k, -y * k, this.m.w * k, this.m.h * k);
+    }
     const g = this.game;
     if (!g) return;
     if (this.hover >= 0) {

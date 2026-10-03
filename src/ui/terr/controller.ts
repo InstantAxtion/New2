@@ -171,7 +171,7 @@ class Controller {
       this.renderer.fitWorld();
       // continent modes: frame the part of the world in play
       if (mode !== 'world' && mode !== 'ffa') {
-        const spots = this.game.labelSpots(4);
+        const spots = this.game.labelSpots(8);
         if (spots.length) {
           const xs = spots.map((s) => s.x), ys = spots.map((s) => s.y);
           const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
@@ -290,7 +290,7 @@ class Controller {
   home(zoom = true) {
     const g = this.game, r = this.renderer;
     if (!g?.human || !r) return;
-    const spots = g.labelSpots(2);
+    const spots = g.labelSpots(4);
     const s = spots.find((x) => x.p === g.s.player);
     if (!s) return;
     const k = zoom ? Math.max(r.minK() * 1.5, Math.min(14, 220 / Math.max(6, Math.sqrt(g.human.land) * 1.4))) : r.view.k;

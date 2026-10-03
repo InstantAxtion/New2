@@ -30,6 +30,9 @@ function checkInvariants(g: TerrGame) {
     expect(Number.isFinite(p.troops) && p.troops >= 0, `${p.id} troops ${p.troops}`).toBe(true);
     expect(p.alive, `${p.id} alive with ${p.land} land`).toBe(p.land > 0);
   }
+  const live = g.neighbours.map((m) => new Map(m));
+  g.computeNeighbours();
+  g.neighbours.forEach((m, i) => expect(new Map([...(live[i] ?? new Map())].sort()), `borders of ${i}`).toEqual(new Map([...m].sort())));
   for (const a of g.s.attacks) {
     expect(g.s.players[a.from].alive).toBe(true);
     expect(a.troops).toBeGreaterThanOrEqual(0);
@@ -37,14 +40,14 @@ function checkInvariants(g: TerrGame) {
 }
 
 describe('board', () => {
-  test('the world is cut into ~150k land pixels', () => {
+  test('the world is cut into ~600k land pixels', () => {
     const m = map();
-    expect(m.land).toBeGreaterThan(120000);
-    expect(m.land).toBeLessThan(200000);
+    expect(m.land).toBeGreaterThan(500000);
+    expect(m.land).toBeLessThan(800000);
     const fra = world().nations.findIndex((n) => n.id === 'FRA');
     let f = 0;
     for (const n of m.nation) if (n === fra) f++;
-    expect(f).toBeGreaterThan(400);
+    expect(f).toBeGreaterThan(1600);
   });
   test('every mode sets up and runs a minute', () => {
     for (const mode of MODES) {
@@ -136,7 +139,6 @@ describe('rules', () => {
     const me = g.human!;
     const land = me.land;
     expect(land).toBeGreaterThan(20);
-    g.computeNeighbours();
     expect(g.attack(me.idx, -1, me.troops * 0.5)).toBeNull();
     run(g, 10);
     expect(me.land).toBeGreaterThan(land + 50);

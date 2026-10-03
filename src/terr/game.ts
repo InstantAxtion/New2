@@ -274,6 +274,14 @@ export class TerrGame {
       });
     }
   }
+  /** Adjust the shared-border length between two owners (kept up to date pixel by pixel). */
+  private edge(a: number, b: number, d: number) {
+    if (a < 0) return;
+    const m = this.neighbours[a] ?? (this.neighbours[a] = new Map());
+    const v = (m.get(b) ?? 0) + d;
+    if (v <= 0) m.delete(b);
+    else m.set(b, v);
+  }
   borders(a: number, b: number) {
     return (this.neighbours[a]?.get(b) ?? 0) > 0;
   }
@@ -282,7 +290,14 @@ export class TerrGame {
   private setOwner(i: number, to: number) {
     const from = this.s.owner[i];
     if (from === to) return;
-    this.s.owner[i] = to;
+    const own = this.s.owner;
+    forNeighbours(this.m, i, (j) => {
+      const o = own[j];
+      if (o < -1 || this.m.prov[j] < 0) return;
+      if (o !== from) { this.edge(from, o, -1); this.edge(o, from, -1); }
+      if (o !== to) { this.edge(to, o, 1); this.edge(o, to, 1); }
+    });
+    own[i] = to;
     const P = this.s.players;
     const v = this.m.value[i];
     if (from >= 0) { P[from].land--; P[from].worth -= v; }
@@ -406,18 +421,26 @@ export class TerrGame {
 
   private stepAttacks() {
     const own = this.s.owner;
-    for (const a of this.s.attacks.slice()) {
+    // spread big sweeps over several ticks so no single frame stalls; rotate who goes first
+    let left = 6000;
+    const list = this.s.attacks.slice();
+    const start = list.length ? this.ticks % list.length : 0;
+    for (let n = 0; n < list.length; n++) {
+      const a = list[(start + n) % list.length];
+      if (!this.s.attacks.includes(a)) continue;
       const P = this.s.players[a.from];
       const D = a.to >= 0 ? this.s.players[a.to] : null;
       const q = this.queue(a.id);
       let done = !P.alive || (D !== null && !D.alive) || (D !== null && this.allied(a.from, a.to));
       if (!done) {
         const est = this.cellCost(a.to, q.head < q.tail ? q.q[q.head] : 0);
-        let budget = Math.min(800, Math.max(2, Math.floor((a.troops / est) * ATTACK_SPEED)));
+        let budget = Math.min(2500, left, Math.max(3, Math.floor((a.troops / est) * ATTACK_SPEED)));
+        let skips = 5000;
         while (budget-- > 0) {
           if (q.head >= q.tail) { done = true; break; }
           const c = q.q[q.head];
-          if (own[c] !== a.to) { q.head++; budget++; continue; }
+          if (own[c] !== a.to) { q.head++; if (skips-- > 0) budget++; continue; }
+          left--;
           const cost = this.cellCost(a.to, c);
           if (a.troops < cost) { done = true; break; }
           q.head++;
@@ -639,13 +662,13 @@ export class TerrGame {
     this.stepAttacks();
     this.stepBoats();
     if (this.ticks % 5 === 0) this.stepIncome(0.5);
+    // bots think whenever they're due (spread over ticks, not all at once)
+    for (const p of s.players) {
+      if (!p.alive || !p.bot || s.t < p.nextThink) continue;
+      p.nextThink = s.t + (s.difficulty === 'hard' ? 0.6 + this.rand() * 0.8 : 1 + this.rand() * 1.5);
+      think(this, p);
+    }
     if (this.ticks % 10 === 0) {
-      this.computeNeighbours();
-      for (const p of s.players) {
-        if (!p.alive || !p.bot || s.t < p.nextThink) continue;
-        p.nextThink = s.t + 1 + this.rand() * 1.5;
-        think(this, p);
-      }
       this.diplomacy();
       this.checkOver();
     }
@@ -654,7 +677,7 @@ export class TerrGame {
   }
 
   /** Cells per player and a good spot for each label: the pixel deepest inside its land. */
-  labelSpots(step = 2): { p: number; x: number; y: number; r: number }[] {
+  labelSpots(step = 4): { p: number; x: number; y: number; r: number }[] {
     const { w, h } = this.m;
     const W = Math.ceil(w / step), H = Math.ceil(h / step);
     const own = this.s.owner;
