@@ -20,6 +20,13 @@ export interface MapGeo {
   raster: Raster;
 }
 
+/** Path2D exists only in browsers; headless tests get a do-nothing stand-in. */
+function newPath(): Path2D {
+  if (typeof Path2D !== 'undefined') return new Path2D();
+  const noop = () => {};
+  return { moveTo: noop, lineTo: noop, closePath: noop, addPath: noop } as unknown as Path2D;
+}
+
 export function buildGeo(w: WorldData): MapGeo {
   const width = 2000;
   // Miller cylindrical: like the maps in most war games — northern countries (Europe,
@@ -73,7 +80,7 @@ export function buildGeo(w: WorldData): MapGeo {
   };
   obj.geometries.forEach((g: any, i: number) => {
     const polys: number[][][] = g.type === 'Polygon' ? [g.arcs] : g.type === 'MultiPolygon' ? g.arcs : [];
-    const path = new Path2D();
+    const path = newPath();
     const rs: Float32Array[] = [];
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     let bestArea = -1, cx = 0, cy = 0;

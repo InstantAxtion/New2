@@ -1,9 +1,7 @@
 import { render } from 'preact';
-import { App } from './ui/App';
-import { ctl } from './ui/controller';
+import { App } from './ui/terr/App';
+import { ctl } from './ui/terr/controller';
 import { loadWorld } from './sim/world';
-import { tickHour } from './sim/engine';
-import { declareWar } from './sim/diplomacy';
 import '@fontsource/fredoka/latin-500.css';
 import '@fontsource/fredoka/latin-600.css';
 import '@fontsource/fredoka/latin-700.css';
@@ -14,4 +12,4 @@ render(<App />, document.getElementById('app')!);
 const fonts = Promise.all(['500', '600', '700'].map((w) => document.fonts?.load(`${w} 16px Fredoka`)));
 Promise.race([fonts, new Promise((r) => setTimeout(r, 1500))]).finally(() => ctl.boot(() => loadWorld('./data/world.json')));
 // handy for debugging from the devtools console
-Object.assign(window as object, { __ctl: ctl, __tick: tickHour, __declare: declareWar });
+Object.assign(window as object, { __ctl: ctl });
