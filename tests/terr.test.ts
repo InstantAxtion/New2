@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { buildGeo } from '../src/render/geo';
 import { think } from '../src/terr/ai';
 import { deserialize, serialize, TerrGame, TICK } from '../src/terr/game';
-import { buildTerrMap, type TerrMap } from '../src/terr/map';
+import { buildTerrMap, forNeighbours, MIN_COUNTRY, MIN_ISLAND, type TerrMap } from '../src/terr/map';
 import { choosePlayer, MODES, newTerrGame, spawnHuman } from '../src/terr/setup';
 import { world } from './helpers';
 
@@ -48,6 +48,27 @@ describe('board', () => {
     let f = 0;
     for (const n of m.nation) if (n === fra) f++;
     expect(f).toBeGreaterThan(1600);
+  });
+  test('no micro-countries or specks of land', () => {
+    const m = map();
+    const size = new Map<number, number>();
+    for (const n of m.nation) if (n >= 0) size.set(n, (size.get(n) ?? 0) + 1);
+    expect(Math.min(...size.values())).toBeGreaterThanOrEqual(MIN_COUNTRY);
+    expect(size.size).toBeLessThan(160);
+    // every land blob is at least MIN_ISLAND cells
+    const seen = new Uint8Array(m.w * m.h);
+    for (let i = 0; i < seen.length; i++) {
+      if (m.prov[i] < 0 || seen[i]) continue;
+      let n = 0;
+      const st = [i];
+      seen[i] = 1;
+      while (st.length) {
+        const c = st.pop()!;
+        n++;
+        forNeighbours(m, c, (j) => { if (m.prov[j] >= 0 && !seen[j]) { seen[j] = 1; st.push(j); } });
+      }
+      expect(n).toBeGreaterThanOrEqual(MIN_ISLAND);
+    }
   });
   test('every mode sets up and runs a minute', () => {
     for (const mode of MODES) {

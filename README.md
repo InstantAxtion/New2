@@ -9,7 +9,7 @@ It is single-player and fully offline, with no in-game purchases.
 A Territorial.io-style conquest game on a real world map.
 
 **How it plays**
-- The world is cut into ~600,000 small land pixels (a 2000×1153 board). Every country owns its real land.
+- The world is cut into ~600,000 small land pixels (a 2000×1153 board). Every country owns its real land. Specks of land under 60 pixels are left out, and micro-countries (under 60 pixels, e.g. Luxembourg, Qatar, Caribbean and Pacific islands) join their biggest neighbour or are left out: 149 countries remain.
 - One resource: 🪖 troops. They grow on their own (land income + interest) up to a cap set by your land. Crowded land is worth more than empty tundra.
 - Attack by choosing a share of your troops on the slider and tapping a neighbour or empty land: your colour floods across the whole shared border, pixel by pixel, until the troops run out. Well-defended land and mountains cost more per pixel; the defender loses troops too.
 - ⛵ Boats: tap a coast you don't border to ship troops across the sea (up to 3 at a time).

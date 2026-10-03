@@ -52,6 +52,7 @@ export function buildTerrMap(world: WorldData, geo: MapGeo): TerrMap {
     cost[i] = TERRAIN_COST[world.provs[p].terrain] ?? 1;
     value[i] = worth[p];
   }
+  land -= tidyUp(w, h, prov, nation, cost, value);
   const coast = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     if (prov[i] < 0) continue;
@@ -72,6 +73,59 @@ export function buildTerrMap(world: WorldData, geo: MapGeo): TerrMap {
       water[by * ww + bx] = sea * 2 >= tot ? 1 : 0;
     }
   return { w, h, cell: CELL, prov, nation, cost, value, coast, land, ww, wh, water };
+}
+
+export const MIN_ISLAND = 60; // land blobs smaller than this (in cells) become sea
+export const MIN_COUNTRY = 60; // countries smaller than this join their biggest neighbour (or vanish if they're islands)
+
+/** Drop specks of land and fold tiny countries into a neighbour. Returns the land cells removed. */
+function tidyUp(w: number, h: number, prov: Int32Array, nation: Int16Array, cost: Float32Array, value: Float32Array): number {
+  const n = w * h;
+  let removed = 0;
+  const sink = (i: number) => { prov[i] = -1; nation[i] = -1; cost[i] = 0; value[i] = 0; removed++; };
+  const nb4 = (i: number, f: (j: number) => void) => {
+    const x = i % w;
+    if (x > 0) f(i - 1);
+    if (x < w - 1) f(i + 1);
+    if (i >= w) f(i - w);
+    if (i < n - w) f(i + w);
+  };
+  // 1) tiny islands
+  const seen = new Uint8Array(n);
+  const blob: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (prov[i] < 0 || seen[i]) continue;
+    blob.length = 0;
+    const st = [i];
+    seen[i] = 1;
+    while (st.length) {
+      const c = st.pop()!;
+      blob.push(c);
+      nb4(c, (j) => { if (prov[j] >= 0 && !seen[j]) { seen[j] = 1; st.push(j); } });
+    }
+    if (blob.length < MIN_ISLAND) for (const c of blob) sink(c);
+  }
+  // 2) tiny countries: smallest first, each joins the neighbour it shares the most border with
+  const size = new Map<number, number>();
+  for (let i = 0; i < n; i++) if (nation[i] >= 0) size.set(nation[i], (size.get(nation[i]) ?? 0) + 1);
+  for (const [nat, c] of [...size].sort((a, b) => a[1] - b[1])) {
+    if (c >= MIN_COUNTRY) break;
+    const shared = new Map<number, number>();
+    const cells: number[] = [];
+    for (let i = 0; i < n; i++) {
+      if (nation[i] !== nat) continue;
+      cells.push(i);
+      nb4(i, (j) => { const o = nation[j]; if (o >= 0 && o !== nat) shared.set(o, (shared.get(o) ?? 0) + 1); });
+    }
+    const into = [...shared].sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (into === undefined) for (const i of cells) sink(i);
+    else {
+      for (const i of cells) nation[i] = into;
+      size.set(into, (size.get(into) ?? 0) + cells.length);
+    }
+    size.delete(nat);
+  }
+  return removed;
 }
 
 /** The 4 neighbours of a cell (fewer at the map edge). */

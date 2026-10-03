@@ -107,7 +107,10 @@ export function newTerrGame(world: WorldData, map: TerrMap, opts: NewTerrOptions
     // free-for-all: bots land on empty spots, the human picks theirs later
     s.players = [];
     const g0 = new TerrGame(s, map);
-    const names = world.nations.filter((N) => N.pop > 500).map((N, i) => ({ id: N.id, name: N.name, color: colorOf(N.id, i), cont: N.cont }));
+    // bots are named after countries that are on the board (no micro-states)
+    const present = new Set<number>();
+    for (const nat of map.nation) if (nat >= 0) present.add(nat);
+    const names = world.nations.map((N, i) => ({ N, i })).filter(({ N, i }) => present.has(i) && N.pop > 500).map(({ N, i }) => ({ id: N.id, name: N.name, color: colorOf(N.id, i), cont: N.cont }));
     const bots = opts.bots ?? 90;
     for (let k = 0; k < bots && names.length; k++) {
       const N = names.splice(Math.floor(g0.rand() * names.length), 1)[0];
