@@ -142,6 +142,24 @@ function build(type: PropType): THREE.BufferGeometry {
         blob(1.5, 0xb9442a, -1.1, 5.0, -0.6, 0.6),
         blob(1.3, 0xf0b545, 0.1, 6.3, -0.2, 0.7),
       ]);
+    case 'cherry':
+      return merge([
+        cyl(0.22, 0.36, 2.8, 0x4a3328, 7, 0, 1.4, 0),
+        blob(2.4, 0xf2b6c8, 0, 4.0, 0, 0.5, 0.75),
+        blob(1.8, 0xf7cdd8, 1.4, 4.5, 0.5, 0.6, 0.75),
+        blob(1.7, 0xe99ab2, -1.3, 4.3, -0.6, 0.6, 0.75),
+        blob(1.4, 0xfadce4, 0.1, 5.2, -0.2, 0.7, 0.75),
+      ]);
+    case 'flowers': {
+      // A clump of wild flowers: little coloured heads over green
+      const cols = [0xd8333f, 0xf2c230, 0xf4f1ea, 0xb06ad0, 0xf08cb0];
+      const parts = [blob(0.45, 0x4f8a35, 0, 0.18, 0, 0.3, 0.5)];
+      for (let i = 0; i < 9; i++) {
+        const a = i * 2.4, d = 0.15 + (i % 3) * 0.13;
+        parts.push(blob(0.09, cols[i % cols.length], Math.cos(a) * d, 0.32 + (i % 2) * 0.06, Math.sin(a) * d, 0.6, 1));
+      }
+      return merge(parts);
+    }
     case 'bush':
       return merge([blob(0.9, 0x4c8c37, 0, 0.55, 0, 0.3, 0.8), blob(0.7, 0x5ea043, 0.7, 0.45, 0.2, 0.3, 0.8)]);
     case 'palm': {

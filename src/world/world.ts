@@ -7,6 +7,31 @@ export const FLAT = 7.5; // ground is flat out to here (perpendicular metres)
 export const SEGMENT = 1400; // metres of road per region
 const BLEND = 220; // half-width of the blend between two regions
 
+export type StopKind = 'fuel' | 'diner' | 'viewpoint' | 'campsite' | 'harbour';
+
+/** A place to pull over beside the road. */
+export interface Stop {
+  kind: StopKind;
+  /** Centre of the stop along the road. */
+  z: number;
+  /** Which side of the road it's on: +1 right, -1 left (for travel towards +z). */
+  side: number;
+  /** Length along the road and depth of the flat pad beside it, metres. */
+  len: number;
+  depth: number;
+}
+
+export const STOP_INFO: Record<StopKind, { name: string; icon: string }> = {
+  fuel: { name: 'Fuel & charging', icon: '⛽' },
+  diner: { name: 'Roadside diner', icon: '🍔' },
+  viewpoint: { name: 'Scenic viewpoint', icon: '📷' },
+  campsite: { name: 'Campsite', icon: '🏕️' },
+  harbour: { name: 'Harbour', icon: '⚓' },
+};
+
+const TOWN_A = ['Ash', 'Bram', 'Clay', 'Elm', 'Fern', 'Glen', 'Holly', 'Kings', 'Lark', 'Mill', 'Oak', 'Pine', 'Red', 'Stone', 'Wil', 'Brook', 'Hazel', 'Ridge', 'Silver', 'Thorn', 'Wren', 'Marsh', 'Fox', 'Bay'];
+const TOWN_B = ['ford', 'bury', 'ton', 'wick', 'dale', 'field', 'haven', 'mere', 'by', 'stead', 'well', 'combe', 'hurst', 'port', 'water', 'ley'];
+
 export interface BiomeWeight {
   biome: Biome;
   w: number;
@@ -162,6 +187,15 @@ export class World {
       t = t + (1 - t) * bridge;
       h = ry - 0.12 + (this.natural(x, z, u, ry) - ry + 0.12) * t;
     }
+    // A level pad beside the road at stops (fuel stations, diners, campsites, viewpoints)
+    const stop = this.stopNear(z, 30);
+    if (stop) {
+      const along = 1 - smoothstep(stop.len / 2, stop.len / 2 + 30, Math.abs(z - stop.z));
+      const out = u * stop.side;
+      const half = this.roadHalf(z);
+      const k = along * smoothstep(half - 1, half + 2, out) * (1 - smoothstep(half + stop.depth, half + stop.depth + 14, out));
+      if (k > 0) h = h + (ry - 0.12 - h) * k;
+    }
     if (tunnel > 0) {
       // A ridge across the road; the road runs through a cutting under it (the tunnel tube
       // and its roof are separate meshes), so the corridor itself stays at road level
@@ -176,6 +210,85 @@ export class World {
 
   private memo = new Map<string, number>();
   /** Remember per-z answers (terrain asks for the same rows many times). */
+  private stopMemo = new Map<number, Stop | null>();
+  private static STOP_CELL = 1700;
+
+  /** The stop in road cell c, if there is one. */
+  private stopCell(c: number): Stop | null {
+    if (this.stopMemo.has(c)) return this.stopMemo.get(c)!;
+    let stop: Stop | null = null;
+    const h = (salt: number) => hash1(c, this.seed + salt);
+    if (h(601) < 0.8) {
+      const z = c * World.STOP_CELL + 300 + h(602) * 1000;
+      const b = this.dominant(z).id;
+      const r = h(603);
+      let kind: StopKind | null = null;
+      const highway = this.highwayAt(z) > 0.01;
+      if (highway) kind = 'fuel';
+      else if (b === 'seaside') kind = r < 0.5 ? 'harbour' : r < 0.75 ? 'diner' : 'fuel';
+      else if (b === 'desert' || b === 'flatlands') kind = r < 0.5 ? 'diner' : 'fuel';
+      else if (b === 'alpine' || b === 'canyon') kind = r < 0.6 ? 'viewpoint' : r < 0.8 ? 'fuel' : b === 'alpine' ? 'campsite' : 'diner';
+      else if (b === 'forest' || b === 'lakes' || b === 'rainforest') kind = r < 0.5 ? 'campsite' : r < 0.8 ? 'fuel' : 'viewpoint';
+      else if (b !== 'city') kind = r < 0.3 ? 'viewpoint' : r < 0.6 ? 'diner' : 'fuel';
+      const clear = (zz: number) => this.urban(zz) < 0.01 && this.bridgeRaw(zz) < 0.01 && this.tunnelAt(zz) < 0.01;
+      if (kind && clear(z - 90) && clear(z) && clear(z + 90) && !(highway && this.highwayAt(z) < 0.99)) {
+        let side = h(604) < 0.5 ? -1 : 1;
+        // The harbour is on the sea side of the road
+        if (kind === 'harbour') side = this.seaSide(Math.floor(z / SEGMENT)) > 0 ? 1 : -1;
+        if (highway) side = 1;
+        const depth = { fuel: 30, diner: 28, campsite: 34, viewpoint: 12, harbour: 12 }[kind];
+        stop = { kind, z, side, len: kind === 'viewpoint' ? 60 : 90, depth };
+      }
+    }
+    this.stopMemo.set(c, stop);
+    return stop;
+  }
+
+  /** The stop whose pad covers z (or is close to it), if any. */
+  stopNear(z: number, margin = 60): Stop | null {
+    const c0 = Math.floor(z / World.STOP_CELL);
+    for (const c of [c0 - 1, c0, c0 + 1]) {
+      const s = this.stopCell(c);
+      if (s && Math.abs(z - s.z) < s.len / 2 + margin) return s;
+    }
+    return null;
+  }
+
+  /** Stops whose centres lie between z0 and z1. */
+  stops(z0: number, z1: number): Stop[] {
+    const out: Stop[] = [];
+    for (let c = Math.floor(z0 / World.STOP_CELL) - 1; c <= Math.floor(z1 / World.STOP_CELL) + 1; c++) {
+      const s = this.stopCell(c);
+      if (s && s.z >= z0 && s.z < z1) out.push(s);
+    }
+    return out;
+  }
+
+  /** The next stop ahead of z (travelling towards +z) within `range`. */
+  nextStop(z: number, range = 4000): Stop | null {
+    for (let c = Math.floor(z / World.STOP_CELL); c <= Math.floor((z + range) / World.STOP_CELL); c++) {
+      const s = this.stopCell(c);
+      if (s && s.z > z) return s;
+    }
+    return null;
+  }
+
+  /** Town centres between z0 and z1. */
+  towns(z0: number, z1: number): number[] {
+    const out: number[] = [];
+    for (let c = Math.floor(z0 / 2400) - 1; c <= Math.floor(z1 / 2400) + 1; c++) {
+      const t = this.townCentre(c);
+      if (t !== null && t >= z0 && t < z1) out.push(t);
+    }
+    return out;
+  }
+
+  /** A made-up name for the town centred at `centre`. */
+  townName(centre: number): string {
+    const c = Math.floor(centre / 2400);
+    return TOWN_A[Math.floor(hash1(c, this.seed + 211) * TOWN_A.length)] + TOWN_B[Math.floor(hash1(c, this.seed + 212) * TOWN_B.length)];
+  }
+
   private cached(key: string, z: number, f: () => number): number {
     const k = key + Math.round(z * 4);
     let v = this.memo.get(k);
@@ -240,7 +353,8 @@ export class World {
     return this.cached('n', z, () =>
       this.feature(z, 4200, 421, 0.55, [160, 460], (c) => {
         const b = this.dominant(c).id;
-        return ['alpine', 'canyon', 'rainforest', 'forest', 'hills', 'winter'].includes(b) && this.highwayAt(c) < 0.01 && this.bridgeRaw(c) < 0.01;
+        return ['alpine', 'canyon', 'rainforest', 'forest', 'hills', 'winter'].includes(b) && this.highwayAt(c) < 0.01 && this.bridgeRaw(c) < 0.01 &&
+          [-400, -200, 0, 200, 400].every((d) => this.urban(c + d) < 0.01);
       }),
     );
   }
@@ -405,6 +519,7 @@ export class World {
           break;
         }
         case 'autumn': add(1, 0.45); add(2, 0.55); break;
+        case 'blossom': add(0, 0.9); add(2, 0.1); break;
         case 'winter': add(5, 1); break;
         case 'city': add(4, 0.85); add(3, 0.15); break;
         case 'rainforest': add(2, 0.5); add(0, 0.5); break;

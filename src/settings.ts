@@ -13,7 +13,7 @@ export interface Settings {
   time: TimeMode;
   auto: boolean;
   cam: CamMode;
-  quality: 'low' | 'medium' | 'high';
+  quality: 'low' | 'medium' | 'high' | 'ultra';
   units: 'kmh' | 'mph';
   steering: 'buttons' | 'tilt';
   assist: boolean;

@@ -7,7 +7,8 @@ import { foliageTexture, type FoliageMat } from './foliage';
 export type Tier = 'basic' | 'pbr';
 
 /** Shared, animated shader inputs. */
-export const shared = { time: { value: 0 }, snow: { value: 0 } };
+/** Uniforms shared by every material: time, snow cover, and wind strength (1 = a breeze). */
+export const shared = { time: { value: 0 }, snow: { value: 0 }, wind: { value: 1 }, wet: { value: 0 } };
 
 const SWAY_VERT = /* glsl */ `
 #ifdef USE_INSTANCING
@@ -15,9 +16,10 @@ const SWAY_VERT = /* glsl */ `
 #else
   vec3 ip = vec3(0.0);
 #endif
-  float sw = sway * max(position.y, 0.0);
-  transformed.x += sin(uTime * 1.3 + ip.x * 0.07 + ip.z * 0.05) * sw * 0.014;
-  transformed.z += cos(uTime * 1.1 + ip.x * 0.05 - ip.z * 0.07) * sw * 0.01;
+  float sw = sway * max(position.y, 0.0) * uWind;
+  float gust = 0.75 + 0.25 * sin(uTime * 0.4 + ip.x * 0.01);
+  transformed.x += (sin(uTime * (1.3 + uWind * 0.5) + ip.x * 0.07 + ip.z * 0.05) * 0.014 + (uWind - 1.0) * 0.006 * gust) * sw;
+  transformed.z += cos(uTime * (1.1 + uWind * 0.4) + ip.x * 0.05 - ip.z * 0.07) * sw * 0.01;
 `;
 
 /**
@@ -139,8 +141,9 @@ export function propMaterial(tier: Tier): THREE.Material {
       : new THREE.MeshLambertMaterial({ vertexColors: true });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = shared.time;
+    sh.uniforms.uWind = shared.wind;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float sway;\nuniform float uTime;')
+      .replace('#include <common>', '#include <common>\nattribute float sway;\nuniform float uTime;\nuniform float uWind;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SWAY_VERT);
   };
   return m;
@@ -152,8 +155,9 @@ export function grassMaterial(tier: Tier): THREE.Material {
   const m = tier === 'pbr' ? new THREE.MeshStandardMaterial({ ...opts, roughness: 1 }) : new THREE.MeshLambertMaterial(opts);
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = shared.time;
+    sh.uniforms.uWind = shared.wind;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWind;')
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `#include <begin_vertex>
@@ -163,7 +167,7 @@ export function grassMaterial(tier: Tier): THREE.Material {
           vec3 gp = vec3(0.0);
         #endif
         float bend = uv.y * uv.y;
-        transformed.x += sin(uTime * 2.1 + gp.x * 0.3 + gp.z * 0.2) * bend * 0.12;
+        transformed.x += (sin(uTime * (2.1 + uWind) + gp.x * 0.3 + gp.z * 0.2) * 0.12 + (uWind - 1.0) * 0.08) * bend * uWind;
         transformed.z += cos(uTime * 1.7 + gp.x * 0.2 - gp.z * 0.3) * bend * 0.08;`,
       );
   };
@@ -206,9 +210,43 @@ export function foliageMaterial(kind: FoliageMat): THREE.Material {
   }
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = shared.time;
+    sh.uniforms.uWind = shared.wind;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float sway;\nuniform float uTime;')
+      .replace('#include <common>', '#include <common>\nattribute float sway;\nuniform float uTime;\nuniform float uWind;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SWAY_VERT);
   };
   return m;
+}
+
+/** Puddles on a wet road: patches of dark, mirror-smooth water in the dips. */
+export function addPuddles(m: THREE.MeshStandardMaterial, muddy = false) {
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uWet = shared.wet;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vPud;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPud = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        varying vec2 vPud;
+        uniform float uWet;
+        float pudH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float pudN(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(pudH(i), pudH(i + vec2(1, 0)), f.x), mix(pudH(i + vec2(0, 1)), pudH(i + vec2(1, 1)), f.x), f.y);
+        }`,
+      )
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        float pn = pudN(vPud * 0.16) * 0.65 + pudN(vPud * 0.55 + 7.0) * 0.35;
+        float puddle = smoothstep(0.6, 0.66, pn) * smoothstep(0.4, 0.9, uWet);
+        diffuseColor.rgb *= 1.0 - puddle * ${muddy ? '0.25' : '0.55'};
+        ${muddy ? 'diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.32, 0.26, 0.2), puddle * 0.5);' : ''}`,
+      )
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.02, puddle);');
+  };
+  m.customProgramCacheKey = () => 'puddles' + (muddy ? 'm' : '');
 }

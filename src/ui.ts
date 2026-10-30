@@ -78,6 +78,11 @@ export class UI {
       $('#region').textContent = `${b.emoji} ${b.name}`;
       if (game.phase === 'drive') this.toast(`Now entering<b>${b.emoji} ${b.name}</b>`);
     };
+    game.onRefuel = (state) => {
+      const ev = game.vehicle.spec.engine === 'ev';
+      if (state === 'start') this.toast(ev ? 'Charging<b>⚡ Plugged in</b>' : 'Filling up<b>⛽ At the pump</b>');
+      else this.toast(ev ? 'Fully charged<b>⚡ 100%</b>' : 'Tank full<b>⛽ 100%</b>');
+    };
     setInterval(() => this.tick(), 100);
     window.addEventListener('resize', () => this.frameGarage());
     requestAnimationFrame(() => this.frameGarage());
@@ -140,7 +145,7 @@ export class UI {
 <section id="hud" class="screen">
   <div class="hud-tl">
     <div class="pill" id="region"></div>
-    <div class="pill small"><span id="odo">0.0 mi</span> · <span id="clock">09:00</span></div>
+    <div class="pill small"><span id="odo">0.0 mi</span> · <span id="clock">09:00</span> · <span id="fuel">⛽ 100%</span></div>
     <div class="nowbar" id="nowbar"><span id="nowbar-text"></span>
       <button class="icon tiny" id="nb-toggle" aria-label="Play or pause">⏯</button>
       <button class="icon tiny" id="nb-next" aria-label="Next song">⏭</button></div>
@@ -297,7 +302,7 @@ export class UI {
   <div class="sheet-head"><h2>⚙️ Settings</h2><button class="icon" data-close="settings" aria-label="Close">✕</button></div>
   <div class="sheet-body">
     <h3>Graphics</h3>
-    <div class="chips" data-set="quality"><button class="chip" data-v="low">Low</button><button class="chip" data-v="medium">Medium</button><button class="chip" data-v="high">High</button></div>
+    <div class="chips" data-set="quality"><button class="chip" data-v="low">Low</button><button class="chip" data-v="medium">Medium</button><button class="chip" data-v="high">High</button><button class="chip" data-v="ultra">Ultra</button></div>
     <h3>Speed units</h3>
     <div class="chips" data-set="units"><button class="chip" data-v="mph">mph</button><button class="chip" data-v="kmh">km/h</button></div>
     <h3>Steering</h3>
@@ -817,6 +822,23 @@ export class UI {
     $('#speed').textContent = String(Math.round(Math.abs(v.v) * 3.6 * k));
     $('#speed-note').textContent = v.v < -0.5 ? 'R' : v.offroad ? 'off-road' : '';
     $('#odo').textContent = `${((v.odometer / 1000) * k).toFixed(1)} ${this.s.units === 'mph' ? 'mi' : 'km'}`;
+    // Fuel (or charge), and where the next station is when it's getting low
+    const ev = v.spec.engine === 'ev';
+    const fuelEl = $('#fuel');
+    let ft = `${ev ? '⚡' : '⛽'} ${Math.round(g.fuel * 100)}%`;
+    if (g.refuelling) ft = `${ev ? '⚡ Charging' : '⛽ Filling'} ${Math.round(g.fuel * 100)}%`;
+    else if (g.fuel < 0.25) {
+      const next = g.world.nextStop(v.z, 6000);
+      let d = 0;
+      for (let z = v.z, n = next; n && d < 6000; ) {
+        if (n.kind === 'fuel') { d = n.z - v.z; break; }
+        z = n.z + 1;
+        n = g.world.nextStop(z, 6000 - (z - v.z));
+      }
+      if (d > 0) ft += ` · station ${this.s.units === 'mph' ? (d / 1609).toFixed(1) + ' mi' : (d / 1000).toFixed(1) + ' km'}`;
+    }
+    if (fuelEl.textContent !== ft) fuelEl.textContent = ft;
+    fuelEl.classList.toggle('low', g.fuel < 0.2);
     const h = g.hour;
     $('#clock').textContent = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
     // Music playing: quieter engine and world, and say what's on
@@ -832,7 +854,7 @@ export class UI {
       $('#nowbar-text').textContent = np.song ? `📺 ${np.song.title} · ${np.song.artist}` : np.video ? `📺 ${np.video.title}` : '📺 Music videos';
     }
     if (g.struggling() && this.s.quality !== 'low') {
-      this.s.quality = this.s.quality === 'high' ? 'medium' : 'low';
+      this.s.quality = this.s.quality === 'ultra' ? 'high' : this.s.quality === 'high' ? 'medium' : 'low';
       g.setQuality(this.s.quality);
       this.save();
       this.refreshSettings();
@@ -1271,6 +1293,11 @@ export class UI {
   private applySetting(key: keyof Settings) {
     const g = this.game;
     if (key === 'quality') g.setQuality(this.s.quality);
+    if (key === 'units') {
+      g.chunks.units = this.s.units;
+      g.chunks.clear();
+      g.chunks.fill(g.vehicle.z);
+    }
 
     if (key === 'clouds') g.sky.setClouds(this.s.clouds);
     if (key === 'steering') this.recentreTilt();

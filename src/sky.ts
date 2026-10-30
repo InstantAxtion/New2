@@ -246,6 +246,8 @@ export class Sky {
     lerpHex(a.top, b.top, t, u.top.value);
     lerpHex(a.horizon, b.horizon, t, u.horizon.value);
     u.horizon.value.lerp(this.haze, this.hazeAmt * (1 - this.night));
+    // Thick haze (a sandstorm) fills the whole sky
+    u.top.value.lerp(this.haze, Math.max(0, this.hazeAmt - 0.5) * 1.8 * (1 - this.night * 0.5));
     lerpHex(a.sun, b.sun, t, u.sunColor.value);
 
     // Sun path: rises in the east (+x), sets in the west

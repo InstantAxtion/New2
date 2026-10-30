@@ -1,12 +1,12 @@
 import { fbm2, noise2, ridged2, smoothstep, clamp, lerp } from './noise';
 
-export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon';
+export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon' | 'blossom';
 
 export type PropType =
   | 'pine' | 'pineSnow' | 'tree' | 'treeAutumn' | 'bush' | 'palm' | 'cactus' | 'rock' | 'rockSnow'
   | 'house' | 'barn' | 'windmill' | 'turbine' | 'hay' | 'sheep' | 'boat' | 'umbrella'
   | 'lighthouse' | 'deadTree' | 'cabin' | 'snowman' | 'mesaRock' | 'post'
-  | 'tower1' | 'tower2' | 'tower3' | 'billboard' | 'lamp' | 'jungleTree' | 'fern' | 'hoodoo' | 'arch' | 'pier' | 'shop';
+  | 'tower1' | 'tower2' | 'tower3' | 'billboard' | 'lamp' | 'jungleTree' | 'fern' | 'hoodoo' | 'arch' | 'pier' | 'shop' | 'cherry' | 'flowers';
 
 export interface PropSpec {
   type: PropType;
@@ -140,7 +140,6 @@ export const BIOMES: Record<BiomeId, Biome> = {
     props: [
       { type: 'tree', n: 16, u: [10, 260], scale: [0.8, 1.5], cluster: 5 },
       { type: 'bush', n: 8, u: [8, 120], scale: [0.6, 1.3] },
-      { type: 'sheep', n: 6, u: [14, 90], scale: [0.9, 1.1], cluster: 6 },
       { type: 'house', n: 1.2, u: [16, 120], scale: [0.9, 1.2], cluster: 2 },
       { type: 'turbine', n: 0.5, u: [80, 300], scale: [1, 1.2], cluster: 3 },
       { type: 'rock', n: 2, u: [10, 200], scale: [0.6, 1.6] },
@@ -247,7 +246,6 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'pine', n: 26, u: [9, 220], scale: [0.7, 1.4], cluster: 7, h: [0.6, 90] },
       { type: 'rock', n: 6, u: [9, 260], scale: [0.6, 2.4] },
       { type: 'cabin', n: 0.6, u: [14, 80], scale: [1, 1.1] },
-      { type: 'sheep', n: 2, u: [14, 70], scale: [0.9, 1.1], cluster: 5 },
     ],
     haze: [0.85, 0.92, 1.0, 0.1],
     verge: [0.52, 0.5, 0.46],
@@ -385,6 +383,41 @@ export const BIOMES: Record<BiomeId, Biome> = {
     haze: [1.0, 0.82, 0.62, 0.22],
     verge: [0.78, 0.58, 0.42],
     bridges: (x, z, seed) => gorgeAt(z, seed),
+  },
+  blossom: {
+    id: 'blossom', name: 'Spring Blossom', emoji: '🌸', roadBase: 8, roadAmp: 8,
+    height(x, z, c) {
+      const r = ramp(c.u, 10, 140);
+      return c.roadY + (fbm2(x / 260, z / 260, 4, 131) * 22 + 5) * r;
+    },
+    color(x, z, h, rel, c, out) {
+      set(out, 0.4, 0.64, 0.27);
+      mix(out, 0.55, 0.72, 0.32, noise2(x / 35, z / 35, 132) * 0.5 + 0.5);
+      // Fields of tulips, one colour each, beyond the verges
+      if (Math.abs(c.u) > 22) {
+        const fx = Math.floor((x + noise2(z / 80, x / 80, 133) * 14) / 70);
+        const fz = Math.floor((z + noise2(x / 70, z / 70, 134) * 12) / 55);
+        const k = Math.floor(noise2(fx * 5.3, fz * 2.9, 135) * 60 + 60) % 7;
+        const edge = Math.min(((x / 70) % 1 + 1) % 1, ((z / 55) % 1 + 1) % 1);
+        if (k < 5 && edge > 0.06) {
+          const cols: [number, number, number][] = [[0.86, 0.16, 0.2], [0.96, 0.8, 0.16], [0.95, 0.5, 0.7], [0.58, 0.32, 0.78], [0.97, 0.96, 0.92]];
+          const [r, g, b] = cols[k];
+          mix(out, r, g, b, 0.85 * smoothstep(22, 34, Math.abs(c.u)));
+        }
+      }
+      if (h < 0.6) set(out, 0.7, 0.66, 0.5);
+    },
+    props: [
+      { type: 'cherry', n: 14, u: [9.5, 200], scale: [0.8, 1.25], cluster: 4 },
+      { type: 'tree', n: 4, u: [14, 260], scale: [0.8, 1.3], cluster: 3 },
+      { type: 'flowers', n: 22, u: [8, 22], scale: [0.7, 1.3], cluster: 3 },
+      { type: 'bush', n: 5, u: [8, 90], scale: [0.6, 1.1] },
+      { type: 'house', n: 1, u: [16, 110], scale: [0.9, 1.1], cluster: 2 },
+      { type: 'windmill', n: 0.3, u: [40, 220], scale: [1, 1.2] },
+    ],
+    haze: [1.0, 0.9, 0.95, 0.14],
+    verge: [0.55, 0.53, 0.47],
+    towns: true,
   },
 };
 

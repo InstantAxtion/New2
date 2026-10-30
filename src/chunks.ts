@@ -4,12 +4,14 @@ import { World, ROAD_HALF, FLAT } from './world/world';
 import type { PropSpec, PropType } from './world/biomes';
 import { rng } from './world/noise';
 import { propGeometry } from './props';
-import { foliageMaterial, grassMaterial, propMaterial, terrainMaterial, type Tier } from './materials';
+import { addPuddles, foliageMaterial, grassMaterial, propMaterial, shared, terrainMaterial, type Tier } from './materials';
 import { foliageParts, type FoliageMat } from './foliage';
 import { specialMaterial, specialParts, type SpecialMat } from './special';
 import type { BiomeId } from './world/biomes';
-import { gravelTexture, highwayTexture, roadTexture } from './textures';
+import { glowTexture, gravelTexture, highwayTexture, roadTexture } from './textures';
 import { assets } from './assets';
+import { buildStop } from './stops';
+import { buildSigns } from './signs';
 
 export const CHUNK = 64;
 
@@ -31,10 +33,11 @@ export interface Quality {
   grassReach: number;
 }
 
-export const QUALITY: Record<'low' | 'medium' | 'high', Quality> = {
+export const QUALITY: Record<'low' | 'medium' | 'high' | 'ultra', Quality> = {
   low: { reach: 380, props: 0.45, ahead: 6, behind: 3, fogFar: 330, pixelRatio: 1, shadows: 0, tier: 'basic', grass: 0, grassReach: 0 },
   medium: { reach: 520, props: 1, ahead: 8, behind: 4, fogFar: 480, pixelRatio: 1.5, shadows: 1024, tier: 'pbr', grass: 260, grassReach: 30 },
   high: { reach: 700, props: 1.5, ahead: 11, behind: 4, fogFar: 650, pixelRatio: 2, shadows: 2048, tier: 'pbr', grass: 520, grassReach: 50 },
+  ultra: { reach: 700, props: 2, ahead: 14, behind: 5, fogFar: 860, pixelRatio: 3, shadows: 4096, tier: 'pbr', grass: 950, grassReach: 70 },
 };
 
 /** Column offsets (x) from the road centre: fine near the road, coarse far away. */
@@ -97,6 +100,8 @@ export class ChunkManager {
   private highwayMat!: THREE.Material;
   private gravelMat!: THREE.Material;
   private cols: number[];
+  /** Speed signs show mph or km/h. */
+  units: 'mph' | 'kmh' = 'mph';
 
   constructor(public world: World, public quality: Quality) {
     this.cols = columns(quality.reach);
@@ -129,10 +134,26 @@ export class ChunkManager {
     (this.highwayMat as THREE.MeshStandardMaterial).map = this.highwayTex;
     const gm = { map: this.gravelTex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
     this.gravelMat = tier === 'pbr' ? new THREE.MeshStandardMaterial({ ...gm, roughness: 0.95 }) : new THREE.MeshLambertMaterial(gm);
+    if (tier === 'pbr') {
+      addPuddles(this.roadMat as THREE.MeshStandardMaterial);
+      addPuddles(this.highwayMat as THREE.MeshStandardMaterial);
+      addPuddles(this.gravelMat as THREE.MeshStandardMaterial, true);
+    }
+  }
+
+  /** Street lights mirrored in the wet road at night. */
+  private reflectMat = new THREE.MeshBasicMaterial({
+    map: glowTexture(), color: 0xffc27a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+  });
+  setReflections(k: number) {
+    this.reflectMat.opacity = k * 0.8;
+    this.reflectMat.visible = k > 0.01;
   }
 
   /** Rain makes the road dark and shiny. */
   setWet(wet: number) {
+    shared.wet.value = wet;
     for (const mat of [this.roadMat, this.highwayMat]) {
       const m = mat as THREE.MeshStandardMaterial;
       if (!m?.isMeshStandardMaterial) continue;
@@ -208,6 +229,13 @@ export class ChunkManager {
     c.group.add(this.road(i));
     const extra = this.bridgesAndCrossings(i);
     if (extra) c.group.add(extra);
+    // Stops beside the road, and road signs
+    const w = this.world, z0 = i * CHUNK;
+    for (const st of w.stops(z0, z0 + CHUNK)) {
+      c.group.add(buildStop(st, w.roadX(st.z), w.roadY(st.z), w.roadHalf(st.z), w.tangent(st.z), c.group.position));
+    }
+    const signs = buildSigns(w, z0, z0 + CHUNK, c.group.position, this.units);
+    if (signs) c.group.add(signs);
     const gr = this.grass(i);
     if (gr) c.group.add(gr);
     this.pendingProps.push(c);
@@ -529,6 +557,16 @@ export class ChunkManager {
       }
     }
     if (stripes.length) g.add(new THREE.Mesh(mergeGeometries(stripes)!, this.stripeMat));
+    // Reflections of the street lamps (only seen on a wet night)
+    const glows: THREE.BufferGeometry[] = [];
+    for (let z = Math.ceil(z0 / 28) * 28; z < z0 + CHUNK; z += 28) {
+      if (w.bridge(z) > 0.3 || w.urban(z) <= 0.5) continue;
+      const side = Math.round(z / 28) % 2 === 0 ? 1 : -1;
+      const [tx, tz] = w.tangent(z);
+      const p = at(z + 3, side * (w.roadHalf(z) - 1.4), w.roadY(z) + 0.03);
+      glows.push(new THREE.PlaneGeometry(2.2, 12).rotateX(-Math.PI / 2).rotateY(Math.atan2(tx, tz)).translate(p.x, p.y, p.z));
+    }
+    if (glows.length) g.add(new THREE.Mesh(mergeGeometries(glows)!, this.reflectMat));
     return g.children.length ? g : null;
   }
 
@@ -616,6 +654,8 @@ export class ChunkManager {
           // Keep clear of highways and of the hill over a tunnel
           if (Math.abs(u) < w.roadHalf(z) + 5) continue;
           if (w.tunnelAt(z) > 0.05 && Math.abs(u) < 70) continue;
+          const st = w.stopNear(z, 12);
+          if (st && u * st.side > 0 && Math.abs(u) < w.roadHalf(z) + st.depth + (st.kind === 'harbour' ? 60 : 16)) continue;
           const [, tz] = w.tangent(z);
           const x = w.roadX(z) - u / tz;
           const h = w.height(x, z);

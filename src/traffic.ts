@@ -62,6 +62,14 @@ export class Traffic {
     add('bike', makeBike(0x20242c));
   }
 
+  /** Positions and speeds of the vehicles on the road (for spray off wet roads). */
+  *moving(): Generator<{ pos: THREE.Vector3; v: number; dir: number; heavy: boolean }> {
+    for (const o of this.pool) {
+      if (!o.active || !o.user.group.visible) continue;
+      yield { pos: o.user.group.position, v: o.v, dir: o.dir, heavy: o.kind === 'truck' || o.kind === 'bus' };
+    }
+  }
+
   get enabled() {
     return this.density > 0.01;
   }

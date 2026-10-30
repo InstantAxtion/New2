@@ -263,3 +263,5 @@ body.zen .cabin-btns { opacity: 0; pointer-events: none; }
 #stats-body .stat { grid-template-columns: 130px 1fr 70px; gap: 8px; margin-bottom: 6px; }
 #stats-body .stat em { font-style: normal; text-align: right; color: var(--text); font-size: 13px; }
 #stats-reset { margin-top: 14px; }
+
+#fuel.low { color: #ffb84a; font-weight: 700; }

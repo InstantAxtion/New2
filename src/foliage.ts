@@ -6,7 +6,7 @@ import type { PropType } from './world/biomes';
 // Realistic trees for the good-graphics tiers: bark-textured trunks and branches, and
 // foliage made of many alpha-cut "cards" painted with leaves or needles.
 
-export type FoliageMat = 'leaf' | 'leafAutumn' | 'leafJungle' | 'fern' | 'needle' | 'needleSnow' | 'frond' | 'bark' | 'palmBark';
+export type FoliageMat = 'leaf' | 'leafAutumn' | 'leafBlossom' | 'leafJungle' | 'fern' | 'needle' | 'needleSnow' | 'frond' | 'bark' | 'palmBark';
 
 function canvas(w: number, h: number) {
   const c = document.createElement('canvas');
@@ -178,6 +178,7 @@ export function foliageTexture(m: FoliageMat): THREE.Texture | null {
   let t: THREE.Texture | null = null;
   if (m === 'leaf') t = leafTexture([[95, 45, 26], [105, 42, 22], [88, 40, 30], [115, 35, 20]], 61);
   if (m === 'leafAutumn') t = leafTexture([[28, 75, 42], [38, 80, 46], [14, 70, 36], [48, 70, 44], [70, 35, 32]], 62);
+  if (m === 'leafBlossom') t = leafTexture([[340, 72, 84], [332, 62, 78], [350, 80, 90], [345, 40, 94], [330, 55, 70]], 64);
   if (m === 'leafJungle') t = leafTexture([[110, 55, 18], [100, 50, 22], [125, 45, 16], [95, 60, 26]], 63);
   if (m === 'fern') t = fernTexture();
   if (m === 'needle') t = needleTexture(false);
@@ -389,6 +390,14 @@ export function foliageParts(type: PropType): Part[] | null {
     case 'treeAutumn': {
       const t = broadleaf(8);
       parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leafAutumn' }];
+      break;
+    }
+    case 'cherry': {
+      // A wide, spreading crown on a dark trunk
+      const t = broadleaf(15);
+      t.wood.scale(1.1, 0.85, 1.1);
+      t.leaves.scale(1.3, 0.85, 1.3).translate(0, -0.4, 0);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leafBlossom' }];
       break;
     }
     case 'pine': {

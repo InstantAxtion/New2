@@ -374,10 +374,10 @@ function balloon(variant: number): THREE.Group {
 interface Balloon { g: THREE.Group; x: number; y: number; z: number; drift: number; active: boolean; burn: number }
 interface Plane { g: THREE.Group; active: boolean; t: number; dur: number; from: THREE.Vector3; to: THREE.Vector3; alt: number }
 
-const FIELD: BiomeId[] = ['hills', 'flatlands', 'autumn', 'lakes', 'seaside'];
+const FIELD: BiomeId[] = ['hills', 'flatlands', 'autumn', 'lakes', 'seaside', 'blossom'];
 const WOODS: BiomeId[] = ['forest', 'alpine', 'autumn', 'winter', 'hills', 'rainforest'];
-const GLOW_BUGS: BiomeId[] = ['forest', 'hills', 'flatlands', 'autumn', 'lakes', 'rainforest', 'seaside'];
-const BALLOON_LANDS: BiomeId[] = ['hills', 'flatlands', 'autumn', 'lakes', 'desert', 'canyon'];
+const GLOW_BUGS: BiomeId[] = ['blossom', 'forest', 'hills', 'flatlands', 'autumn', 'lakes', 'rainforest', 'seaside'];
+const BALLOON_LANDS: BiomeId[] = ['blossom', 'hills', 'flatlands', 'autumn', 'lakes', 'desert', 'canyon'];
 
 export class Life {
   readonly group = new THREE.Group();

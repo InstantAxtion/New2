@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { World, SEGMENT } from './world/world';
+import { World, SEGMENT, LANE, type Stop } from './world/world';
 import { BIOMES, type Biome, type BiomeId } from './world/biomes';
 import { ChunkManager, QUALITY } from './chunks';
 import { Sky, TIME_PRESETS } from './sky';
@@ -12,6 +12,9 @@ import { nightGlow } from './special';
 import { Weather } from './weather';
 import { Effects } from './effects';
 import { Life } from './life';
+import { Drift } from './drift';
+import { AtmosphereShader, makeLensflare } from './post';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import type { AmbientMix } from './audio';
 import { drawNav } from './map';
 import { TripStats } from './stats';
@@ -42,6 +45,18 @@ export class Game {
   readonly effects = new Effects();
   readonly life: Life;
   private puffTimer = 0;
+  /** Fuel (or charge) left, 0..1, and the stop auto-drive is pulling in to. */
+  fuel = 1;
+  refuelling = false;
+  private pit: Stop | null = null;
+  onRefuel: (state: 'start' | 'done') => void = () => {};
+  readonly drift = new Drift();
+  /** Desert sandstorms: how strong one is now (0..1), and when the next starts or ends. */
+  sand = 0;
+  private sandOn = false;
+  private sandTimer = 90;
+  /** Summer heat shimmer over hot roads, 0..1. */
+  heat = 0;
   /** Seconds of rainbow left after a shower clears. */
   private rainbowTime = 0;
   private wasRaining = false;
@@ -95,6 +110,8 @@ export class Game {
   private tier: Tier;
   /** Post-processing (bloom) on high graphics. */
   private composer: EffectComposer | null = null;
+  private atmos: ShaderPass | null = null;
+  private flare = makeLensflare();
 
   constructor(canvas: HTMLCanvasElement, public settings: Settings) {
     const q = QUALITY[settings.quality];
@@ -109,6 +126,7 @@ export class Game {
     this.seed = (Math.random() * 1e9) | 0;
     this.world = new World(this.seed, settings.themes);
     this.chunks = new ChunkManager(this.world, q);
+    this.chunks.units = settings.units;
     this.scene.add(this.chunks.root);
 
     this.sky = new Sky(q.fogFar);
@@ -137,6 +155,8 @@ export class Game {
     this.weather.onThunder = (s) => this.engine.thunder?.(s);
     this.scene.add(this.weather.group);
     this.scene.add(this.effects.group);
+    this.scene.add(this.drift.group);
+    this.scene.add(this.flare);
     this.life = new Life(this.world, this.effects);
     this.scene.add(this.life.group);
 
@@ -148,7 +168,7 @@ export class Game {
     this.vehicle.place(this.startZ());
     this.vehicle.cruise = settings.cruiseKmh / 3.6;
     this.chunks.fill(this.vehicle.z);
-    this.setupBloom(settings.quality === 'high');
+    this.setupBloom(settings.quality === 'high' || settings.quality === 'ultra');
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -160,7 +180,7 @@ export class Game {
       sun.shadow.map?.dispose();
       sun.shadow.map = null as unknown as THREE.WebGLRenderTarget;
       sun.shadow.mapSize.set(size, size);
-      const e = size > 1024 ? 60 : 40;
+      const e = size > 2048 ? 80 : size > 1024 ? 60 : 40;
       const c = sun.shadow.camera;
       c.left = -e; c.right = e; c.top = e; c.bottom = -e; c.near = 1; c.far = 400;
       c.updateProjectionMatrix();
@@ -173,13 +193,41 @@ export class Game {
   private setupBloom(on: boolean) {
     this.composer?.dispose();
     this.composer = null;
+    this.atmos = null;
     if (!on) return;
     const c = new EffectComposer(this.renderer);
     c.addPass(new RenderPass(this.scene, this.camera));
     const w = window.innerWidth, h = window.innerHeight;
     c.addPass(new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.32, 0.5, 0.92));
+    // Sun shafts and heat shimmer
+    this.atmos = new ShaderPass(AtmosphereShader);
+    this.atmos.uniforms.uSamples.value = this.settings.quality === 'ultra' ? 48 : 30;
+    c.addPass(this.atmos);
     c.addPass(new OutputPass());
     this.composer = c;
+  }
+
+  private flareOn = false;
+  /** Where the sun is on screen: for the lens flare, the sun shafts and the heat haze. */
+  private updateSunFx(v: { z: number; heading: number }) {
+    const sunDir = (this.sky.mesh.material as THREE.ShaderMaterial).uniforms.sunDir.value as THREE.Vector3;
+    const cam = this.camera;
+    const up = THREE.MathUtils.smoothstep(sunDir.y, -0.02, 0.08) * (1 - this.weather.look.cover) * (1 - this.sand);
+    this.flareOn = this.tier === 'pbr' && up > 0.3 && this.phase !== 'garage';
+    this.flare.position.copy(cam.position).addScaledVector(sunDir, 900);
+    const a = this.atmos;
+    if (!a) return;
+    const p = cam.position.clone().addScaledVector(sunDir, 900).project(cam);
+    const onScreen = p.z < 1 ? 1 - THREE.MathUtils.smoothstep(Math.max(Math.abs(p.x), Math.abs(p.y)), 1.0, 1.8) : 0;
+    a.uniforms.uSun.value.set((p.x + 1) / 2, (p.y + 1) / 2);
+    a.uniforms.uSunOn.value = up * onScreen * (1 - this.sky.night) * (this.car.interior.visible ? 0.7 : 1);
+    a.uniforms.uSunColor.value.copy(this.sky.sun.color);
+    a.uniforms.uTime.value = this.elapsed;
+    const dir = Math.cos(v.heading) >= 0 ? 1 : -1;
+    const zf = v.z + 600 * dir;
+    const hp = new THREE.Vector3(this.world.roadX(zf), this.world.roadY(zf), zf).project(cam);
+    a.uniforms.uHorizon.value = (hp.y + 1) / 2;
+    a.uniforms.uHeat.value = hp.z < 1 && this.phase === 'drive' ? this.heat : 0;
   }
 
   /** Re-render the sky into the reflection map (cheap enough every few seconds). */
@@ -271,7 +319,7 @@ export class Game {
       this.setCar(this.vehicle.spec.id);
     }
     this.envHour = -99;
-    this.setupBloom(q === 'high');
+    this.setupBloom(q === 'high' || q === 'ultra');
     this.scene.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (m) m.needsUpdate = true;
@@ -334,7 +382,9 @@ export class Game {
         this.sleeping = true;
         this.onSleep();
       }
-      const c = s.auto || this.sleeping ? this.autoDrive(dt) : this.input;
+      let c = s.auto || this.sleeping ? this.autoDrive(dt) : this.input;
+      // Out of fuel: limp along gently to the next station
+      if (this.fuel <= 0 && Math.abs(v.v) > 11) c = { ...c, throttle: 0 };
       this.applied = c;
       v.step(dt, c, s.assist);
     } else {
@@ -342,6 +392,7 @@ export class Game {
       if (this.phase === 'garage') v.v *= Math.exp(-dt * 3);
     }
 
+    this.updateFuel(dt);
     this.placeCar();
     const night = this.sky.night > 0.45;
     this.car.animate(v.dist, v.steer, v.braking, night);
@@ -403,7 +454,8 @@ export class Game {
       for (const { biome, w } of this.world.weights(v.z)) {
         r += biome.haze[0] * w; g += biome.haze[1] * w; bl += biome.haze[2] * w; a += biome.haze[3] * w;
       }
-      this.sky.setHaze(r, g, bl, a);
+      const sd = this.sand;
+      this.sky.setHaze(r + (0.78 - r) * sd, g + (0.6 - g) * sd, bl + (0.4 - bl) * sd, a + (0.95 - a) * sd);
       const winter = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'winter' ? x.w : 0), 0);
       const wc = (this.water.material as THREE.MeshPhongMaterial).color;
       if (this.tier === 'pbr') wc.setRGB(0.02 + winter * 0.6, 0.18 + winter * 0.5, 0.26 + winter * 0.55);
@@ -439,8 +491,51 @@ export class Game {
     const bow = Math.min(1, this.rainbowTime / 20) * Math.min(1, (120 - this.rainbowTime) / 15) * (1 - wx.look.rain * 1.4);
     this.sky.rainbow = Math.max(0, bow);
     this.chunks.setWet(wx.look.wet);
+    this.chunks.setReflections(wx.look.wet * this.sky.night * (this.tier === 'pbr' ? 1 : 0));
+    // Spray thrown up by other traffic on a wet road
+    if (wx.look.wet > 0.6 && wx.look.rain > 0.3 && this.phase === 'drive' && Math.random() < dt * 12) {
+      for (const o of this.traffic.moving()) {
+        if (Math.abs(o.v) < 8 || Math.abs(o.pos.z - v.z) > 90) continue;
+        const back = new THREE.Vector3(0, 0.3, -o.dir * 2.2).add(o.pos);
+        this.effects.emit(back, new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.8, -o.dir * o.v * 0.12), 'spray', o.heavy ? 2.2 : 1.3);
+      }
+    }
     shared.snow.value = wx.snowCover;
-    this.sky.setFogFar(QUALITY[this.settings.quality].fogFar * this.fogScale * wx.look.fog);
+    // Wind, blown petals and leaves, desert sandstorms and heat haze
+    let desert = 0, petals = 0, leaves = 0, hot = 0;
+    for (const { biome, w } of this.world.weights(v.z)) {
+      if (biome.id === 'desert') desert += w;
+      if (biome.id === 'canyon') desert += w * 0.6;
+      if (biome.id === 'blossom') petals += w;
+      if (biome.id === 'autumn') leaves += w;
+      if (biome.id === 'forest') leaves += w * 0.25;
+      if (['desert', 'canyon', 'flatlands'].includes(biome.id)) hot += w;
+    }
+    this.sandTimer -= dt;
+    if (this.sandTimer <= 0) {
+      this.sandOn = !this.sandOn && desert > 0.5;
+      this.sandTimer = this.sandOn ? 60 + Math.random() * 50 : 150 + Math.random() * 200;
+    }
+    const sandTarget = desert * (this.sandOn || wx.kind === 'storm' ? 1 : 0) * (1 - wx.look.rain);
+    this.sand += (sandTarget - this.sand) * (1 - Math.exp(-dt * (sandTarget > this.sand ? 0.25 : 0.7)));
+    const windTarget = 1 + wx.look.cover * 0.6 + (wx.kind === 'storm' ? 1.4 : 0) + this.sand * 2.2;
+    shared.wind.value += (windTarget - shared.wind.value) * (1 - Math.exp(-dt * 0.5));
+    const wa = this.elapsed * 0.01 + 0.8;
+    const ws = 1.5 + shared.wind.value * 2.5;
+    this.drift.update(this.elapsed, this.camera.position, {
+      petals: petals * (1 - wx.look.rain) * (1 - wx.look.snow),
+      leaves: leaves * (0.4 + (shared.wind.value - 1) * 0.4) * (1 - wx.look.snow),
+      sand: this.sand,
+      wind: new THREE.Vector2(Math.cos(wa) * ws, Math.sin(wa) * ws),
+    });
+    const midday = Math.max(0, 1 - Math.abs(this.sky.hour - 14) / 3.5);
+    this.heat = hot * midday * (1 - wx.look.cover) * (1 - this.sand);
+    if (this.sand > 0.01) {
+      // A wall of dust: tan fog closing in, the sun dimmed
+      this.sky.fog.color.lerp(new THREE.Color(0.72, 0.56, 0.38), this.sand * 0.85);
+      this.sky.sun.intensity *= 1 - this.sand * 0.6;
+    }
+    this.sky.setFogFar(QUALITY[this.settings.quality].fogFar * this.fogScale * wx.look.fog * (1 - this.sand * 0.8));
     // Wipers sweep while it rains or snows
     const wiping = wx.look.rain + wx.look.snow > 0.15 && this.phase === 'drive';
     if (wiping || Math.sin(this.wipePhase) > -0.99) this.wipePhase += dt * (wx.kind === 'storm' ? 5.5 : 3.5);
@@ -461,7 +556,10 @@ export class Game {
     if (this.phase === 'drive' && this.fps < 24) this.lowFpsTime += dt;
     else this.lowFpsTime = 0;
 
+    this.updateSunFx(v);
+    this.flare.visible = false;
     this.renderMirrors();
+    this.flare.visible = this.flareOn;
     if (this.composer) this.composer.render(dt);
     else this.renderer.render(this.scene, this.camera);
     this.placeVideo();
@@ -492,7 +590,7 @@ export class Game {
     for (const { biome, w: k } of w.weights(v.z)) {
       const id = biome.id;
       if (id === 'seaside' || id === 'lakes') m.waves += k * (id === 'lakes' ? 0.4 : 1);
-      if (['forest', 'hills', 'autumn', 'rainforest', 'lakes', 'flatlands'].includes(id)) m.birds += k * (1 - night) * (id === 'rainforest' ? 1 : 0.6);
+      if (['forest', 'hills', 'autumn', 'rainforest', 'lakes', 'flatlands', 'blossom'].includes(id)) m.birds += k * (1 - night) * (id === 'rainforest' ? 1 : 0.6);
       if (id === 'rainforest') m.insects += k;
       if (['alpine', 'winter', 'canyon', 'desert'].includes(id)) m.wind += k;
       if (id === 'city') m.city += k;
@@ -500,7 +598,7 @@ export class Game {
     }
     m.city = Math.max(m.city, w.townAt(v.z) * 0.5);
     m.rain = this.weather.look.rain;
-    m.wind = Math.max(m.wind * 0.6, this.weather.look.cover * 0.5);
+    m.wind = Math.max(m.wind * 0.6, this.weather.look.cover * 0.5, this.sand * 1.6, (shared.wind.value - 1) * 0.3);
     return m;
   }
 
@@ -519,11 +617,57 @@ export class Game {
   }
 
   /** Auto-drive: keep the lane, follow traffic, overtake slow vehicles when it's safe. */
+  /** A full tank lasts about 75 miles; stop at a fuel station (or charger) to fill up. */
+  private updateFuel(dt: number) {
+    const v = this.vehicle;
+    if (this.phase !== 'drive') return;
+    const moved = Math.max(0, v.odometer - this.lastOdo);
+    this.fuel = Math.max(0, this.fuel - moved / 120000);
+    const st = this.world.stopNear(v.z, 0);
+    const u = this.world.lateral(v.x, v.z);
+    const atPump = !!st && st.kind === 'fuel' && Math.abs(v.z - st.z) < st.len / 2 && u * st.side > this.world.roadHalf(v.z) - 0.5;
+    const filling = atPump && Math.abs(v.v) < 0.8 && this.fuel < 0.995;
+    if (filling && !this.refuelling) this.onRefuel('start');
+    if (this.refuelling && !filling && this.fuel >= 0.995) this.onRefuel('done');
+    this.refuelling = filling;
+    if (filling) this.fuel = Math.min(1, this.fuel + dt / 7);
+  }
+
+  /** Auto-drive pulls in to the next fuel station when the tank runs low. */
+  private pitStop(): Controls | null {
+    const v = this.vehicle, w = this.world;
+    if (!this.pit && this.fuel < 0.2) {
+      const next = w.nextStop(v.z, 2500);
+      if (next && next.kind === 'fuel' && next.z - v.z > 160) this.pit = next;
+    }
+    const p = this.pit;
+    if (!p) return null;
+    const d = p.z - v.z;
+    if (d < -p.len / 2 || (this.fuel >= 0.995 && !this.refuelling)) {
+      this.pit = null;
+      return null;
+    }
+    // Ease over into the forecourt and stop by the pumps
+    const half = w.roadHalf(v.z);
+    const into = 1 - Math.min(1, Math.max(0, (d - 30) / 110));
+    const target = p.side * (half + 9);
+    const base = w.laneOffset(v.z, 1);
+    const u = base + (target - base) * into;
+    const per = w.laneOffset(v.z, 2) - w.laneOffset(v.z, 1);
+    v.lane = 1 + (u - base) / (per || LANE);
+    const limit = d > 220 ? Infinity : 9;
+    return v.autopilot({ leader: d > 140 ? this.traffic.leader(v, 1) : null, limit, stopIn: this.fuel < 0.995 ? Math.max(0, d) : null }, STYLES.relaxed);
+  }
+
   private autoDrive(dt: number): Controls {
     const v = this.vehicle;
     const t = this.traffic;
     const style = STYLES[this.settings.driveStyle] ?? STYLES.normal;
     const limit = this.speedLimit(v.z);
+    if (!this.sleeping) {
+      const pit = this.pitStop();
+      if (pit) return pit;
+    }
     if (this.sleeping) {
       // Pull over onto the right edge and stop
       v.lane = 1.6;
