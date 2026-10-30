@@ -171,12 +171,12 @@ export class Game {
 
   setCar(id: string) {
     const spec = CARS.find((c) => c.id === id) ?? CARS[0];
-    const color = this.settings.colors[spec.id] ?? spec.defaultColor;
+    const custom = this.settings.custom[spec.id] ?? {};
     if (this.car) {
       this.scene.remove(this.car.group);
       this.car.dispose();
     }
-    this.car = new CarModel(spec, color, this.tier);
+    this.car = new CarModel(spec, custom, this.tier);
     this.scene.add(this.car.group);
     this.rig.car = this.car;
     const old = this.vehicle;
@@ -271,7 +271,8 @@ export class Game {
     const g = this.car.group;
     g.position.set(v.x, v.y, v.z);
     g.rotation.set(0, v.heading, 0);
-    this.car.body.rotation.set(-v.pitch, 0, v.roll, 'YXZ');
+    this.car.body.rotation.set(-v.pitch - v.bodyPitch, 0, v.roll + v.bodyRoll, 'YXZ');
+    this.car.body.position.y = this.car.custom.ride + v.bounce;
   }
 
   frame = () => {

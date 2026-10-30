@@ -1,10 +1,13 @@
 import type { BiomeId } from './world/biomes';
 import type { TimeMode } from './sky';
 import type { CamMode } from './camera';
+import type { Custom } from './carspecs';
 
 export interface Settings {
   car: string;
   colors: Record<string, number>;
+  /** Per-car paint, wheels and interior choices. */
+  custom: Record<string, Partial<Custom>>;
   themes: BiomeId[];
   time: TimeMode;
   auto: boolean;
@@ -35,6 +38,7 @@ const KEY = 'endless-drive.settings';
 export const DEFAULTS: Settings = {
   car: 'gt',
   colors: {},
+  custom: {},
   themes: [],
   time: 'cycle',
   auto: false,
@@ -59,7 +63,9 @@ export const DEFAULTS: Settings = {
 export function loadSettings(): Settings {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || '{}');
-    const s: Settings = { ...DEFAULTS, ...raw, colors: { ...(raw.colors || {}) } };
+    const s: Settings = { ...DEFAULTS, ...raw, colors: { ...(raw.colors || {}) }, custom: { ...(raw.custom || {}) } };
+    // Colours picked before customisation existed
+    for (const [id, color] of Object.entries(s.colors)) s.custom[id] = { color, ...(s.custom[id] || {}) };
     // Older saves only had traffic on/off
     if (raw.trafficDensity === undefined && raw.traffic === false) s.trafficDensity = 0;
     return s;

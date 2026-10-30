@@ -3,6 +3,7 @@ import { AppLauncher } from '@capacitor/app-launcher';
 import { App } from '@capacitor/app';
 import type { Game } from './game';
 import { CARS, COLORS } from './cars';
+import { AMBIENTS, LEATHERS, RIM_COLORS, defaultCustom, type Custom } from './carspecs';
 import { BIOMES, BIOME_IDS, type BiomeId } from './world/biomes';
 import type { TimeMode } from './sky';
 import { CAM_LABEL, CAM_MODES } from './camera';
@@ -59,6 +60,7 @@ export class UI {
     this.s = game.settings;
     this.root.innerHTML = this.template();
     this.bindGarage();
+    this.bindCustom();
     this.bindHud();
     this.bindMusic();
     this.bindVideos();
@@ -107,6 +109,7 @@ export class UI {
       </div>
       <div class="stats" id="car-stats"></div>
       <div class="swatches">${swatches}</div>
+      <button class="ghost small wide-btn custom-btn" data-open="custom">🎨 Paint, wheels &amp; interior</button>
     </div>
     <div class="card world-card">
       <div class="wc-scroll">
@@ -241,6 +244,30 @@ export class UI {
   </div>
 </aside>
 
+<aside id="custom" class="sheet hidden">
+  <div class="sheet-head"><h2>🎨 <span id="cu-car"></span></h2><button class="icon" data-close="custom" aria-label="Close">✕</button></div>
+  <div class="sheet-body">
+    <h3>Paint</h3>
+    <div class="swatches left">${COLORS.map((c) => `<button class="swatch" data-cu-color="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
+    <div class="chips" data-cu="finish"><button class="chip" data-v="metallic">Metallic</button><button class="chip" data-v="solid">Gloss</button><button class="chip" data-v="matte">Matte</button><button class="chip" data-v="pearl">Pearl</button></div>
+    <div class="chips"><button class="chip" id="cu-twotone">Two-tone roof</button><button class="chip" id="cu-stripes">Racing stripes</button></div>
+    <h3>Second colour <small>roof and stripes</small></h3>
+    <div class="swatches left">${[0xf2f1ec, 0x1e1f22, ...COLORS.filter((c) => c !== 0xf2f1ec && c !== 0x1e1f22)].map((c) => `<button class="swatch" data-cu-color2="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
+    <h3>Wheels</h3>
+    <div class="chips" data-cu="rim"><button class="chip" data-v="five">5-spoke</button><button class="chip" data-v="multi">Multi-spoke</button><button class="chip" data-v="turbine">Aero</button><button class="chip" data-v="steel">Classic steel</button><button class="chip" data-v="beadlock">Off-road</button></div>
+    <div class="swatches left">${RIM_COLORS.map((c) => `<button class="swatch" data-cu-rimcolor="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
+    <h3>Ride height</h3>
+    <div class="range-row"><input type="range" id="cu-ride" min="-0.06" max="0.08" step="0.01" /><span id="cu-ride-lbl"></span></div>
+    <h3>Seats</h3>
+    <div class="swatches left">${LEATHERS.map((c) => `<button class="swatch" data-cu-leather="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
+    <h3>Trim</h3>
+    <div class="chips" data-cu="trim"><button class="chip" data-v="black">Piano black</button><button class="chip" data-v="wood">Wood</button><button class="chip" data-v="carbon">Carbon</button><button class="chip" data-v="alu">Aluminium</button></div>
+    <h3>Ambient lighting <small>at night</small></h3>
+    <div class="swatches left">${AMBIENTS.map((c) => `<button class="swatch${c ? '' : ' off'}" data-cu-ambient="${c}" style="background:${c ? hex(c) : '#2a2b2f'}">${c ? '' : '✕'}</button>`).join('')}</div>
+    <button class="ghost small" id="cu-reset">Reset to factory</button>
+  </div>
+</aside>
+
 <aside id="settings" class="sheet hidden">
   <div class="sheet-head"><h2>⚙️ Settings</h2><button class="icon" data-close="settings" aria-label="Close">✕</button></div>
   <div class="sheet-body">
@@ -361,11 +388,7 @@ export class UI {
     $('#car-next', r).onclick = () => step(1);
     for (const b of $$('[data-color]', r)) {
       b.onclick = () => {
-        const c = Number(b.dataset.color);
-        this.s.colors[this.s.car] = c;
-        this.game.setColor(c);
-        this.save();
-        this.refreshGarage();
+        this.customise({ color: Number(b.dataset.color) });
       };
     }
     for (const b of $$('[data-theme]', r)) {
@@ -421,15 +444,84 @@ export class UI {
     for (const b of $$('[data-close]', r)) b.onclick = () => this.close(b.dataset.close!);
   }
 
+  private customOf(id: string): Custom {
+    const spec = CARS.find((c) => c.id === id) ?? CARS[0];
+    return { ...defaultCustom(spec), ...(this.s.custom[id] ?? {}) };
+  }
+
+  /** Change the current car's look and rebuild it. */
+  private customise(change: Partial<Custom>) {
+    const id = this.s.car;
+    this.s.custom[id] = { ...(this.s.custom[id] ?? {}), ...change };
+    delete this.s.colors[id];
+    this.save();
+    this.game.setCar(id);
+    this.refreshGarage();
+  }
+
+  private bindCustom() {
+    const r = this.root;
+    const nums = (attr: string, key: keyof Custom) => {
+      for (const b of $$(`[data-${attr}]`, r)) b.onclick = () => this.customise({ [key]: Number(b.dataset[attr.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase())]) } as Partial<Custom>);
+    };
+    nums('cu-color', 'color');
+    nums('cu-color2', 'color2');
+    nums('cu-rimcolor', 'rimColor');
+    nums('cu-leather', 'leather');
+    nums('cu-ambient', 'ambient');
+    for (const g of $$('[data-cu]', r)) {
+      const key = g.dataset.cu as keyof Custom;
+      for (const b of $$('[data-v]', g)) b.onclick = () => this.customise({ [key]: b.dataset.v } as Partial<Custom>);
+    }
+    $('#cu-twotone', r).onclick = () => this.customise({ twoTone: !this.customOf(this.s.car).twoTone });
+    $('#cu-stripes', r).onclick = () => this.customise({ stripes: !this.customOf(this.s.car).stripes });
+    const ride = $<HTMLInputElement>('#cu-ride', r);
+    ride.onchange = () => this.customise({ ride: Number(ride.value) });
+    ride.oninput = () => ($('#cu-ride-lbl').textContent = this.rideLabel(Number(ride.value)));
+    $('#cu-reset', r).onclick = () => {
+      delete this.s.custom[this.s.car];
+      this.save();
+      this.game.setCar(this.s.car);
+      this.refreshGarage();
+    };
+  }
+
+  private rideLabel(v: number) {
+    return v === 0 ? 'Standard' : v < 0 ? `Lowered ${Math.round(-v * 100)} cm` : `Raised ${Math.round(v * 100)} cm`;
+  }
+
+  private refreshCustom() {
+    const spec = CARS.find((c) => c.id === this.s.car) ?? CARS[0];
+    const cu = this.customOf(spec.id);
+    $('#cu-car').textContent = spec.name;
+    const mark = (attr: string, v: number) => {
+      for (const b of $$(`[data-${attr}]`)) b.classList.toggle('on', Number(b.getAttribute(`data-${attr}`)) === v);
+    };
+    mark('cu-color', cu.color);
+    mark('cu-color2', cu.color2);
+    mark('cu-rimcolor', cu.rimColor);
+    mark('cu-leather', cu.leather);
+    mark('cu-ambient', cu.ambient);
+    for (const g of $$('[data-cu]')) {
+      const key = g.dataset.cu as keyof Custom;
+      for (const b of $$('[data-v]', g)) b.classList.toggle('on', String(cu[key]) === b.dataset.v);
+    }
+    $('#cu-twotone').classList.toggle('on', cu.twoTone);
+    $('#cu-stripes').classList.toggle('on', cu.stripes);
+    $<HTMLInputElement>('#cu-ride').value = String(cu.ride);
+    $('#cu-ride-lbl').textContent = this.rideLabel(cu.ride);
+  }
+
   private refreshGarage() {
     const spec = CARS.find((c) => c.id === this.s.car) ?? CARS[0];
     $('#car-name').textContent = spec.name;
     $('#car-blurb').textContent = spec.blurb;
     const bar = (label: string, v: number) => `<div class="stat"><span>${label}</span><i><b style="width:${Math.round(v * 100)}%"></b></i></div>`;
     $('#car-stats').innerHTML =
-      bar('Top speed', (spec.top - 100) / 160) + bar('Acceleration', spec.accel / 8) + bar('Grip', spec.grip / 10);
-    const col = this.s.colors[spec.id] ?? spec.defaultColor;
-    for (const b of $$('[data-color]')) b.classList.toggle('on', Number(b.dataset.color) === col);
+      bar('Top speed', (spec.top - 100) / 240) + bar('Acceleration', spec.accel / 10) + bar('Grip', spec.grip / 12);
+    const cu = this.customOf(spec.id);
+    for (const b of $$('[data-color]')) b.classList.toggle('on', Number(b.dataset.color) === cu.color);
+    this.refreshCustom();
     for (const b of $$('[data-theme]')) {
       const id = b.dataset.theme!;
       b.classList.toggle('on', id === 'all' ? this.s.themes.length === 0 : this.s.themes.includes(id as BiomeId));

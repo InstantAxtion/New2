@@ -46,8 +46,8 @@ export class Traffic {
       this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0 });
     };
     const specs = CARS.filter((c) => c.id !== 'van');
-    for (let i = 0; i < 7; i++) add('car', carUser(new CarModel(specs[(i * 3 + 1) % specs.length], COLORS[(i * 5 + 2) % COLORS.length])));
-    add('camper', carUser(new CarModel(CARS.find((c) => c.id === 'van')!, 0xe9e4d8)));
+    for (let i = 0; i < 7; i++) add('car', carUser(new CarModel(specs[(i * 3 + 1) % specs.length], { color: COLORS[(i * 5 + 2) % COLORS.length], stripes: false })));
+    add('camper', carUser(new CarModel(CARS.find((c) => c.id === 'van')!, { color: 0xe9e4d8 })));
     add('truck', makeTruck(0x2c5d8a));
     add('truck', makeTruck(0xb8341f));
     add('bus', makeBus(0xe0b020));

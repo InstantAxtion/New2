@@ -241,3 +241,9 @@ body.driver-view .speedo { opacity: 0; }
   .auto-left { max-width: 55vw; }
   .manual .auto-pad { width: 60px; height: 60px; }
 }
+
+.swatches.left { justify-content: flex-start; margin-bottom: 8px; }
+.swatch.off { color: var(--muted); font-size: 12px; }
+.custom-btn { margin-top: 8px; }
+.sheet h3 small { text-transform: none; letter-spacing: 0; font-weight: 400; opacity: .8; }
+#cu-reset { margin-top: 14px; }

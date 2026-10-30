@@ -60,6 +60,13 @@ export class Vehicle {
   braking = false;
   /** Short bump flash after hitting something. */
   bump = 0;
+  /** Body lean on its springs: roll in bends, dive under braking, squat under power. */
+  bodyRoll = 0;
+  bodyPitch = 0;
+  bounce = 0;
+  private rollV = 0;
+  private pitchV = 0;
+  private bounceV = 0;
 
   /** Autopilot cruise speed, m/s. */
   cruise = 22;
@@ -160,7 +167,7 @@ export class Vehicle {
       steerIn = this.pursuit(this.nearestLane()) * 0.9;
     }
     // Steering wheel follows the input smoothly
-    const rate = 3.2;
+    const rate = this.spec.handling?.steer ?? 3.2;
     this.steer += clamp(steerIn - this.steer, -rate * dt, rate * dt);
 
     // Longitudinal
@@ -223,5 +230,23 @@ export class Vehicle {
     this.roll += (tr - this.roll) * k;
     this.y = Math.max(this.y, (hf + hb) / 2);
     this.bump = Math.max(0, this.bump - dt * 2);
+
+    // Springs: the body leans against cornering and braking forces and settles back
+    const h = this.spec.handling;
+    if (h) {
+      const lat = this.v * yaw; // m/s² sideways
+      const lon = a;
+      const k = h.spring * h.spring, d = 2 * h.spring * 0.75;
+      const tr = clamp(-lat * h.roll, -0.09, 0.09);
+      const tp = clamp(lon * h.dive, -0.06, 0.06);
+      this.rollV += ((tr - this.bodyRoll) * k - this.rollV * d) * dt;
+      this.bodyRoll += this.rollV * dt;
+      this.pitchV += ((tp - this.bodyPitch) * k - this.pitchV * d) * dt;
+      this.bodyPitch += this.pitchV * dt;
+      // Off-road (or a bump) shakes the body on its springs
+      const kick = (this.offroad ? (Math.random() - 0.5) * Math.abs(this.v) * 0.04 : 0) + this.bump * (Math.random() - 0.5) * 0.3;
+      this.bounceV += (-this.bounce * k - this.bounceV * d) * dt + kick * dt * 60 * 0.02;
+      this.bounce = clamp(this.bounce + this.bounceV * dt, -0.05, 0.05);
+    }
   }
 }

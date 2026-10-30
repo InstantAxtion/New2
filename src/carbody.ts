@@ -94,7 +94,10 @@ export function profile(s: BodyShape): BodyProfile {
   return { top, belt: beltAt, bottom, half, front, rear };
 }
 
-/** Builds the body. Groups: 0 = paint, 1 = glass, 2 = trim (dark plastic). */
+/**
+ * Builds the body. Groups: 0 = paint, 1 = windscreen and rear glass, 2 = trim (dark
+ * plastic), 3 = side windows, 4 = roof (paint, or the second colour for two-tone).
+ */
 export function bodyGeometry(s: BodyShape): THREE.BufferGeometry {
   const P = profile(s);
   const N = 64;
@@ -141,7 +144,7 @@ export function bodyGeometry(s: BodyShape): THREE.BufferGeometry {
     for (let k = HALF - 2; k >= 1; k--) pos.push(ring[k][0], ring[k][1], x);
   }
   const R = HALF * 2 - 2; // ring size (bottom and top centres not duplicated)
-  const groups: number[][] = [[], [], []];
+  const groups: number[][] = [[], [], [], [], []];
   for (let i = 0; i < xs.length - 1; i++) {
     const za = zone[i], zb = zone[i + 1];
     for (let k = 0; k < R; k++) {
@@ -154,7 +157,8 @@ export function bodyGeometry(s: BodyShape): THREE.BufferGeometry {
       // Inside of an open cockpit is trim, not paint
       if (kk >= 7 && tubs[i] > 0.3 && tubs[i + 1] > 0.3) g = 2;
       if (za && zb) {
-        if (kk === 6 || kk === 7) g = 1;
+        if (kk === 6 || kk === 7) g = 3;
+        if (kk >= 8) g = 4;
         if (kk >= 8 && za === 2 && zb === 2) g = 1;
         if (kk === 8 && (za === 2 || zb === 2)) g = 1;
       }
@@ -163,11 +167,38 @@ export function bodyGeometry(s: BodyShape): THREE.BufferGeometry {
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  const idx = [...groups[0], ...groups[1], ...groups[2]];
-  geo.setIndex(idx);
-  geo.addGroup(0, groups[0].length, 0);
-  geo.addGroup(groups[0].length, groups[1].length, 1);
-  geo.addGroup(groups[0].length + groups[1].length, groups[2].length, 2);
+  geo.setIndex(groups.flat());
+  let start = 0;
+  groups.forEach((g, i) => {
+    geo.addGroup(start, g.length, i);
+    start += g.length;
+  });
   geo.computeVertexNormals();
   return geo;
+}
+
+/**
+ * The outer surface at station x: height of the top centre line, the side's half-width at
+ * a given height, and whether x is under glass. Used to place details on the body.
+ */
+export function surface(s: BodyShape, P: BodyProfile, x: number) {
+  const hw = P.half(x);
+  const top = P.top(x);
+  const belt = Math.min(P.belt(x), top);
+  const bot = Math.min(P.bottom(x), belt - 0.05);
+  const cabin = !s.open && top > belt + 0.06 && x < s.A + 0.02 && x > s.D - 0.02;
+  const crown = Math.min(0.045, top - belt + 0.04);
+  const glass = cabin && (x > s.B || x < s.C);
+  return {
+    hw, top, belt, bot, cabin, glass,
+    /** Height of the centre of the top surface. */
+    centre: cabin ? top + 0.02 : belt + crown,
+    /** Half-width of the side at height y (between the sill and the shoulder). */
+    sideAt(y: number) {
+      const mid = (bot + belt) / 2;
+      if (y <= bot + 0.08) return hw * (0.82 + 0.15 * Math.max(0, (y - bot) / 0.08));
+      if (y <= mid) return hw * (0.97 + 0.03 * ((y - bot - 0.08) / Math.max(mid - bot - 0.08, 0.01)));
+      return hw * (1 - 0.05 * ((y - mid) / Math.max(belt - mid, 0.01)));
+    },
+  };
 }
