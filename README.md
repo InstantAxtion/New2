@@ -29,7 +29,7 @@ A relaxing driving game for Android. Pick a car and cruise an endless, generated
 - 🕹️ **Drive yourself**: ◀ ▶ or tilt to steer, gas and brake (hold brake to reverse), lane assist.
 - 🤖 **Auto-drive** (the button beside Drive in the garage, or AUTO while driving): keeps its lane, slows for bends and towns, follows slower traffic and overtakes when the road is straight and clear, and stops for people on crossings. Styles: 🌿 Relaxed, 🚗 Normal, 🏁 Sporty. Set the cruise speed with − / +.
 - 🌙 **Sleep timer** (30/60/90 min): auto-drive pulls over and stops, and the music fades out.
-- Cameras: Chase, High, Driver, Side, Cinematic. Drag to look around. 👁️ hides the controls.
+- Two cameras: 3rd person (behind the car) and 1st person (the driver's seat). Drag to look around — the view stays where you leave it; double-tap to look straight ahead again. 👁️ hides the controls.
 - mph by default (km/h in Settings).
 
 ## Music

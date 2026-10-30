@@ -26,6 +26,8 @@ public class MainActivity extends BridgeActivity {
 
         WebView webView = getBridge().getWebView();
         WebSettings settings = webView.getSettings();
+        // Keep the layout as designed: a large system font size would otherwise overflow the buttons
+        settings.setTextZoom(100);
         // Let the Spotify and YouTube players start playback and keep the Spotify login
         settings.setMediaPlaybackRequiresUserGesture(false);
         CookieManager.getInstance().setAcceptCookie(true);

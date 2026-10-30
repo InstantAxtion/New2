@@ -132,6 +132,8 @@ export function loadSettings(): Settings {
     // The game switched to mph; move older saves over once (they can switch back)
     if (!raw.unitsV2) s.units = 'mph';
     (s as unknown as { unitsV2: boolean }).unitsV2 = true;
+    // Only two cameras now: behind the car, or the driver's seat
+    if (s.cam !== 'hood') s.cam = 'chase';
     // Older saves only had traffic on/off
     if (raw.trafficDensity === undefined && raw.traffic === false) s.trafficDensity = 0;
     return s;

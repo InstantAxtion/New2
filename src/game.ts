@@ -371,6 +371,7 @@ export class Game {
   }
 
   startDrive() {
+    if (this.phase === 'garage') this.rig.recentre();
     this.phase = 'drive';
     this.rig.reset();
     this.engine.start();

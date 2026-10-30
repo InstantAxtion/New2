@@ -4,9 +4,10 @@ import type { World } from './world/world';
 import type { CarModel } from './cars';
 
 export type CamMode = 'chase' | 'far' | 'hood' | 'side' | 'cinematic';
-export const CAM_MODES: CamMode[] = ['chase', 'far', 'hood', 'side', 'cinematic'];
+/** Two views to switch between: behind the car, and from the driver's seat. */
+export const CAM_MODES: CamMode[] = ['chase', 'hood'];
 export const CAM_LABEL: Record<CamMode, string> = {
-  chase: 'Chase', far: 'High', hood: 'Driver', side: 'Side', cinematic: 'Cinematic',
+  chase: '3rd person', far: 'High', hood: '1st person', side: 'Side', cinematic: 'Cinematic',
 };
 
 type Shot = 'roadside' | 'drone' | 'front' | 'low' | 'aerial' | 'orbit';
@@ -18,7 +19,6 @@ export class CameraRig {
   yaw = 0;
   pitch = 0;
   dragging = false;
-  private idle = 0;
   private pos = new THREE.Vector3();
   private offset = new THREE.Vector3();
   private lookOff = new THREE.Vector3();
@@ -43,12 +43,17 @@ export class CameraRig {
     this.shotT = 999;
   }
 
+  /** Look straight ahead again. */
+  recentre() {
+    this.yaw = 0;
+    this.pitch = 0;
+  }
+
   drag(dx: number, dy: number) {
     this.yaw -= dx * 0.006;
     // From the driver's seat you can look right round the cabin, and down at the console
     if (this.mode === 'hood') this.yaw = THREE.MathUtils.clamp(this.yaw, -2.6, 2.6);
     this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.004, this.mode === 'hood' ? -0.85 : -0.3, this.mode === 'hood' ? 0.6 : 0.9);
-    this.idle = 0;
   }
 
   /** Reduce motion: no sway from the car's body in the driver's view, softer chase cameras. */
@@ -100,14 +105,7 @@ export class CameraRig {
       this.cam.near = near;
       this.cam.updateProjectionMatrix();
     }
-    if (!this.dragging) {
-      this.idle += dt;
-      if (this.idle > (this.mode === 'hood' ? 4 : 1.5)) {
-        const k = 1 - Math.exp(-dt * 2);
-        this.yaw *= 1 - k;
-        this.pitch *= 1 - k;
-      }
-    }
+    // The view stays wherever you drag it (double-tap to look straight ahead again)
     const fx = Math.sin(v.heading), fz = Math.cos(v.heading);
     const desired = new THREE.Vector3();
     const target = new THREE.Vector3(v.x, v.y + 1, v.z);

@@ -394,7 +394,6 @@ export class UI {
     <div class="chips" data-set="season"><button class="chip" data-v="regions">🗺️ Each region's own</button><button class="chip" data-v="spring">🌱 Spring</button><button class="chip" data-v="summer">☀️ Summer</button><button class="chip" data-v="autumn">🍂 Autumn</button><button class="chip" data-v="winter">❄️ Winter</button></div>
     <h3>Weather</h3>
     <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">🌨️💧 Sleet</button></div>
-    <h3>World</h3>
     <h3>Traffic</h3>
     <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
     <h3>Auto-drive style</h3>
@@ -574,6 +573,7 @@ export class UI {
     this.cardTimer = window.setTimeout(() => c.classList.remove('show'), 4800);
   }
   private cardTimer = 0;
+  private recentreHinted = false;
   private lastOdo = 0;
   private saveTimer = 10;
   private lyricsFor = '';
@@ -772,6 +772,7 @@ export class UI {
       this.game.rig.screenFocus = false;
       this.game.rig.mode = this.s.cam;
       this.game.rig.reset();
+      this.game.rig.recentre();
       this.save();
       this.refreshHud();
     };
@@ -1187,11 +1188,23 @@ export class UI {
       px = e.clientX; py = e.clientY;
       this.game.rig.drag(dx, dy);
     });
+    let lastTap = 0;
     const end = (e: PointerEvent) => {
       if (e.pointerId !== dragId) return;
       dragId = -1;
       this.game.rig.dragging = false;
-      if (moved < 8 && this.zen) this.setZen(false);
+      if (moved < 8) {
+        // Double-tap: look straight ahead again
+        const now = performance.now();
+        if (now - lastTap < 350) {
+          this.game.rig.recentre();
+          lastTap = 0;
+        } else lastTap = now;
+        if (this.zen) this.setZen(false);
+      } else if (!this.recentreHinted && this.game.phase === 'drive') {
+        this.recentreHinted = true;
+        this.toast('View stays where you leave it<b>Double-tap to look ahead</b>');
+      }
     };
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', end);
@@ -1680,7 +1693,7 @@ export class UI {
     this.applyMix();
     const key = $<HTMLInputElement>('#yt-key');
     key.value = this.s.youtubeKey;
-    if (BUILTIN_YT_KEY) key.placeholder = 'Built-in key in use (paste your own to replace it)';
+    if (BUILTIN_YT_KEY) key.placeholder = 'Built-in key in use';
     key.onchange = () => {
       this.s.youtubeKey = key.value.trim();
       this.videos.apiKey = this.s.youtubeKey || BUILTIN_YT_KEY;
