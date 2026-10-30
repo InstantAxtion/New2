@@ -98,20 +98,29 @@ export class Vehicle {
     this.pitch = this.roll = 0;
   }
 
-  /** Point on the lane `ahead` metres down the road from the car. */
-  private lanePoint(ahead: number, lane: number): [number, number] {
+  /** Point `ahead` metres down the road from the car, `off` metres to the right of the middle (or on a lane). */
+  private lanePoint(ahead: number, lane: number | null, off = 0): [number, number] {
     const w = this.world;
     const dir = Math.cos(this.heading) >= 0 ? 1 : -1;
     const zt = this.z + ahead * dir;
     const [tx, tz] = w.tangent(zt);
-    const o = w.laneOffset(zt, lane) * dir;
+    const o = (lane === null ? off : w.laneOffset(zt, lane)) * dir;
     return [w.roadX(zt) - tz * o, zt + tx * o];
   }
 
   /** Steering (share of max) that follows the lane, pure-pursuit style. */
   pursuit(lane: number): number {
-    const look = clamp(6 + Math.abs(this.v) * 0.75, 7, 38);
-    const [px, pz] = this.lanePoint(look, lane);
+    return this.pursue(this.lanePoint(clamp(6 + Math.abs(this.v) * 0.75, 7, 38), lane));
+  }
+
+  /** Steering that just follows the bend, keeping the car where it is across the road. */
+  followBend(): number {
+    const dir = Math.cos(this.heading) >= 0 ? 1 : -1;
+    const u = this.world.lateral(this.x, this.z) * dir;
+    return this.pursue(this.lanePoint(clamp(8 + Math.abs(this.v) * 0.9, 9, 42), null, u));
+  }
+
+  private pursue([px, pz]: [number, number]): number {
     const dx = px - this.x, dz = pz - this.z;
     const alpha = wrap(Math.atan2(dx, dz) - this.heading);
     const kappa = (2 * Math.sin(alpha)) / Math.hypot(dx, dz);
@@ -119,8 +128,10 @@ export class Vehicle {
     return clamp(-angle / this.maxAngle(), -1, 1);
   }
 
+  /** Full lock: at speed, as much as the tyres can take (so the whole range of the wheel means something). */
   private maxAngle() {
-    return 0.6 / (1 + Math.abs(this.v) / 22);
+    const v2 = Math.max(this.v * this.v, 1);
+    return Math.min(0.6, Math.atan((this.spec.grip * 0.95 * this.wheelbase) / v2) * 1.08);
   }
 
   /** The speed the autopilot is happy with given the bends ahead. */
@@ -157,6 +168,8 @@ export class Vehicle {
 
   /** Steering assist settles back into the right-hand lane (off while overtaking or on a highway). */
   keepRight = true;
+  /** How far the assist has taken back over since you let go of the wheel (0..1). */
+  private assistW = 1;
 
   /** Which lane the car is nearest to. */
   nearestLane(): number {
@@ -169,8 +182,18 @@ export class Vehicle {
     const w = this.world;
     const s = this.spec;
     let steerIn = c.steer;
-    if (assist && Math.abs(steerIn) < 0.05 && !this.offroad && Math.abs(this.v) > 2) {
-      steerIn = this.pursuit(this.keepRight ? 1 : this.nearestLane()) * 0.9;
+    if (assist && !this.offroad && Math.abs(this.v) > 2) {
+      const bend = this.followBend();
+      if (Math.abs(c.steer) > 0.05) {
+        // You steer; the assist just carries you round the bend so your input is a correction on top
+        this.assistW = 0;
+        steerIn = clamp(c.steer + bend * 0.75, -1, 1);
+      } else {
+        // Let go: hold your line, then ease gently into the lane
+        this.assistW = Math.min(1, this.assistW + dt * 0.8);
+        const lane = this.pursuit(this.keepRight ? 1 : this.nearestLane());
+        steerIn = (bend + (lane - bend) * this.assistW * this.assistW) * 0.95;
+      }
     }
     // Steering wheel follows the input smoothly
     const rate = this.spec.handling?.steer ?? 3.2;

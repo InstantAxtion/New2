@@ -186,6 +186,9 @@ export class UI {
         <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
         <h3>Auto-drive style</h3>
         <div class="chips" data-set="driveStyle"><button class="chip" data-v="relaxed">🌿 Relaxed</button><button class="chip" data-v="normal">🚗 Normal</button><button class="chip" data-v="sporty">🏁 Sporty</button></div>
+        <h3>Your steering</h3>
+        <div class="chips" data-set="steering"><button class="chip" data-v="buttons">◀ ▶ Buttons</button><button class="chip" data-v="tilt">📱 Tilt phone</button></div>
+        <div class="chips gap-top" data-set="assist"><button class="chip" data-v="true">🛟 Steering assist on</button><button class="chip" data-v="false">Assist off</button></div>
         <h3>Where to</h3>
         <div class="chips"><button class="chip" id="new-world">🎲 A brand new road</button><button class="chip" data-open="places">📍 Saved places</button></div>
       </div>
@@ -227,7 +230,10 @@ export class UI {
       <button class="pad" data-hold="right" aria-label="Steer right">▶</button>
     </div>
     <div class="tilt-note" id="tilt-note">Tilt to steer<button class="ghost small" id="tilt-zero">Re-centre</button></div>
-    <button class="pad auto-pad" id="auto-on" aria-label="Turn on auto-drive">🤖<span>AUTO</span></button>
+    <div class="mid-pads">
+      <button class="pad auto-pad" id="auto-on" aria-label="Turn on auto-drive">🤖<span>AUTO</span></button>
+      <button class="pad auto-pad" id="assist-btn" aria-label="Steering assist">🛟<span id="assist-lbl">ASSIST</span></button>
+    </div>
     <div class="pedals">
       <button class="pad brake" data-hold="brake" aria-label="Brake">BRAKE</button>
       <button class="pad gas" data-hold="gas" aria-label="Gas">GAS</button>
@@ -404,7 +410,7 @@ export class UI {
     <div class="chips" data-set="units"><button class="chip" data-v="mph">mph</button><button class="chip" data-v="kmh">km/h</button></div>
     <h3>Steering</h3>
     <div class="chips" data-set="steering"><button class="chip" data-v="buttons">◀ ▶ Buttons</button><button class="chip" data-v="tilt">📱 Tilt phone</button></div>
-    <div class="chips" data-set="assist"><button class="chip" data-v="true">Lane assist on</button><button class="chip" data-v="false">Off</button></div>
+    <div class="chips" data-set="assist"><button class="chip" data-v="true">🛟 Steering assist on</button><button class="chip" data-v="false">Assist off</button></div>
     <h3>Screen</h3>
     <div class="chips" data-set="orientation"><button class="chip" data-v="auto">🔄 Auto-rotate</button><button class="chip" data-v="landscape">▭ Landscape</button><button class="chip" data-v="portrait">▯ Vertical</button></div>
     <div class="chips" data-set="minimalHud"><button class="chip" data-v="false">Full HUD</button><button class="chip" data-v="true">Minimal HUD</button></div>
@@ -567,19 +573,27 @@ export class UI {
       this.s.auto = true;
       this.save();
       this.refreshHud();
-      $('#go', r).click();
+      this.start();
     };
     $('#go', r).onclick = () => {
-      this.game.stats.newTrip();
-      this.game.startDrive();
-      this.game.ignition();
-      this.show('hud');
-      this.recentreTilt();
-      const b = this.game.region;
-      if (b) this.toast(`${b.emoji} ${b.name}<b>${this.s.auto ? 'Sit back and enjoy the view' : 'Hold GAS to go'}</b>`);
+      this.s.auto = false;
+      this.save();
+      this.refreshHud();
+      this.start();
     };
     for (const b of $$('[data-open]', r)) b.onclick = () => this.open(b.dataset.open!);
     for (const b of $$('[data-close]', r)) b.onclick = () => this.close(b.dataset.close!);
+  }
+
+  /** Off we go, in whichever mode is set. */
+  private start() {
+    this.game.stats.newTrip();
+    this.game.startDrive();
+    this.game.ignition();
+    this.show('hud');
+    this.recentreTilt();
+    const b = this.game.region;
+    if (b) this.toast(`${b.emoji} ${b.name}<b>${this.s.auto ? 'Sit back and enjoy the view' : 'Hold GAS to go'}</b>`);
   }
 
   /** A cinematic title card when you cross into a new region. */
@@ -855,6 +869,13 @@ export class UI {
     };
     $('#mode-btn', r).onclick = () => this.setAuto(!this.s.auto);
     $('#auto-on', r).onclick = () => this.setAuto(true);
+    $('#assist-btn', r).onclick = () => {
+      this.s.assist = !this.s.assist;
+      this.save();
+      this.refreshHud();
+      this.refreshSettings();
+      this.toast(this.s.assist ? 'Steering assist on<b>Follows the bends, eases you into lane</b>' : 'Steering assist off<b>All yours</b>');
+    };
     $('#take-wheel', r).onclick = () => this.setAuto(false);
     $('#style-btn', r).onclick = () => {
       const order: Settings['driveStyle'][] = ['relaxed', 'normal', 'sporty'];
@@ -1136,6 +1157,8 @@ export class UI {
 
   private refreshHud() {
     $('#cam-label').textContent = CAM_LABEL[this.s.cam];
+    $('#assist-btn').classList.toggle('on', this.s.assist);
+    $('#assist-lbl').textContent = this.s.assist ? 'ASSIST' : 'NO ASSIST';
     $('#tv-btn').classList.toggle('on', this.s.cam === 'hood');
     document.body.classList.toggle('driver-view', this.s.cam === 'hood');
     document.body.classList.toggle('minimal-hud', this.s.minimalHud);

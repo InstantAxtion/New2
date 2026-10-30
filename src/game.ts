@@ -438,13 +438,16 @@ export class Game {
         this.sleeping = true;
         this.onSleep();
       }
-      let c = s.auto || this.sleeping ? this.autoDrive(dt) : this.input;
+      let c = s.auto || this.sleeping ? this.autoDrive(dt) : this.manual(dt);
       // Out of fuel: limp along gently to the next station
       if (this.fuel <= 0 && Math.abs(v.v) > 11) c = { ...c, throttle: 0 };
       this.applied = c;
       // Manual driving: let go of the wheel and the assist eases you back to the right, unless you're passing someone
       const ahead = this.traffic.leader(v, 1);
-      v.keepRight = this.world.highwayAt(v.z) < 0.5 && !this.traffic.beside(v) && !(ahead && ahead.gap < 30);
+      const clear = this.world.highwayAt(v.z) < 0.5 && !this.traffic.beside(v) && !(ahead && ahead.gap < 30);
+      // (only after a few clear seconds, so it never tugs you back mid-overtake)
+      this.clearT = clear ? this.clearT + dt : 0;
+      v.keepRight = this.clearT > 3;
       v.step(dt, c, s.assist);
     } else {
       this.applied = { throttle: 0, brake: 0, steer: 0 };
@@ -840,6 +843,23 @@ export class Game {
     v.lane = 1 + (u - base) / (per || LANE);
     const limit = d > 220 ? Infinity : 9;
     return v.autopilot({ leader: d > 140 ? this.traffic.leader(v, 1) : null, limit, stopIn: this.fuel < 0.995 ? Math.max(0, d) : null }, STYLES.relaxed);
+  }
+
+  private clearT = 0;
+  private holdT = 0;
+  private holdDir = 0;
+
+  /** Your controls. Steering buttons are progressive: a tap nudges, holding turns harder. */
+  private manual(dt: number): Controls {
+    const c = this.input;
+    if (this.settings.steering === 'tilt' && Math.abs(c.steer) < 1) return c;
+    const dir = Math.sign(c.steer);
+    if (dir !== this.holdDir) {
+      this.holdDir = dir;
+      this.holdT = 0;
+    }
+    this.holdT += dt;
+    return dir ? { ...c, steer: dir * Math.min(1, 0.3 + this.holdT * 1.3) } : c;
   }
 
   private autoDrive(dt: number): Controls {

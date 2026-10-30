@@ -400,3 +400,17 @@ body.minimal-hud .speedo b { font-size: 40px; }
   .gtab i { grid-row: auto; font-size: 17px; }
   .gtab small { max-width: 100%; }
 }
+.mid-pads { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+#assist-btn { opacity: .6; }
+#assist-btn.on { opacity: 1; border-color: rgba(120, 200, 255, .6); }
+.gap-top { margin-top: 6px; }
+@media (orientation: portrait) { .manual .mid-pads .auto-pad { width: 54px; height: 54px; font-size: 18px; } .manual .mid-pads { gap: 6px; } }
+.manual .mid-pads { margin: 0 auto 0 0; align-self: flex-end; }
+.manual .mid-pads .auto-pad { margin: 0; align-self: auto; }
+.manual #assist-btn { background: rgba(255,255,255,.08); border-color: var(--line); }
+.manual #assist-btn.on { background: rgba(90,170,255,.22); border-color: rgba(120,200,255,.6); }
+@media (orientation: portrait) and (max-width: 430px) {
+  .steer .pad { width: 62px; height: 66px; }
+  .pedals .pad { width: 64px; }
+  .manual .steer { margin-right: 6px; }
+}
