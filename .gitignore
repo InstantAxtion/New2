@@ -3,3 +3,4 @@ dist/
 *.apk
 .DS_Store
 screenshots-preview.png
+.env.local

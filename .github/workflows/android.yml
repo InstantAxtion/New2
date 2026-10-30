@@ -34,7 +34,10 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm ci
+      # The YouTube API key is kept out of the (public) code; add it as a repository secret
       - run: npm run build
+        env:
+          VITE_YOUTUBE_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       - run: npx cap sync android
       # GitHub's Ubuntu runners ship the Android SDK (ANDROID_HOME); Gradle fetches any missing platform.
       - name: Build debug APK

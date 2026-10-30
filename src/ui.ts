@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { AppLauncher } from '@capacitor/app-launcher';
 import { App } from '@capacitor/app';
 import type { Game } from './game';
@@ -17,6 +17,18 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = 
 const $$ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => [...root.querySelectorAll(sel)] as T[];
 const hex = (n: number) => '#' + n.toString(16).padStart(6, '0');
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** Native in-app Spotify login (see SpotifyLoginPlugin.java). */
+interface SpotifyLoginApi {
+  status(): Promise<{ loggedIn: boolean }>;
+  open(): Promise<{ loggedIn: boolean }>;
+  logout(): Promise<{ loggedIn: boolean }>;
+  addListener(e: 'loginFinished', f: (r: { loggedIn: boolean }) => void): Promise<unknown>;
+}
+const SpotifyLogin = registerPlugin<SpotifyLoginApi>('SpotifyLogin');
+
+/** YouTube API key built into the app at build time (from .env.local or a CI secret). */
+const BUILTIN_YT_KEY: string = import.meta.env.VITE_YOUTUBE_KEY ?? '';
 
 const TIMES: { id: TimeMode; label: string }[] = [
   { id: 'cycle', label: '🔄 Day cycle' },
@@ -182,10 +194,15 @@ export class UI {
       <button class="go small" id="sp-load">Play</button></div>
     <p class="error" id="sp-error"></p>
     <div class="mpane" data-pane="spotify">
+      <div class="login-row" id="sp-login-row">
+        <span id="sp-login-state">Not logged in — the player plays 30-second previews.</span>
+        <button class="go small" id="sp-login">Log in to Spotify</button>
+        <button class="ghost small" id="sp-logout">Log out</button>
+      </div>
       <div class="row"><button class="ghost small" id="sp-paste">📋 Paste</button>
         <button class="ghost small" id="sp-app" disabled>Open in Spotify app ↗</button></div>
       <div id="sp-player"><p class="hint">In Spotify, open a playlist → ⋯ → Share → <b>Copy link</b>, then paste it here.</p></div>
-      <p class="hint">The built-in player plays previews unless you're logged in to Spotify in it. For full songs tap <b>Open in Spotify app</b> and come back — the music keeps playing while you drive. Or switch to <b>📺 Music videos</b> to play full songs as videos.</p>
+      <p class="hint">Log in once and the player plays full songs (Spotify may limit free accounts to shuffle). Use your Spotify email and password, or "Log in without password" — Google and Facebook buttons don't work inside apps. You can also tap <b>Open in Spotify app</b> and come back (the music keeps playing while you drive), or switch to <b>📺 Music videos</b>.</p>
     </div>
     <div class="mpane" data-pane="videos">
       <div class="now-card">
@@ -644,11 +661,34 @@ export class UI {
       $('#sp-error').textContent = 'Long-press the box and choose Paste.';
     };
     $('#sp-app').onclick = () => this.current && void this.openInApp(this.current);
+    this.bindSpotifyLogin();
     for (const b of $$('[data-mtab]')) b.onclick = () => this.setMusicMode(b.dataset.mtab as Settings['musicMode']);
     this.renderSaved();
     this.refreshMusicTabs();
     const last = loadSaved()[0];
     if (last) this.play(last.ref, false, false);
+  }
+
+  private bindSpotifyLogin() {
+    const row = $('#sp-login-row');
+    if (!Capacitor.isNativePlatform()) {
+      row.style.display = 'none';
+      return;
+    }
+    const show = (loggedIn: boolean) => {
+      $('#sp-login-state').textContent = loggedIn ? '✓ Logged in to Spotify — full songs' : 'Not logged in — the player plays 30-second previews.';
+      $('#sp-login').style.display = loggedIn ? 'none' : '';
+      $('#sp-logout').style.display = loggedIn ? '' : 'none';
+    };
+    const reload = (r: { loggedIn: boolean }) => {
+      show(r.loggedIn);
+      // Reload the player so it picks up the login
+      if (this.current && this.s.musicMode === 'spotify') this.embed(this.current);
+    };
+    void SpotifyLogin.status().then((r) => show(r.loggedIn)).catch(() => (row.style.display = 'none'));
+    void SpotifyLogin.addListener('loginFinished', reload);
+    $('#sp-login').onclick = () => void SpotifyLogin.open().catch(() => {});
+    $('#sp-logout').onclick = () => void SpotifyLogin.logout().then(reload);
   }
 
   /** Switch between the Spotify player and music videos (only one plays at a time). */
@@ -670,7 +710,7 @@ export class UI {
   private refreshMusicTabs() {
     for (const b of $$('[data-mtab]')) b.classList.toggle('on', b.dataset.mtab === this.s.musicMode);
     for (const p of $$('[data-pane]')) p.style.display = p.dataset.pane === this.s.musicMode ? '' : 'none';
-    $('#mv-keyhint').style.display = this.s.youtubeKey ? 'none' : '';
+    $('#mv-keyhint').style.display = this.s.youtubeKey || BUILTIN_YT_KEY ? 'none' : '';
   }
 
   private embed(ref: SpotifyRef) {
@@ -729,7 +769,7 @@ export class UI {
 
   private bindVideos() {
     const v = this.videos;
-    v.apiKey = this.s.youtubeKey;
+    v.apiKey = this.s.youtubeKey || BUILTIN_YT_KEY;
     v.prefer = this.s.prefer;
     v.onChange = () => this.refreshVideos();
     $('#mv-prev').onclick = () => v.previous();
@@ -871,9 +911,10 @@ export class UI {
     this.game.engine.volume = this.s.volume;
     const key = $<HTMLInputElement>('#yt-key');
     key.value = this.s.youtubeKey;
+    if (BUILTIN_YT_KEY) key.placeholder = 'Built-in key in use (paste your own to replace it)';
     key.onchange = () => {
       this.s.youtubeKey = key.value.trim();
-      this.videos.apiKey = this.s.youtubeKey;
+      this.videos.apiKey = this.s.youtubeKey || BUILTIN_YT_KEY;
       this.save();
       this.refreshMusicTabs();
     };

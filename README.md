@@ -35,12 +35,13 @@ A relaxing driving game for Android. Pick a car and cruise an endless, generated
 - Tap 📺 to jump into the driver's seat: the video plays on the car's dashboard screen. In the other cameras it shows as a small picture in the corner (can be turned off).
 - ⏮ ⏯ ⏭, **🔁 Other video** if it picked the wrong one, or paste your own YouTube link for a song — your choices are remembered.
 - You can also paste a YouTube playlist or video link directly.
-- Finding videos automatically uses the official YouTube Data API and needs a **free API key** of your own: go to console.cloud.google.com → create a project → enable *YouTube Data API v3* → Credentials → Create API key, then paste it in ⚙️ Settings → Music videos. That gives about 100 new songs a day; songs you've played before are remembered and don't count. Without a key, YouTube links still work.
+- Finding videos automatically uses the official YouTube Data API. The app can have a key built in at build time (`VITE_YOUTUBE_KEY` in a git-ignored `.env.local`, or the `YOUTUBE_API_KEY` repository secret for GitHub Actions builds), or you can paste a **free API key** of your own: go to console.cloud.google.com → create a project → enable *YouTube Data API v3* → Credentials → Create API key, then paste it in ⚙️ Settings → Music videos. That gives about 100 new songs a day; songs you've played before are remembered and don't count. Without a key, YouTube links still work.
 - Some videos aren't allowed to play outside YouTube; the game then tries the next-best video.
 
 **Music (Spotify player)**
 - Tap 🎵, paste a Spotify link (playlist, album, track, artist or podcast) and press Play. Your recent playlists are remembered.
-- The built-in Spotify player plays previews unless you're logged in to Spotify inside it. For full songs, tap **Open in Spotify app**, start the music there, and come back: it keeps playing while you drive.
+- Tap **Log in to Spotify** in the music panel (in the app) to log in once; the player then plays full songs instead of 30-second previews. Use email and password or "Log in without password" (Google/Facebook sign-in doesn't work inside apps). The player's own "Log in" button opens the same in-app login.
+- Or tap **Open in Spotify app**, start the music there, and come back: it keeps playing while you drive.
 - How to get the link: in Spotify open the playlist → ⋯ → Share → Copy link.
 
 **Quick settings**

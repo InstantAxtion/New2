@@ -209,3 +209,7 @@ details.fix summary { cursor: pointer; margin-bottom: 6px; }
 body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 1;
   background: radial-gradient(ellipse at center, rgba(0,0,0,0) 60%, rgba(0,0,0,.28) 100%); }
 body.zen .nowbar { opacity: 0; pointer-events: none; }
+
+.login-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: rgba(30,215,96,.08); border: 1px solid rgba(30,215,96,.3);
+  border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; font-size: 13px; color: var(--muted); }
+.login-row span { flex: 1 1 160px; }
