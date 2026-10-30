@@ -172,7 +172,7 @@ export class ChunkManager {
   private spans = new Map<number, { start: number; end: number; len: number } | null>();
 
   /** The whole bridge that z is on (its start, end and length), if any. */
-  private bridgeSpan(z: number) {
+  bridgeSpan(z: number) {
     const w = this.world;
     if (w.bridge(z) < 0.3) return null;
     let a = z, b = z;

@@ -553,6 +553,16 @@ export class Life {
     this.flyCentre.set(1e9, 0, 0);
   }
 
+  /** What's out there right now (for the passport). */
+  sightings(z: number) {
+    return {
+      deer: !!this.crossing && Math.abs(this.crossing.z - z) < 150,
+      dolphins: !!this.podState && this.pod.some((g) => g.visible),
+      whale: !!this.whaleState && this.whaleG.visible,
+      balloons: this.balloons.some((b) => b.active),
+    };
+  }
+
   /** How far ahead a deer is on the road (for auto-drive to stop), or null. */
   stopIn(z: number): number | null {
     const c = this.crossing;

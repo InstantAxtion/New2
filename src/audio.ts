@@ -66,6 +66,8 @@ export class EngineSound {
   volume = 0.5;
   /** 1 = full, lower while music plays. */
   duck = 1;
+  /** Mixer level for the world around you (ambience, animals, rain, tyres). */
+  world = 1;
   /** Inside the cabin with the windows shut: outside sounds are muffled. */
   sealed = false;
   private profile: Profile = PROFILES.i4;
@@ -344,7 +346,7 @@ export class EngineSound {
     if (!ctx) return;
     const t0 = ctx.currentTime;
     const out = ctx.createGain();
-    out.gain.value = Math.max(this.volume, 0.3) * this.duck * level;
+    out.gain.value = Math.max(this.volume, 0.3) * this.duck * level * this.world;
     out.connect(this.cabin);
     const note = (type: OscillatorType, f0: number, f1: number, t: number, dur: number, peak: number, vib = 0) => {
       const o = ctx.createOscillator();
@@ -463,7 +465,7 @@ export class EngineSound {
     this.tyres.filter.Q.value = crunch ? 0.6 : this.wet > 0.3 ? 0.4 : 1.2;
     this.tyres.gain.gain.setTargetAtTime((running ? 1 : 0) * Math.max(this.volume, 0.25) * roll * (0.05 + crunch * 0.12 + this.wet * 0.08) * (this.sealed ? 0.6 : 1), t, 0.2);
     // Rain on the roof: louder inside, with the odd heavier drop
-    this.roof.gain.setTargetAtTime(this.roofRain * (this.sealed ? 0.12 : 0.04) * Math.max(this.volume, 0.3), t, 0.4);
+    this.roof.gain.setTargetAtTime(this.roofRain * (this.sealed ? 0.12 : 0.04) * Math.max(this.volume, 0.3) * this.world, t, 0.4);
     this.roofTimer -= dt;
     if (this.roofRain > 0.1 && this.roofTimer <= 0) {
       this.roofTimer = 0.03 + Math.random() * 0.2 / this.roofRain;
@@ -477,7 +479,7 @@ export class EngineSound {
 
     // The world around you
     if (mix) {
-      const a = (running || true ? 1 : 0) * Math.max(this.volume, 0.25) * this.duck;
+      const a = Math.max(this.volume, 0.25) * this.duck * this.world;
       const set = (k: keyof AmbientMix, level: number) => this.amb[k].gain.setTargetAtTime(mix[k] * level * a, t, 0.8);
       set('waves', 0.35);
       set('insects', 0.04);

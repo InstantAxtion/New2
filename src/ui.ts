@@ -15,7 +15,9 @@ import { MusicVideos } from './music';
 import { fetchSongs } from './tracks';
 import { parseYouTube } from './youtube';
 import { Radio, STATIONS } from './radio';
+import { PodcastPlayer, loadEpisodes, searchShows } from './podcasts';
 import { fetchLyrics, lineAt, type Line } from './lyrics';
+import { STAMPS } from './stats';
 
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
@@ -43,6 +45,15 @@ const REGION_LINES: Partial<Record<BiomeId, string>> = {
   rainforest: 'Mist, ferns and birdsong', lakes: 'Bridges over still water', canyon: 'Red rock and deep gorges',
   blossom: 'Petals on the breeze',
 };
+
+/** A passport stamp's icon and name. */
+function stampLabel(key: string): { icon: string; name: string } | null {
+  if (key.startsWith('region:')) {
+    const b = BIOMES[key.slice(7) as BiomeId];
+    return b ? { icon: b.emoji, name: b.name } : null;
+  }
+  return STAMPS.find((x) => x.key === key) ?? null;
+}
 
 const STYLE_LABEL: Record<Settings['driveStyle'], string> = { relaxed: '🌿 Relaxed', normal: '🚗 Normal', sporty: '🏁 Sporty' };
 
@@ -78,6 +89,7 @@ export class UI {
     this.bindMusic();
     this.bindVideos();
     this.bindRadio();
+    this.bindPodcasts();
     this.bindSettings();
     this.applyOrientation();
     game.videos = this.videos;
@@ -89,6 +101,10 @@ export class UI {
       $('#region').textContent = `${b.emoji} ${b.name}`;
       if (game.phase === 'drive') this.regionCard(`${b.emoji} ${b.name}`, REGION_LINES[b.id] ?? '');
     };
+    game.onStamp = (key) => {
+      const label = stampLabel(key);
+      if (label) this.toast(`New passport stamp<b>${label.icon} ${label.name}</b>`);
+    };
     game.onRefuel = (state) => {
       const ev = game.vehicle.spec.engine === 'ev';
       if (state === 'start') this.toast(ev ? 'Charging<b>⚡ Plugged in</b>' : 'Filling up<b>⛽ At the pump</b>');
@@ -99,7 +115,10 @@ export class UI {
     requestAnimationFrame(() => this.frameGarage());
     if (Capacitor.isNativePlatform()) {
       void App.addListener('backButton', () => this.back());
-      void App.addListener('pause', () => game.engine.suspend());
+      void App.addListener('pause', () => {
+        game.engine.suspend();
+        game.stats.endJourney();
+      });
       void App.addListener('resume', () => game.phase === 'drive' && game.engine.start());
     }
   }
@@ -242,6 +261,7 @@ export class UI {
     <button class="tab" data-mtab="spotify">🎧 Spotify player</button>
     <button class="tab" data-mtab="videos">📺 Music videos</button>
     <button class="tab" data-mtab="radio">📻 Radio</button>
+    <button class="tab" data-mtab="podcasts">🎙️ Podcasts</button>
   </div>
   <div class="sheet-body">
     <div class="row"><input id="sp-input" type="url" inputmode="url" placeholder="Paste a Spotify or YouTube link" autocomplete="off" />
@@ -257,6 +277,22 @@ export class UI {
         <button class="ghost small" id="sp-app" disabled>Open in Spotify app ↗</button></div>
       <div id="sp-player"><p class="hint">In Spotify, open a playlist → ⋯ → Share → <b>Copy link</b>, then paste it here.</p></div>
       <p class="hint">Log in once and the player plays full songs (Spotify may limit free accounts to shuffle). Use your Spotify email and password, or "Log in without password" — Google and Facebook buttons don't work inside apps. You can also tap <b>Open in Spotify app</b> and come back (the music keeps playing while you drive), or switch to <b>📺 Music videos</b>.</p>
+    </div>
+    <div class="mpane" data-pane="podcasts">
+      <div class="row"><input id="pc-q" type="search" placeholder="Search podcasts" autocomplete="off" /><button class="go small" id="pc-go">Search</button></div>
+      <div class="now-card" id="pc-now" style="display:none">
+        <div class="now-song" id="pc-title"></div>
+        <div class="now-video" id="pc-show"></div>
+        <div class="now-status" id="pc-status"></div>
+        <input type="range" id="pc-seek" min="0" max="1000" value="0" />
+        <div class="row controls">
+          <button class="icon" id="pc-back" aria-label="Back 15 seconds">⏪</button>
+          <button class="icon" id="pc-toggle" aria-label="Play or pause">⏯</button>
+          <button class="icon" id="pc-fwd" aria-label="Forward 30 seconds">⏩</button>
+          <button class="chip" id="pc-rate">1×</button>
+        </div>
+      </div>
+      <div id="pc-list"><p class="hint">Search for a show, then pick an episode. Episodes stream while you drive.</p></div>
     </div>
     <div class="mpane" data-pane="radio">
       <p class="now-status" id="rd-status"></p>
@@ -364,8 +400,10 @@ export class UI {
     <h3>Auto-drive style</h3>
     <div class="chips" data-set="driveStyle"><button class="chip" data-v="relaxed">🌿 Relaxed</button><button class="chip" data-v="normal">🚗 Normal</button><button class="chip" data-v="sporty">🏁 Sporty</button></div>
     <div class="chips" data-set="clouds"><button class="chip" data-v="true">☁️ Clouds</button><button class="chip" data-v="false">Clear skies</button></div>
-    <h3>Engine sound</h3>
-    <input type="range" id="volume" min="0" max="1" step="0.05" />
+    <h3>Sound mixer</h3>
+    <label class="field">🚗 Engine<input type="range" id="volume" min="0" max="1" step="0.05" /></label>
+    <label class="field">🌲 World sounds<input type="range" id="vol-world" min="0" max="1" step="0.05" /></label>
+    <label class="field">🎵 Music &amp; podcasts<input type="range" id="vol-music" min="0" max="1" step="0.05" /></label>
     <h3>Music videos</h3>
     <div class="chips" data-set="prefer"><button class="chip" data-v="video">🎬 Prefer music videos</button><button class="chip" data-v="lyrics">📝 Prefer lyric videos</button></div>
     <div class="chips" data-set="pip"><button class="chip" data-v="true">Small video in other cameras</button><button class="chip" data-v="false">Only on the car screen</button></div>
@@ -964,7 +1002,44 @@ export class UI {
       ${regions.map(([id, m]) => `<div class="stat"><span>${BIOMES[id as BiomeId].emoji} ${BIOMES[id as BiomeId].name}</span><i><b style="width:${Math.round(((m ?? 0) / max) * 100)}%"></b></i><em>${dist(m ?? 0)}</em></div>`).join('') || '<p class="hint">Go for a drive!</p>'}
       <h3>By car</h3>
       ${cars.map(([id, m]) => `<div class="stat"><span>${CARS.find((c) => c.id === id)?.name ?? id}</span><em>${dist(m)}</em></div>`).join('')}
+      <h3>🛂 Passport <small>${Object.keys(d.stamps).length} of ${BIOME_IDS.length + STAMPS.length} stamps</small></h3>
+      <div class="passport">${[...BIOME_IDS.map((id) => ({ key: 'region:' + id, icon: BIOMES[id].emoji, name: BIOMES[id].name })), ...STAMPS]
+        .map((x) => {
+          const t = d.stamps[x.key];
+          return `<div class="stamp${t ? ' got' : ''}"><i>${x.icon}</i><span>${esc(x.name)}</span><small>${t ? new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—'}</small></div>`;
+        })
+        .join('')}</div>
+      <h3>📔 Journey log</h3>
+      ${d.journeys.length ? d.journeys.map((j, i) => `<div class="journey"><canvas width="120" height="80" data-jmap="${i}"></canvas><div>
+        <b>${new Date(j.start).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} · ${new Date(j.start).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</b>
+        <span>${dist(j.m)} · ${hrs(j.s)} · ${CARS.find((c) => c.id === j.car)?.name ?? j.car}</span>
+        <span class="jregions">${j.regions.map((r) => BIOMES[r]?.emoji ?? '').join(' → ')}</span></div></div>`).join('') : '<p class="hint">Your trips are logged here: route, distance, time and the regions you passed through.</p>'}
       <button class="ghost small" id="stats-reset">Reset stats</button>`;
+    // Little route maps for the journey log
+    for (const c of $$<HTMLCanvasElement>('[data-jmap]')) {
+      const j = d.journeys[Number(c.dataset.jmap)];
+      const g = c.getContext('2d')!;
+      g.fillStyle = '#16203a';
+      g.fillRect(0, 0, 120, 80);
+      if (j.path.length < 2) continue;
+      const xs = j.path.map((p) => p[0]), zs = j.path.map((p) => p[1]);
+      const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
+      const sc = Math.min(100 / Math.max(1, maxZ - minZ), 60 / Math.max(1, maxX - minX));
+      g.strokeStyle = '#f0b44c';
+      g.lineWidth = 2.5;
+      g.lineJoin = 'round';
+      g.beginPath();
+      j.path.forEach(([x, z], k) => {
+        const px = 10 + (z - minZ) * sc, py = 40 - (x - (minX + maxX) / 2) * sc;
+        if (k) g.lineTo(px, py);
+        else g.moveTo(px, py);
+      });
+      g.stroke();
+      g.fillStyle = '#3ddc84';
+      g.beginPath();
+      g.arc(10, 40 - (j.path[0][0] - (minX + maxX) / 2) * sc, 3.5, 0, Math.PI * 2);
+      g.fill();
+    }
     $('#stats-reset').onclick = () => {
       if (confirm('Reset all your trip stats?')) {
         st.reset();
@@ -1051,9 +1126,9 @@ export class UI {
     const h = g.hour;
     $('#clock').textContent = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
     // Music playing: quieter engine and world, and say what's on
-    const musicOn = this.videos.active || this.radio.playing || (this.s.musicMode === 'spotify' && !!$('#sp-player iframe'));
+    const musicOn = this.videos.active || this.radio.playing || this.podcasts.playing || (this.s.musicMode === 'spotify' && !!$('#sp-player iframe'));
     g.engine.duck = musicOn ? 0.45 : 1;
-    g.nowPlaying = this.radio.playing && this.radio.station ? `📻 ${this.radio.station.name}` : this.s.musicMode === 'spotify' && musicOn ? '🎧 Spotify' : '';
+    g.nowPlaying = this.podcasts.playing && this.podcasts.episode ? `🎙️ ${this.podcasts.episode.title}` : this.radio.playing && this.radio.station ? `📻 ${this.radio.station.name}` : this.s.musicMode === 'spotify' && musicOn ? '🎧 Spotify' : '';
     const tl = $('.hud-tl').getBoundingClientRect();
     g.pipY = Math.round(tl.bottom + 8);
     const np = this.videos.now();
@@ -1246,12 +1321,13 @@ export class UI {
     this.refreshMusicTabs();
     if (!changed) return;
     if (mode !== 'radio') this.radio.stop();
+    if (mode !== 'podcasts') this.podcasts.stop();
     if (mode !== 'videos') this.videos.stop();
     if (mode === 'videos') {
       $('#sp-player').innerHTML = '<p class="hint">Spotify is paused while music videos play.</p>';
       if (autoplay && this.videos.songs.length && !this.videos.active) void this.videos.playIndex(Math.max(0, this.videos.index));
-    } else if (mode === 'radio') {
-      $('#sp-player').innerHTML = '<p class="hint">Spotify is paused while the radio plays.</p>';
+    } else if (mode === 'radio' || mode === 'podcasts') {
+      $('#sp-player').innerHTML = `<p class="hint">Spotify is paused while the ${mode === 'radio' ? 'radio' : 'podcast'} plays.</p>`;
     } else if (this.current) this.embed(this.current);
   }
 
@@ -1313,13 +1389,97 @@ export class UI {
     }
   }
 
+  /** Apply the sound mixer levels. */
+  private applyMix() {
+    this.game.engine.world = this.s.volWorld;
+    const m = this.s.volMusic * this.sleepVolNow();
+    this.radio.setVolume(m);
+    this.podcasts.setVolume(m);
+    this.videos.screen.setVolume(m * 100);
+  }
+
+  private sleepVolNow() {
+    return this.sleepVol;
+  }
+
+  // ---------- Podcasts ----------
+
+  readonly podcasts = new PodcastPlayer();
+
+  private bindPodcasts() {
+    const pc = this.podcasts;
+    const list = $('#pc-list');
+    const fmt = (s: number) => (s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
+    let seeking = false;
+    pc.onChange = () => {
+      const on = !!pc.episode;
+      $('#pc-now').style.display = on ? '' : 'none';
+      if (!on) return;
+      $('#pc-title').textContent = pc.episode!.title;
+      $('#pc-show').textContent = pc.show?.name ?? '';
+      const { t, d } = pc.time;
+      $('#pc-status').textContent = pc.error || `${pc.playing ? '▶' : '⏸'} ${fmt(t)}${d ? ' / ' + fmt(d) : ''}`;
+      if (!seeking && d) $<HTMLInputElement>('#pc-seek').value = String(Math.round((t / d) * 1000));
+      $('#pc-rate').textContent = `${pc.rate}×`;
+    };
+    const search = async () => {
+      const q = $<HTMLInputElement>('#pc-q').value.trim();
+      if (!q) return;
+      list.innerHTML = '<p class="hint">Searching…</p>';
+      try {
+        const shows = await searchShows(q);
+        if (!shows.length) {
+          list.innerHTML = '<p class="hint">No shows found.</p>';
+          return;
+        }
+        list.innerHTML = shows.map((sh, i) => `<button class="song show" data-show="${i}"><img src="${esc(sh.art)}" alt="" /><b>${esc(sh.name)}</b><span>${esc(sh.author)}</span></button>`).join('');
+        for (const b of $$('[data-show]', list)) {
+          b.onclick = async () => {
+            const sh = shows[Number(b.dataset.show)];
+            list.innerHTML = `<p class="hint">Loading ${esc(sh.name)}…</p>`;
+            try {
+              const eps = await loadEpisodes(sh);
+              list.innerHTML = `<button class="ghost small" id="pc-backlist">← Results</button><h3>${esc(sh.name)}</h3>` +
+                eps.map((e, i) => `<button class="song" data-ep="${i}"><b>${esc(e.title)}</b><span>${e.date}${e.duration ? ' · ' + fmt(e.duration) : ''}</span></button>`).join('');
+              $('#pc-backlist', list).onclick = () => void search();
+              for (const eb of $$('[data-ep]', list)) {
+                eb.onclick = () => {
+                  this.setMusicMode('podcasts', false);
+                  pc.play(sh, eps[Number(eb.dataset.ep)]);
+                  this.applyMix();
+                };
+              }
+            } catch (e) {
+              list.innerHTML = `<p class="error">Couldn't load the episodes (${esc((e as Error).message)}).</p>`;
+            }
+          };
+        }
+      } catch (e) {
+        list.innerHTML = `<p class="error">Couldn't search podcasts (${esc((e as Error).message)}).</p>`;
+      }
+    };
+    $('#pc-go').onclick = () => void search();
+    $<HTMLInputElement>('#pc-q').onkeydown = (e) => e.key === 'Enter' && void search();
+    $('#pc-toggle').onclick = () => pc.toggle();
+    $('#pc-back').onclick = () => pc.skip(-15);
+    $('#pc-fwd').onclick = () => pc.skip(30);
+    $('#pc-rate').onclick = () => pc.setRate(pc.rate >= 2 ? 0.8 : pc.rate >= 1.5 ? 2 : pc.rate >= 1.2 ? 1.5 : pc.rate >= 1 ? 1.2 : 1);
+    const seek = $<HTMLInputElement>('#pc-seek');
+    seek.oninput = () => (seeking = true);
+    seek.onchange = () => {
+      seeking = false;
+      const { t, d } = pc.time;
+      if (d) pc.skip((Number(seek.value) / 1000) * d - t);
+    };
+  }
+
   // ---------- Radio ----------
 
   readonly radio = new Radio();
 
   private bindRadio() {
     const rd = this.radio;
-    this.radioVolume = (v) => rd.setVolume(v);
+    this.radioVolume = () => this.applyMix();
     this.radioStop = () => rd.stop();
     rd.onChange = () => {
       $('#rd-status').textContent = rd.error || (rd.station ? (rd.playing ? `▶ ${rd.station.name}` : `Tuning in to ${rd.station.name}…`) : '');
@@ -1508,6 +1668,16 @@ export class UI {
       this.save();
     };
     this.game.engine.volume = this.s.volume;
+    for (const [id, k] of [['#vol-world', 'volWorld'], ['#vol-music', 'volMusic']] as const) {
+      const el = $<HTMLInputElement>(id);
+      el.value = String(this.s[k]);
+      el.oninput = () => {
+        this.s[k] = Number(el.value);
+        this.applyMix();
+        this.save();
+      };
+    }
+    this.applyMix();
     const key = $<HTMLInputElement>('#yt-key');
     key.value = this.s.youtubeKey;
     if (BUILTIN_YT_KEY) key.placeholder = 'Built-in key in use (paste your own to replace it)';

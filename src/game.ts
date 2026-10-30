@@ -398,6 +398,7 @@ export class Game {
   }
 
   toGarage() {
+    this.stats.endJourney();
     this.phase = 'garage';
     this.vehicle.v = 0;
   }
@@ -519,6 +520,7 @@ export class Game {
         this.region = b;
         this.onRegion(b);
       }
+      if (this.phase === 'drive') this.passport(v);
       let r = 0, g = 0, bl = 0, a = 0;
       for (const { biome, w } of this.world.weights(v.z)) {
         r += biome.haze[0] * w; g += biome.haze[1] * w; bl += biome.haze[2] * w; a += biome.haze[3] * w;
@@ -735,6 +737,34 @@ export class Game {
   }
 
   /** Auto-drive: keep the lane, follow traffic, overtake slow vehicles when it's safe. */
+  /** Called with a new passport stamp (its key). */
+  onStamp: (key: string) => void = () => {};
+
+  /** Follow the journey and stamp the passport with what you see along the way. */
+  private passport(v: Vehicle) {
+    const st = this.stats, w = this.world;
+    if (this.region) st.track(v.x, v.z, this.region.id, v.spec.id, Math.abs(v.v));
+    const stamp = (key: string) => st.stamp(key) && this.onStamp(key);
+    if (this.region) stamp('region:' + this.region.id);
+    for (const lm of w.landmarks(v.z - 60, v.z + 260)) stamp('landmark:' + lm.kind);
+    const stop = w.stopNear(v.z, 0);
+    if (stop && stop.kind !== 'fuel') stamp('stop:' + stop.kind);
+    if (this.refuelling) stamp('stop:fuel');
+    const span = w.bridge(v.z) > 0.5 ? this.chunks.bridgeSpan(v.z) : null;
+    if (span && span.len > 280) stamp('sight:bridge');
+    if (w.tunnelAt(v.z) > 0.6) stamp('sight:tunnel');
+    if (w.oldTownAt(v.z) > 0.5) stamp('sight:oldtown');
+    if (w.highwayAt(v.z) > 0.6) stamp('sight:highway');
+    if (this.region?.id === 'seaside' && w.roadY(v.z) > 20) stamp('sight:cliffs');
+    if (this.sky.aurora * this.sky.night > 0.5 && this.weather.look.cover < 0.4) stamp('sky:aurora');
+    if (this.sky.rainbow > 0.3) stamp('sky:rainbow');
+    const seen = this.life.sightings(v.z);
+    if (seen.deer) stamp('life:deer');
+    if (seen.dolphins) stamp('life:dolphins');
+    if (seen.whale) stamp('life:whale');
+    if (seen.balloons) stamp('life:balloons');
+  }
+
   /** A full tank lasts about 75 miles; stop at a fuel station (or charger) to fill up. */
   private updateFuel(dt: number) {
     const v = this.vehicle;

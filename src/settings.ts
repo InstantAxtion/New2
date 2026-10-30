@@ -22,7 +22,7 @@ export interface Settings {
   traffic: boolean;
   cruiseKmh: number;
   /** What the music panel plays. */
-  musicMode: 'spotify' | 'videos' | 'radio';
+  musicMode: 'spotify' | 'videos' | 'radio' | 'podcasts';
   /** The player's own YouTube Data API key (for finding music videos). */
   youtubeKey: string;
   prefer: 'video' | 'lyrics';
@@ -55,6 +55,9 @@ export interface Settings {
   reduceMotion: boolean;
   /** Head-up display on the windscreen (cars that have one). */
   hud: boolean;
+  /** Sound mixer: the world around you, and music/podcasts (engine is `volume`). */
+  volWorld: number;
+  volMusic: number;
 }
 
 export interface SavedDrive {
@@ -116,6 +119,8 @@ export const DEFAULTS: Settings = {
   season: 'regions',
   reduceMotion: false,
   hud: true,
+  volWorld: 1,
+  volMusic: 1,
 };
 
 export function loadSettings(): Settings {

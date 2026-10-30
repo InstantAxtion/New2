@@ -130,7 +130,7 @@ body[data-screen="pause"] .manual, body[data-screen="pause"] .auto, body[data-sc
 .sheet-head h2 { font-size: 22px; }
 .sheet-body { overflow-y: auto; flex: 1; touch-action: pan-y; padding-bottom: 20px; }
 .row { display: flex; gap: 8px; margin-bottom: 8px; }
-input[type=url] { flex: 1; min-width: 0; background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 12px; color: var(--text);
+input[type=url], input[type=search] { flex: 1; min-width: 0; background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 12px; color: var(--text);
   font: inherit; font-size: 15px; padding: 9px 12px; user-select: text; -webkit-user-select: text; touch-action: auto; }
 input[type=range] { width: 100%; accent-color: var(--accent); touch-action: auto; }
 .error { color: var(--danger); font-size: 13px; min-height: 0; margin-bottom: 6px; }
@@ -308,3 +308,22 @@ body.minimal-hud .speedo b { font-size: 40px; }
   78% { opacity: 1; }
   100% { opacity: 0; transform: translateY(-6px); }
 }
+
+/* Passport and journey log */
+.passport { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.stamp { border: 1.5px dashed var(--line); border-radius: 12px; padding: 8px 6px; text-align: center; opacity: .45; filter: grayscale(1); }
+.stamp.got { opacity: 1; filter: none; border-style: solid; border-color: rgba(240,180,76,.6); background: rgba(240,180,76,.08); transform: rotate(-1.5deg); }
+.stamp:nth-child(2n).got { transform: rotate(1.5deg); }
+.stamp i { display: block; font-style: normal; font-size: 26px; }
+.stamp span { display: block; font-size: 11px; line-height: 1.25; margin-top: 3px; }
+.stamp small { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+.journey { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.journey canvas { border-radius: 8px; flex: none; }
+.journey b { display: block; font-size: 14px; }
+.journey span { display: block; font-size: 12px; color: var(--muted); }
+.journey .jregions { font-size: 15px; color: var(--text); margin-top: 2px; }
+
+/* Podcasts */
+.song.show { display: grid; grid-template-columns: 48px 1fr; grid-template-rows: auto auto; column-gap: 10px; text-align: left; align-items: center; }
+.song.show img { grid-row: span 2; width: 48px; height: 48px; border-radius: 8px; object-fit: cover; }
+#pc-seek { width: 100%; }
