@@ -55,6 +55,17 @@ function stampLabel(key: string): { icon: string; name: string } | null {
   return STAMPS.find((x) => x.key === key) ?? null;
 }
 
+/** Car picker groups. */
+const CAR_CATS: { id: string; label: string; cars: string[] }[] = [
+  { id: 'all', label: 'All', cars: [] },
+  { id: 'everyday', label: '🚗 Everyday', cars: ['hatch', 'ev', 'wagon', 'bubble'] },
+  { id: 'sport', label: '🏁 Sporty', cars: ['gt', 'roadster', 'muscle', 'spider'] },
+  { id: 'super', label: '🏎️ Super', cars: ['super', 'veloce', 'hyper'] },
+  { id: 'classic', label: '🕰️ Classic', cars: ['classic', 'starliner', 'spider', 'bubble'] },
+  { id: 'adventure', label: '🏕️ Adventure', cars: ['suv', 'pickup', 'offroad', 'nomad', 'van', 'wanderer'] },
+  { id: 'bike', label: '🏍️ Bike', cars: ['bike'] },
+];
+
 const STYLE_LABEL: Record<Settings['driveStyle'], string> = { relaxed: '🌿 Relaxed', normal: '🚗 Normal', sporty: '🏁 Sporty' };
 
 const TIMES: { id: TimeMode; label: string }[] = [
@@ -128,8 +139,8 @@ export class UI {
   }
 
   private template() {
-    const themeChips = BIOME_IDS.map(
-      (id) => `<button class="chip" data-theme="${id}">${BIOMES[id].emoji} ${BIOMES[id].name}</button>`,
+    const regionTiles = BIOME_IDS.map(
+      (id) => `<button class="rtile" data-theme="${id}"><i>${BIOMES[id].emoji}</i><span>${BIOMES[id].name}</span></button>`,
     ).join('');
     const timeChips = TIMES.map((t) => `<button class="chip" data-time="${t.id}">${t.label}</button>`).join('');
     const swatches = COLORS.map((c) => `<button class="swatch" data-color="${c}" style="background:${hex(c)}" aria-label="colour"></button>`).join('');
@@ -140,32 +151,45 @@ export class UI {
     <button class="icon" data-open="music" aria-label="Music">🎵</button>
     <button class="icon" data-open="settings" aria-label="Settings">⚙️</button></div></header>
   <div class="garage-body">
-    <div class="card car-card">
-      <div class="car-pick">
-        <button class="icon big" id="car-prev" aria-label="Previous car">‹</button>
-        <div class="car-name"><h2 id="car-name"></h2><p id="car-blurb"></p></div>
-        <button class="icon big" id="car-next" aria-label="Next car">›</button>
+    <div class="card gpanel">
+      <nav class="gtabs" role="tablist">
+        <button class="gtab" data-tab="car"><i>🚗</i><span>Car</span><small id="sum-car"></small></button>
+        <button class="gtab" data-tab="world"><i>🗺️</i><span>Regions</span><small id="sum-world"></small></button>
+        <button class="gtab" data-tab="sky"><i>🌤️</i><span>Sky</span><small id="sum-sky"></small></button>
+        <button class="gtab" data-tab="road"><i>🚦</i><span>Road</span><small id="sum-road"></small></button>
+      </nav>
+      <div class="gpage" data-page="car">
+        <div class="car-head">
+          <div class="car-name"><h2 id="car-name"></h2><p id="car-blurb"></p></div>
+          <div class="stats" id="car-stats"></div>
+        </div>
+        <div class="chips hscroll" id="car-cats">${CAR_CATS.map((c) => `<button class="chip" data-cat="${c.id}">${c.label}</button>`).join('')}</div>
+        <div class="car-strip hscroll" id="car-strip"></div>
+        <div class="paint-row"><div class="swatches hscroll">${swatches}</div>
+          <button class="ghost small custom-btn" data-open="custom">🎨 More</button></div>
       </div>
-      <div class="stats" id="car-stats"></div>
-      <div class="swatches">${swatches}</div>
-      <button class="ghost small wide-btn custom-btn" data-open="custom">🎨 Paint, wheels &amp; interior</button>
-    </div>
-    <div class="card world-card">
-      <div class="wc-scroll">
-      <h3>World <small>pick one or more · none = all</small></h3>
-      <div class="chips" id="themes"><button class="chip" data-theme="all">🌍 All</button>${themeChips}</div>
-      <h3>Time of day</h3>
-      <div class="chips" id="times">${timeChips}</div>
-      <h3>Weather</h3>
-      <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">🌨️💧 Sleet</button></div>
-      <h3>Traffic</h3>
-      <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
-      <h3>Auto-drive style</h3>
-      <div class="chips" data-set="driveStyle"><button class="chip" data-v="relaxed">🌿 Relaxed</button><button class="chip" data-v="normal">🚗 Normal</button><button class="chip" data-v="sporty">🏁 Sporty</button></div>
+      <div class="gpage" data-page="world">
+        <div class="ghead"><p class="hint">Tap to mix regions. None picked = all of them.</p>
+          <button class="chip" data-theme="all">🌍 All</button></div>
+        <div class="region-grid" id="themes">${regionTiles}</div>
+      </div>
+      <div class="gpage" data-page="sky">
+        <h3>Time of day</h3>
+        <div class="chips" id="times">${timeChips}</div>
+        <h3>Weather</h3>
+        <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">🌨️💧 Sleet</button></div>
+        <h3>Season</h3>
+        <div class="chips" data-set="season"><button class="chip" data-v="regions">🗺️ Each region's own</button><button class="chip" data-v="spring">🌱 Spring</button><button class="chip" data-v="summer">☀️ Summer</button><button class="chip" data-v="autumn">🍂 Autumn</button><button class="chip" data-v="winter">❄️ Winter</button></div>
+      </div>
+      <div class="gpage" data-page="road">
+        <h3>Traffic</h3>
+        <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
+        <h3>Auto-drive style</h3>
+        <div class="chips" data-set="driveStyle"><button class="chip" data-v="relaxed">🌿 Relaxed</button><button class="chip" data-v="normal">🚗 Normal</button><button class="chip" data-v="sporty">🏁 Sporty</button></div>
+        <h3>Where to</h3>
+        <div class="chips"><button class="chip" id="new-world">🎲 A brand new road</button><button class="chip" data-open="places">📍 Saved places</button></div>
       </div>
       <div class="go-row">
-        <button class="ghost icon-btn" id="new-world" aria-label="New road">🎲</button>
-        <button class="ghost icon-btn" data-open="places" aria-label="Places">📍</button>
         <button class="go alt" id="go-auto">🤖 Auto-drive</button>
         <button class="go" id="go">Drive ▶</button>
       </div>
@@ -427,16 +451,14 @@ export class UI {
   private frameGarage() {
     const w = window.innerWidth, h = window.innerHeight;
     const head = $('#garage .title').getBoundingClientRect();
-    const car = $('.car-card').getBoundingClientRect();
-    const world = $('.world-card').getBoundingClientRect();
+    const panel = $('.gpanel').getBoundingClientRect();
     const top = head.bottom;
     if (w > h) {
-      // Landscape: above the car card, left of the world card
-      const right = world.left;
-      const bottom = car.top;
-      this.game.rig.focus = { x: right / 2, y: (top + bottom) / 2, size: Math.min(right * 0.75, (bottom - top) * 1.5) };
+      // Landscape: left of the panel
+      const right = panel.left;
+      this.game.rig.focus = { x: right / 2, y: (top + h) / 2, size: Math.min(right * 0.75, (h - top) * 1.5) };
     } else {
-      const bottom = Math.min(car.top, world.top);
+      const bottom = panel.top;
       this.game.rig.focus = { x: w / 2, y: (top + bottom) / 2, size: Math.min(w * 0.75, (bottom - top) * 1.5) };
     }
   }
@@ -491,15 +513,14 @@ export class UI {
 
   private bindGarage() {
     const r = this.root;
-    const step = (d: number) => {
-      const i = CARS.findIndex((c) => c.id === this.s.car);
-      this.s.car = CARS[(i + d + CARS.length) % CARS.length].id;
-      this.game.setCar(this.s.car);
-      this.save();
-      this.refreshGarage();
-    };
-    $('#car-prev', r).onclick = () => step(-1);
-    $('#car-next', r).onclick = () => step(1);
+    for (const b of $$('[data-tab]', r)) b.onclick = () => this.garageTab(b.dataset.tab!);
+    for (const b of $$('[data-cat]', r)) {
+      b.onclick = () => {
+        this.carCat = b.dataset.cat!;
+        this.renderCarStrip();
+      };
+    }
+    this.garageTab(this.tab);
     for (const b of $$('[data-color]', r)) {
       b.onclick = () => {
         this.customise({ color: Number(b.dataset.color) });
@@ -737,6 +758,60 @@ export class UI {
     for (const b of $$('[data-openpart]')) b.classList.toggle('on', this.game.openState[b.dataset.openpart as 'door' | 'bonnet' | 'boot']);
   }
 
+  private tab = 'car';
+  private carCat = 'all';
+
+  private garageTab(id: string) {
+    this.tab = id;
+    for (const b of $$('[data-tab]')) b.classList.toggle('on', b.dataset.tab === id);
+    for (const p of $$('.gpage')) p.classList.toggle('on', p.dataset.page === id);
+    if (id === 'car') this.renderCarStrip();
+    requestAnimationFrame(() => this.frameGarage());
+  }
+
+  /** The car picker: a strip of little studio photos, filtered by group. */
+  private renderCarStrip() {
+    const cat = CAR_CATS.find((c) => c.id === this.carCat) ?? CAR_CATS[0];
+    for (const b of $$('[data-cat]')) b.classList.toggle('on', b.dataset.cat === cat.id);
+    const list = cat.cars.length ? CARS.filter((c) => cat.cars.includes(c.id)) : CARS;
+    const strip = $('#car-strip');
+    strip.innerHTML = list
+      .map((c) => `<button class="ctile${c.id === this.s.car ? ' on' : ''}" data-car="${c.id}"><img alt="" /><b>${esc(c.name)}</b><span>${this.speed(c.top)}</span></button>`)
+      .join('');
+    for (const b of $$('[data-car]', strip)) {
+      const spec = CARS.find((c) => c.id === b.dataset.car)!;
+      const img = $<HTMLImageElement>('img', b);
+      this.game.thumbs.get(spec, this.customOf(spec.id), (url) => (img.src = url));
+      b.onclick = () => {
+        if (this.s.car === spec.id) return;
+        this.s.car = spec.id;
+        this.game.setCar(spec.id);
+        this.save();
+        for (const t of $$('.ctile', strip)) t.classList.toggle('on', t === b);
+        this.refreshGarage();
+      };
+    }
+    const on = $('.ctile.on', strip);
+    if (on) strip.scrollLeft = on.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2;
+  }
+
+  private speed(kmh: number) {
+    return this.s.units === 'kmh' ? `${kmh} km/h` : `${Math.round(kmh / 1.609)} mph`;
+  }
+
+  /** One-line summaries under the garage tabs. */
+  private refreshSummaries() {
+    const spec = CARS.find((c) => c.id === this.s.car) ?? CARS[0];
+    $('#sum-car').textContent = spec.name;
+    const th = this.s.themes;
+    $('#sum-world').textContent = !th.length ? 'All' : th.length === 1 ? BIOMES[th[0]].name : `${th.length} picked`;
+    const time = TIMES.find((t) => t.id === this.s.time)?.label.replace(/^\S+\s/, '') ?? '';
+    const wx: Record<string, string> = { clear: 'Clear', rain: 'Rain', storm: 'Storm', snow: 'Snow', fog: 'Fog', hail: 'Hail', sleet: 'Sleet' };
+    $('#sum-sky').textContent = `${time} · ${wx[this.s.weather] ?? ''}`;
+    const d = this.game.traffic.density;
+    $('#sum-road').textContent = d < 0.01 ? 'No traffic' : d < 0.35 ? 'Quiet' : d < 0.7 ? 'Some traffic' : 'Busy';
+  }
+
   private refreshGarage() {
     const spec = CARS.find((c) => c.id === this.s.car) ?? CARS[0];
     $('#car-name').textContent = spec.name;
@@ -753,6 +828,8 @@ export class UI {
     }
     for (const b of $$('[data-time]')) b.classList.toggle('on', b.dataset.time === this.s.time);
     for (const b of $$('[data-mode]')) b.classList.toggle('on', (b.dataset.mode === 'auto') === this.s.auto);
+    this.refreshSummaries();
+    if (this.tab === 'car') this.renderCarStrip();
   }
 
   // ---------- HUD ----------
@@ -801,6 +878,7 @@ export class UI {
         if (!this.game.traffic.enabled) this.game.traffic.clear();
         this.save();
         this.refreshTraffic();
+        this.refreshSummaries();
       };
     }
     this.refreshTraffic();
@@ -1740,5 +1818,6 @@ export class UI {
       for (const b of $$('[data-v]', group)) b.classList.toggle('on', String(this.s[key]) === b.dataset.v);
     }
     $<HTMLInputElement>('#volume').value = String(this.s.volume);
+    this.refreshSummaries();
   }
 }

@@ -337,3 +337,66 @@ body.minimal-hud .speedo b { font-size: 40px; }
 .sheet-body .row { min-width: 0; }
 .sheet-body .row > * { min-width: 0; }
 .hint, .now-status, .now-song, .now-video, .song b, .song span { overflow-wrap: anywhere; }
+
+/* Garage panel: tabs for the car, regions, sky and road */
+.garage-body { justify-content: flex-end; align-items: stretch; }
+.gpanel { width: min(470px, 54vw); display: flex; flex-direction: column; min-height: 0; max-height: 100%; padding: 8px 10px 10px; }
+.gtabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: rgba(0,0,0,.25); border-radius: 12px; padding: 3px; flex-shrink: 0; }
+.gtab { background: none; border-radius: 9px; padding: 6px 4px 5px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 5px; align-items: center; text-align: left; min-width: 0; transition: background .15s; }
+.gtab i { font-style: normal; font-size: 18px; grid-row: span 2; }
+.gtab span { font-size: 13px; font-weight: 600; }
+.gtab small { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gtab.on { background: rgba(255,255,255,.14); box-shadow: inset 0 -2px 0 var(--accent); }
+.gtab.on small { color: var(--text); }
+.gpage { display: none; flex: 1; min-height: 0; overflow-y: auto; touch-action: pan-y; padding: 8px 2px 2px; }
+.gpage.on { display: block; }
+.gpage h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 10px 0 6px; font-weight: 600; }
+.gpage h3:first-child { margin-top: 2px; }
+.car-head { display: flex; gap: 12px; align-items: center; }
+.car-head .car-name { flex: 1; text-align: left; min-width: 0; }
+.car-head .car-name h2 { font-size: 20px; }
+.car-head .stats { flex: 1.1; margin: 0; gap: 3px; }
+.car-head .stat { grid-template-columns: 72px 1fr; font-size: 11px; }
+.car-head .stat i { height: 6px; }
+.hscroll { display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; touch-action: pan-x; scrollbar-width: none; scroll-snap-type: x proximity; }
+.hscroll::-webkit-scrollbar { display: none; }
+.hscroll > * { flex-shrink: 0; scroll-snap-align: start; }
+#car-cats { gap: 6px; margin: 10px 0 8px; }
+#car-cats .chip { white-space: nowrap; padding: 5px 11px; font-size: 13px; }
+.car-strip { gap: 8px; padding-bottom: 2px; }
+.ctile { width: 128px; background: rgba(255,255,255,.06); border: 1.5px solid var(--line); border-radius: 12px; padding: 0 0 6px; display: flex; flex-direction: column; align-items: stretch; text-align: left; overflow: hidden; transition: transform .1s, border-color .15s, background .15s; scroll-snap-align: center; }
+.ctile img { width: 100%; aspect-ratio: 240 / 140; display: block; background: radial-gradient(ellipse at 50% 70%, rgba(255,255,255,.12), transparent 70%); }
+.ctile img:not([src]) { visibility: visible; }
+.ctile b { font-size: 12.5px; font-weight: 600; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctile span { font-size: 11px; color: var(--muted); padding: 0 8px; }
+.ctile.on { border-color: var(--accent); background: rgba(240,180,76,.16); }
+.ctile:active, .rtile:active { transform: scale(.95); }
+.paint-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.paint-row .swatches { flex: 1; gap: 7px; padding: 4px 2px; justify-content: flex-start; flex-wrap: nowrap; }
+.paint-row .custom-btn { flex-shrink: 0; }
+.ghead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.ghead .hint { margin: 0; flex: 1; }
+.ghead .chip { flex-shrink: 0; white-space: nowrap; }
+.region-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.rtile { background: rgba(255,255,255,.06); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 4px 7px; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: transform .1s, background .15s; min-width: 0; }
+.rtile i { font-style: normal; font-size: 24px; line-height: 1.1; }
+.rtile span { font-size: 12px; line-height: 1.2; text-align: center; overflow-wrap: anywhere; }
+.rtile.on { background: rgba(240,180,76,.2); border-color: var(--accent); }
+.gpanel .go-row { margin-top: 8px; }
+.gpanel .go-row .go { flex: 1; padding: 12px 10px; }
+.go.alt { background: rgba(255,255,255,.14); color: var(--text); border: 1px solid var(--line); box-shadow: none; }
+@media (orientation: portrait) {
+  .gpanel { width: 100%; height: clamp(360px, 50vh, 460px); max-height: 62vh; flex: none; }
+  .garage-body { flex-direction: column; justify-content: flex-end; }
+}
+@media (max-height: 420px) {
+  .gtab small { display: none; }
+  .gtab { padding: 4px; }
+  .car-head .car-name h2 { font-size: 17px; }
+  .ctile { width: 112px; }
+}
+@media (orientation: portrait) {
+  .gtab { grid-template-columns: 1fr; text-align: center; justify-items: center; padding: 5px 2px; }
+  .gtab i { grid-row: auto; font-size: 17px; }
+  .gtab small { max-width: 100%; }
+}

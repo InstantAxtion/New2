@@ -155,6 +155,9 @@ export class Vehicle {
     };
   }
 
+  /** Steering assist settles back into the right-hand lane (off while overtaking or on a highway). */
+  keepRight = true;
+
   /** Which lane the car is nearest to. */
   nearestLane(): number {
     const u = this.world.lateral(this.x, this.z);
@@ -167,7 +170,7 @@ export class Vehicle {
     const s = this.spec;
     let steerIn = c.steer;
     if (assist && Math.abs(steerIn) < 0.05 && !this.offroad && Math.abs(this.v) > 2) {
-      steerIn = this.pursuit(this.nearestLane()) * 0.9;
+      steerIn = this.pursuit(this.keepRight ? 1 : this.nearestLane()) * 0.9;
     }
     // Steering wheel follows the input smoothly
     const rate = this.spec.handling?.steer ?? 3.2;
@@ -208,7 +211,10 @@ export class Vehicle {
     const climb = (ny - this.y) / Math.max(Math.abs(ds), 1e-3);
     const u = w.lateral(nx, nz);
     // Walls: the sea, steep ground, the highway's central barrier
-    const barrier = w.highwayAt(nz) > 0.5 && Math.abs(u) < 0.6 && Math.abs(w.lateral(this.x, this.z)) >= 0.6;
+    const u0 = w.lateral(this.x, this.z);
+    // (a car caught on the wrong carriageway may always cross back over to its own side)
+    const wrongSide = u0 * (Math.cos(this.heading) >= 0 ? 1 : -1) < 0;
+    const barrier = w.highwayAt(nz) > 0.5 && Math.abs(u) < 0.6 && Math.abs(u0) >= 0.6 && !wrongSide;
     if (ny < 0.15 || (climb > 1.1 && Math.abs(u) > w.roadHalf(nz)) || Math.abs(u) > 420 || barrier) {
       this.v *= -0.25;
       this.bump = 1;

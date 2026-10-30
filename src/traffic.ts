@@ -21,6 +21,8 @@ interface Other {
   stun: number;
   /** 1 = normal lane, -1 = the fast lane on a highway. */
   lane: number;
+  /** Metres it has edged over towards the verge to get round someone in its lane. */
+  dodge: number;
 }
 
 /** Widths for collisions. */
@@ -50,7 +52,7 @@ export class Traffic {
     const add = (kind: Kind, user: RoadUser) => {
       user.group.visible = false;
       this.group.add(user.group);
-      this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0, stun: 0, lane: 1 });
+      this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0, stun: 0, lane: 1, dodge: 0 });
     };
     const specs = CARS.filter((c) => c.id !== 'van' && !c.bike);
     for (let i = 0; i < 7; i++) add('car', carUser(new CarModel(specs[(i * 3 + 1) % specs.length], { color: COLORS[(i * 5 + 2) % COLORS.length], stripes: false })));
@@ -94,7 +96,7 @@ export class Traffic {
     const w = this.world;
     if (c.lane !== 1 && w.highwayAt(c.z) < 0.5) c.lane = 1;
     const [tx, tz] = w.tangent(c.z);
-    const o = w.laneOffset(c.z, c.lane) * c.dir;
+    const o = (w.laneOffset(c.z, c.lane) + c.dodge) * c.dir;
     return { x: w.roadX(c.z) - tz * o, z: c.z + tx * o, y: w.roadY(c.z), tx, tz };
   }
 
@@ -116,6 +118,7 @@ export class Traffic {
         c.v = c.want;
         c.active = true;
         c.stun = 0;
+        c.dodge = 0;
         // On highways some cars use the fast lane
         c.lane = this.world.highwayAt(c.z) > 0.5 && c.kind === 'car' && Math.random() < 0.4 ? -1 : 1;
         if (c.lane === -1) c.want *= 1.15;
@@ -134,7 +137,8 @@ export class Traffic {
         const gap = (o.z - c.z) * c.dir - (o.user.length + c.user.length) / 2;
         if (gap > 0 && gap < 40) target = Math.min(target, o.v + (gap - 12) * 0.3);
       }
-      // Brake for the player if they're in this vehicle's path
+      // Brake for the player if they're in this vehicle's path; oncoming traffic also edges over onto the verge
+      let dodge = 0;
       {
         const q = this.place(c);
         const fx = q.tx * c.dir, fz = q.tz * c.dir;
@@ -142,11 +146,15 @@ export class Traffic {
         const ahead = dx * fx + dz * fz;
         const side = -dx * fz + dz * fx;
         const gap = ahead - (c.user.length + me.spec.length) / 2;
-        if (ahead > 0 && gap < 45 && Math.abs(side) < 2.3) {
+        const clear = (WIDTH[c.kind] + me.spec.width) / 2 + 0.3;
+        const inPath = Math.abs(side + c.dodge) < clear + 0.5;
+        if (ahead > 0 && gap < 70 && c.dir !== fwd && inPath) dodge = 2.1;
+        if (ahead > 0 && gap < 45 && Math.abs(side) < clear) {
           const meAlong = me.v * (Math.sin(me.heading) * fx + Math.cos(me.heading) * fz);
           target = Math.min(target, Math.max(0, meAlong + (gap - 7) * 0.45));
         }
       }
+      c.dodge += (dodge - c.dodge) * (1 - Math.exp(-dt * 1.5));
       if (c.stun > 0) {
         c.stun -= dt;
         target = 0;
@@ -212,6 +220,39 @@ export class Traffic {
       if (gap > -2 && (!best || gap < best.gap)) best = { gap, v: c.v };
     }
     return best;
+  }
+
+  /** The nearest vehicle (either direction) right in front of the player's nose, with its speed along our way. */
+  inPath(me: Vehicle, range = 60): { gap: number; v: number } | null {
+    const fwd = Math.cos(me.heading) >= 0 ? 1 : -1;
+    const fx = Math.sin(me.heading), fz = Math.cos(me.heading);
+    let best: { gap: number; v: number } | null = null;
+    for (const c of this.pool) {
+      if (!c.active) continue;
+      const p = c.user.group.position;
+      const dx = p.x - me.x, dz = p.z - me.z;
+      const along = dx * fx + dz * fz;
+      const side = -dx * fz + dz * fx;
+      if (along <= 0 || Math.abs(side) > (WIDTH[c.kind] + me.spec.width) / 2 + 0.25) continue;
+      const gap = along - (c.user.length + me.spec.length) / 2;
+      if (gap > range || (best && gap > best.gap)) continue;
+      best = { gap, v: c.dir === fwd ? c.v : 0 };
+    }
+    return best;
+  }
+
+  /** Speed of a same-way vehicle in the right-hand lane right beside the player while the player isn't in it yet, or null. */
+  alongside(me: Vehicle): number | null {
+    const w = this.world;
+    const fwd = Math.cos(me.heading) >= 0 ? 1 : -1;
+    const u = w.lateral(me.x, me.z) * fwd;
+    if (u > w.laneOffset(me.z, 1) - 1.2) return null;
+    for (const c of this.pool) {
+      if (!c.active || c.dir !== fwd || c.lane !== 1) continue;
+      const rel = (c.z - me.z) * fwd;
+      if (Math.abs(rel) < (c.user.length + me.spec.length) / 2 + 2) return c.v;
+    }
+    return null;
   }
 
   /** Is the oncoming lane free of traffic that would reach us within `seconds` while we cover `ahead` metres? */

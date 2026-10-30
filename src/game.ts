@@ -15,6 +15,7 @@ import { Life } from './life';
 import { Drift } from './drift';
 import { Windscreen } from './glass';
 import { Showroom } from './showroom';
+import { Thumbs } from './thumbs';
 import { updateFilm } from './stops';
 import { drawVisualizer } from './map';
 import { AtmosphereShader, makeLensflare } from './post';
@@ -57,6 +58,8 @@ export class Game {
   readonly drift = new Drift();
   readonly glass = new Windscreen();
   readonly showroom: Showroom;
+  /** Studio photos of the cars for the garage picker. */
+  readonly thumbs: Thumbs;
   /** Doors, bonnet and boot open in the garage. */
   openState = { door: false, bonnet: false, boot: false };
   private renderPass: RenderPass | null = null;
@@ -134,6 +137,7 @@ export class Game {
     this.tier = q.tier;
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.showroom = new Showroom(this.renderer, q.shadows > 0);
+    this.thumbs = new Thumbs(this.renderer, this.showroom.scene.environment);
     this.seed = (Math.random() * 1e9) | 0;
     this.world = new World(this.seed, settings.themes);
     this.chunks = new ChunkManager(this.world, q);
@@ -438,6 +442,9 @@ export class Game {
       // Out of fuel: limp along gently to the next station
       if (this.fuel <= 0 && Math.abs(v.v) > 11) c = { ...c, throttle: 0 };
       this.applied = c;
+      // Manual driving: let go of the wheel and the assist eases you back to the right, unless you're passing someone
+      const ahead = this.traffic.leader(v, 1);
+      v.keepRight = this.world.highwayAt(v.z) < 0.5 && !this.traffic.beside(v) && !(ahead && ahead.gap < 30);
       v.step(dt, c, s.assist);
     } else {
       this.applied = { throttle: 0, brake: 0, steer: 0 };
@@ -753,7 +760,18 @@ export class Game {
     return true;
   }
 
-  /** Auto-drive: keep the lane, follow traffic, overtake slow vehicles when it's safe. */
+  /** A long straight with no town, speed limit or highway junction coming up: somewhere it's fine to overtake. */
+  private clearRoadAhead(dist: number) {
+    if (!this.straightAhead(dist)) return false;
+    const v = this.vehicle, w = this.world;
+    const dir = Math.cos(v.heading) >= 0 ? 1 : -1;
+    for (let d = 0; d <= dist; d += 25) {
+      const z = v.z + d * dir;
+      if (this.speedLimit(z) !== Infinity || w.highwayAt(z) > 0.05 || w.bridge(z) > 0.05 || w.tunnelAt(z) > 0.05) return false;
+    }
+    return true;
+  }
+
   /** Called with a new passport stamp (its key). */
   onStamp: (key: string) => void = () => {};
 
@@ -846,9 +864,10 @@ export class Game {
       const free = Math.min(v.cruise, v.safeSpeed(style.lat), limit);
       // On a highway the fast lane goes our way: no oncoming traffic to wait for
       const highway = this.world.highwayAt(v.z) > 0.6;
-      const fastLaneFree = !t.leader(v, -1) || t.leader(v, -1)!.gap > 35;
+      const fastLaneFree = (!t.leader(v, -1) || t.leader(v, -1)!.gap > 35) && this.world.highwayAt(v.z + 450 * Math.sign(Math.cos(v.heading))) > 0.6;
+      // Keep right: on an ordinary road only pass something really slow, on a long clear straight
       if (lead && lead.gap < 55 && lead.v < free - style.overtake && limit === Infinity &&
-          (highway ? fastLaneFree : this.straightAhead(200) && t.oncomingClear(v, 230, 9))) {
+          (highway ? fastLaneFree : lead.v < free * 0.72 && this.clearRoadAhead(400) && t.oncomingClear(v, 380, 12))) {
         this.passing = true;
         this.passedBeside = false;
         this.passTime = 0;
@@ -858,8 +877,11 @@ export class Game {
       this.passTime += dt;
       const beside = t.beside(v);
       if (beside) this.passedBeside = true;
-      const danger = this.world.highwayAt(v.z) > 0.6 ? false : !t.oncomingClear(v, 90, 3.5);
-      if ((this.passedBeside && !beside) || this.passTime > 30 || (danger && !beside)) {
+      const hw = this.world.highwayAt(v.z) > 0.6;
+      // Get back in lane early if a town or junction turns up
+      const hwEnds = hw && this.world.highwayAt(v.z + 220 * Math.sign(Math.cos(v.heading))) < 0.6;
+      const danger = hw ? hwEnds : !t.oncomingClear(v, 90, 3.5) || limit !== Infinity || this.world.highwayAt(v.z + 80 * Math.sign(Math.cos(v.heading))) > 0.05;
+      if ((this.passedBeside && !beside) || this.passTime > 14 || (danger && !beside)) {
         this.passing = false;
         v.lane = 1;
         env.leader = t.leader(v, 1);
@@ -867,6 +889,14 @@ export class Game {
       if (danger && beside) env.limit = Math.min(limit, v.v + 3); // get past quickly
       if (this.world.highwayAt(v.z) > 0.6 && this.passing) env.leader = t.leader(v, -1);
     }
+    // Someone alongside where we want to be: drop back behind them rather than lean on them
+    if (!this.passing) {
+      const along = t.alongside(v);
+      if (along !== null) env.limit = Math.min(env.limit, Math.max(0, along - 3));
+    }
+    // Never drive into anything that's right in front of the bonnet, whichever way it's going
+    const block = t.inPath(v);
+    if (block && (!env.leader || block.gap < env.leader.gap)) env.leader = block;
     return v.autopilot(env, style);
   }
 
