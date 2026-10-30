@@ -221,6 +221,7 @@ export class Game {
   }
 
   private flareOn = false;
+  private parkedTime = 0;
   private filmTimer = 0;
   private passPrev = new Map<THREE.Vector3, number>();
   /** Where the sun is on screen: for the lens flare, the sun shafts and the heat haze. */
@@ -447,6 +448,9 @@ export class Game {
       this.car.group.rotation.y = this.showroom.angle;
     }
     this.car.openings.update(dt);
+    // Stopped for a few seconds (or in the garage): pop the camper roof / open the roof tent
+    this.parkedTime = Math.abs(v.v) < 0.3 ? this.parkedTime + dt : 0;
+    this.car.setParked(garage || this.parkedTime > 4, dt);
     const night = this.sky.night > 0.45 && this.phase !== 'garage';
     this.car.animate(v.dist, v.steer, v.braking, night);
     this.car.headlight.intensity = night ? 80 : 0;
@@ -829,7 +833,7 @@ export class Game {
       t.offset.set(1, 0);
       return t;
     };
-    const glass = [car.cockpit.mirrorRear, ...car.mirrorGlass];
+    const glass = [car.cockpit.mirrorRear, ...(car.mirrorGlass.length ? car.mirrorGlass : car.cockpit.mirrorSides)];
     glass.forEach((m, i) => {
       if (!m) return;
       const mat = m.material as THREE.MeshBasicMaterial;

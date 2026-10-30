@@ -23,6 +23,8 @@ export interface Exterior {
   wipers: THREE.Object3D[];
   lampY: number;
   front: number;
+  /** A pop-up roof or roof tent, if the car has one. */
+  poptop?: THREE.Group | null;
 }
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -60,6 +62,7 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
   const has = (f: string) => s.features.includes(f as never);
   const glows: THREE.Sprite[] = [];
   const wipers: THREE.Object3D[] = [];
+  let poptop: THREE.Group | null = null;
   const dside = (M.dark as THREE.MeshStandardMaterial).clone?.() ?? M.dark;
   if ((dside as THREE.Material).side !== undefined) (dside as THREE.Material).side = THREE.DoubleSide;
 
@@ -326,6 +329,29 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
         }
         break;
       }
+      case 'poptop':
+      case 'rooftent': {
+        // A lid on the roof that lifts when parked, with canvas walls underneath
+        const tent = f === 'rooftent';
+        const z0 = tent ? s.B - 0.25 : s.B - 0.15, z1 = tent ? s.C + 0.6 : s.C + 0.2;
+        const zc = (z0 + z1) / 2, len = z0 - z1;
+        const half = P.half(zc) * (s.tumble ?? 0.8) * (tent ? 0.85 : 0.92);
+        const base = s.roof + (tent ? 0.13 : 0.02);
+        const g = new THREE.Group();
+        g.position.set(0, base, zc);
+        const shellCol = tent ? new THREE.MeshStandardMaterial({ color: 0x2b2c2e, roughness: 0.6 }) : M.second;
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(half * 2, tent ? 0.18 : 0.08, len), shellCol);
+        lid.position.y = tent ? 0.09 : 0.04;
+        lid.castShadow = true;
+        const canvasM = new THREE.MeshStandardMaterial({ color: tent ? 0x6b7d4a : 0xe9e2cf, roughness: 0.95, side: THREE.DoubleSide });
+        const walls = new THREE.Mesh(new THREE.BoxGeometry(half * 2 - 0.06, 1, len - 0.06).translate(0, 0.5, 0), canvasM);
+        walls.scale.y = 0.001;
+        g.add(walls, lid);
+        g.userData = { lid, walls, tent, h: tent ? 0.95 : 0.75 };
+        b.add(g);
+        poptop = g;
+        break;
+      }
       case 'rails':
       case 'rack': {
         const z0 = s.B - 0.1, z1 = s.C + 0.15;
@@ -456,7 +482,7 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
       }
     }
   }
-  return { glows, wipers, lampY, front };
+  return { glows, wipers, lampY, front, poptop };
 }
 
 /** A wheel: rounded tyre, rim in the chosen style, brake disc and calliper. */

@@ -5,6 +5,7 @@ import { bodyGeometry, profile } from './carbody';
 import { CARS, COLORS, defaultCustom, type CarSpec, type Custom } from './carspecs';
 import { buildExterior, buildWheel, type PartMats } from './carparts';
 import { buildCockpit, drawCluster, type Cockpit } from './cockpit';
+import { bikeCockpit, buildBike } from './bike';
 
 export { CARS, COLORS };
 export type { CarSpec, Custom };
@@ -54,6 +55,9 @@ export class CarModel {
   private softTop: THREE.Object3D | null = null;
   private sunroof: THREE.Object3D | null = null;
   private night = false;
+  /** The camper's pop-up roof or the overlander's roof tent (opens when parked). */
+  private poptop: THREE.Object3D | null = null;
+  private popOpen = 0;
   /** Doors, bonnet and boot that open in the garage. */
   readonly openings: Openings;
   /** Side mirror glass (left, right) for the working mirrors. */
@@ -87,95 +91,114 @@ export class CarModel {
     this.group.add(this.body);
     const b = this.body;
     b.position.y = c.ride;
-    const shell = new THREE.Mesh(bodyGeometry(s), [this.paint, glass, dark, this.sideGlass, roofM]);
-    shell.castShadow = true;
-    b.add(shell);
-
-    const ext = buildExterior(b, s, c, M);
-    for (const d of addDecals(shell, s, c.decal ?? 'none', c.color2, pbr)) b.add(d);
-    this.openings = buildOpenings(s, this.paint, dark, c.leather, s.engine === 'ev');
-    b.add(this.openings.group);
-    this.glows = ext.glows;
-    this.wipers = ext.wipers;
-
-    // Wheel wells, so you can't see through the arches
-    for (const ax of s.axles) {
-      const well = new THREE.Mesh(new THREE.BoxGeometry(W - 0.62, s.wheel * 1.2, s.wheel * 2.3), dark);
-      well.position.set(0, s.wheel + 0.1, ax);
-      b.add(well);
-    }
-
-    // Side mirrors on stalks at the base of the windscreen
-    for (const side of [-1, 1]) {
-      const mx = s.open ? s.A - 0.1 : s.A - 0.15;
-      const mirror = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10).scale(0.55, 0.62, 0.85), this.paint);
-      mirror.position.set(side * (P.half(mx) + 0.1), P.belt(mx) + 0.1, mx);
-      const mg = new THREE.Mesh(new THREE.CircleGeometry(0.05, 20).scale(1.25, 0.95, 1), new THREE.MeshBasicMaterial({ color: 0x8c96a3 }));
-      mg.position.set(0, 0, -0.074);
-      mg.rotation.y = Math.PI;
-      mirror.add(mg);
-      this.mirrorGlass.push(mg);
-      b.add(mirror);
-    }
-
-    // Open-top extras: seats seen from outside, and a fabric roof that can go up
-    if (s.open) {
-      const cover = new THREE.Mesh(new THREE.BoxGeometry(W * 0.78, 0.04, 1.55), dark);
-      cover.position.set(0, s.belt + 0.04, -0.4);
-      this.outsideOnly.add(cover);
-      for (const side of [-1, 1]) {
-        const seat = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.55, 0.14), new THREE.MeshStandardMaterial({ color: c.leather, roughness: 0.6 }));
-        seat.position.set(side * 0.38, s.belt + 0.25, -0.85);
-        seat.rotation.x = -0.15;
-        this.outsideOnly.add(seat);
+    let lampY = 0, front = 0;
+    if (s.bike) {
+      // A motorbike: its own frame, wheels and rider instead of a car body
+      const bk = buildBike(b, s, c, M);
+      this.glows = bk.glows;
+      this.wipers = [];
+      lampY = bk.lampY;
+      front = bk.front;
+      this.wheels.push(...bk.wheels);
+      this.steerPivots.push(...bk.steerPivots);
+      for (const o of [bk.rider, ...bk.outside]) {
+        b.remove(o);
+        this.outsideOnly.add(o);
       }
       b.add(this.outsideOnly);
-      // Windscreen in a thin frame (clear from the seat)
-      const ws = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.86, 0.42), glass);
-      ws.position.set(0, s.belt + 0.22, s.A - 0.08);
-      ws.rotation.x = -0.6;
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(W * 0.88, 0.03, 0.03), dark);
-      frame.position.set(0, s.belt + 0.4, s.A - 0.22);
-      b.add(ws, frame);
-      if (s.features.includes('softtop')) {
-        const top = new THREE.Group();
-        const fabric = new THREE.MeshStandardMaterial({ color: 0x1b1c1f, roughness: 0.95, side: THREE.DoubleSide });
-        const shape = new THREE.Shape();
-        shape.moveTo(s.A - 0.22, s.belt + 0.4);
-        shape.quadraticCurveTo(-0.5, s.belt + 0.5, -1.25, s.belt + 0.05);
-        shape.lineTo(-1.25, s.belt + 0.02);
-        shape.lineTo(s.A - 0.22, s.belt + 0.37);
-        const roofG = new THREE.ExtrudeGeometry(shape, { depth: W * 0.84, bevelEnabled: false, curveSegments: 12 });
-        roofG.translate(0, 0, -W * 0.42);
-        roofG.rotateY(-Math.PI / 2);
-        top.add(new THREE.Mesh(roofG, fabric));
-        top.visible = false;
-        b.add(top);
-        this.softTop = top;
+      this.openings = buildOpenings(s, this.paint, dark, c.leather, false, true);
+    } else {
+      const shell = new THREE.Mesh(bodyGeometry(s), [this.paint, glass, dark, this.sideGlass, roofM]);
+      shell.castShadow = true;
+      b.add(shell);
+
+      const ext = buildExterior(b, s, c, M);
+      for (const d of addDecals(shell, s, c.decal ?? 'none', c.color2, pbr)) b.add(d);
+      this.openings = buildOpenings(s, this.paint, dark, c.leather, s.engine === 'ev');
+      b.add(this.openings.group);
+      this.glows = ext.glows;
+      this.wipers = ext.wipers;
+
+      // Wheel wells, so you can't see through the arches
+      for (const ax of s.axles) {
+        const well = new THREE.Mesh(new THREE.BoxGeometry(W - 0.62, s.wheel * 1.2, s.wheel * 2.3), dark);
+        well.position.set(0, s.wheel + 0.1, ax);
+        b.add(well);
       }
-    } else if (s.cabin !== 'ev' && s.cabin !== 'van') {
-      // Sunroof: a glass panel in the roof that slides back
-      const sr = new THREE.Mesh(new THREE.BoxGeometry(P.half(s.B) * (s.tumble ?? 0.8) * 1.1, 0.012, 0.75), glass);
-      sr.position.set(0, P.top(s.B - 0.5) + 0.03, s.B - 0.5);
-      b.add(sr);
-      this.sunroof = sr;
+
+      // Side mirrors on stalks at the base of the windscreen
+      for (const side of [-1, 1]) {
+        const mx = s.open ? s.A - 0.1 : s.A - 0.15;
+        const mirror = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10).scale(0.55, 0.62, 0.85), this.paint);
+        mirror.position.set(side * (P.half(mx) + 0.1), P.belt(mx) + 0.1, mx);
+        const mg = new THREE.Mesh(new THREE.CircleGeometry(0.05, 20).scale(1.25, 0.95, 1), new THREE.MeshBasicMaterial({ color: 0x8c96a3 }));
+        mg.position.set(0, 0, -0.074);
+        mg.rotation.y = Math.PI;
+        mirror.add(mg);
+        this.mirrorGlass.push(mg);
+        b.add(mirror);
+      }
+
+      // Open-top extras: seats seen from outside, and a fabric roof that can go up
+      if (s.open) {
+        const cover = new THREE.Mesh(new THREE.BoxGeometry(W * 0.78, 0.04, 1.55), dark);
+        cover.position.set(0, s.belt + 0.04, -0.4);
+        this.outsideOnly.add(cover);
+        for (const side of [-1, 1]) {
+          const seat = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.55, 0.14), new THREE.MeshStandardMaterial({ color: c.leather, roughness: 0.6 }));
+          seat.position.set(side * 0.38, s.belt + 0.25, -0.85);
+          seat.rotation.x = -0.15;
+          this.outsideOnly.add(seat);
+        }
+        b.add(this.outsideOnly);
+        // Windscreen in a thin frame (clear from the seat)
+        const ws = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.86, 0.42), glass);
+        ws.position.set(0, s.belt + 0.22, s.A - 0.08);
+        ws.rotation.x = -0.6;
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(W * 0.88, 0.03, 0.03), dark);
+        frame.position.set(0, s.belt + 0.4, s.A - 0.22);
+        b.add(ws, frame);
+        if (s.features.includes('softtop')) {
+          const top = new THREE.Group();
+          const fabric = new THREE.MeshStandardMaterial({ color: 0x1b1c1f, roughness: 0.95, side: THREE.DoubleSide });
+          const shape = new THREE.Shape();
+          shape.moveTo(s.A - 0.22, s.belt + 0.4);
+          shape.quadraticCurveTo(-0.5, s.belt + 0.5, -1.25, s.belt + 0.05);
+          shape.lineTo(-1.25, s.belt + 0.02);
+          shape.lineTo(s.A - 0.22, s.belt + 0.37);
+          const roofG = new THREE.ExtrudeGeometry(shape, { depth: W * 0.84, bevelEnabled: false, curveSegments: 12 });
+          roofG.translate(0, 0, -W * 0.42);
+          roofG.rotateY(-Math.PI / 2);
+          top.add(new THREE.Mesh(roofG, fabric));
+          top.visible = false;
+          b.add(top);
+          this.softTop = top;
+        }
+      } else if (s.cabin !== 'ev' && s.cabin !== 'van') {
+        // Sunroof: a glass panel in the roof that slides back
+        const sr = new THREE.Mesh(new THREE.BoxGeometry(P.half(s.B) * (s.tumble ?? 0.8) * 1.1, 0.012, 0.75), glass);
+        sr.position.set(0, P.top(s.B - 0.5) + 0.03, s.B - 0.5);
+        b.add(sr);
+        this.sunroof = sr;
+      }
+
+      // Wheels
+      s.axles.forEach((z, ai) => {
+        for (const side of [-1, 1]) {
+          const pivot = new THREE.Group();
+          pivot.position.set(side * (W / 2 - 0.2), s.wheel, z);
+          const { wheel, fixed } = buildWheel(s, c, side, ai === 0, pbr, M);
+          pivot.add(wheel, ...fixed);
+          this.group.add(pivot);
+          this.wheels.push(wheel);
+          if (ai === 0) this.steerPivots.push(pivot);
+        }
+      });
     }
 
-    // Wheels
-    s.axles.forEach((z, ai) => {
-      for (const side of [-1, 1]) {
-        const pivot = new THREE.Group();
-        pivot.position.set(side * (W / 2 - 0.2), s.wheel, z);
-        const { wheel, fixed } = buildWheel(s, c, side, ai === 0, pbr, M);
-        pivot.add(wheel, ...fixed);
-        this.group.add(pivot);
-        this.wheels.push(wheel);
-        if (ai === 0) this.steerPivots.push(pivot);
-      }
-    });
-
     // Cockpit
-    this.cockpit = buildCockpit(this.interior, this.eye, s, c, pbr, chrome);
+    this.cockpit = s.bike ? bikeCockpit(this.interior, this.eye, c, this.paint, pbr) : buildCockpit(this.interior, this.eye, s, c, pbr, chrome);
+    if (s.bike) this.cockpit.screen.lookAt(this.eye.position);
     this.screen = this.cockpit.screen;
     this.screenSize = [this.cockpit.screenWidth, this.cockpit.screenWidth * 0.5625];
     this.interior.visible = false;
@@ -191,8 +214,8 @@ export class CarModel {
     this.group.add(shadow);
 
     this.headlight = new THREE.SpotLight(0xfff1d0, 0, 90, 0.55, 0.5, 1.2);
-    this.headlight.position.set(0, ext.lampY + 0.1, ext.front);
-    this.headlight.target.position.set(0, 0, ext.front + 20);
+    this.headlight.position.set(0, lampY + 0.1, front);
+    this.headlight.target.position.set(0, 0, front + 20);
     b.add(this.headlight, this.headlight.target);
   }
 
@@ -239,6 +262,24 @@ export class CarModel {
     if (lights !== this.night) {
       this.night = lights;
       for (const m of this.cockpit.ambient) m.color.setHex(lights && this.custom.ambient ? this.custom.ambient : 0x050505);
+    }
+  }
+
+  /** Parked for a while: the camper's roof pops up (the roof tent opens); it folds away to drive. */
+  setParked(parked: boolean, dt: number) {
+    const g = this.poptop;
+    if (!g) return;
+    this.popOpen = Math.max(0, Math.min(1, this.popOpen + (parked ? dt : -dt * 2) * 0.6));
+    const k = this.popOpen * this.popOpen * (3 - 2 * this.popOpen);
+    const { lid, walls, tent, h } = g.userData as { lid: THREE.Mesh; walls: THREE.Mesh; tent: boolean; h: number };
+    if (tent) {
+      // The shell hinges up at one side like a clam
+      lid.rotation.z = -k * 1.0;
+      lid.position.set(k * 0.3, 0.09 + k * h * 0.5, 0);
+      walls.scale.y = Math.max(0.001, k * h);
+    } else {
+      lid.position.y = 0.04 + k * h;
+      walls.scale.y = Math.max(0.001, k * h);
     }
   }
 

@@ -243,7 +243,8 @@ export class Vehicle {
       const lat = this.v * yaw; // m/s² sideways
       const lon = a;
       const k = h.spring * h.spring, d = 2 * h.spring * 0.75;
-      const tr = clamp(-lat * h.roll, -0.09, 0.09);
+      const lim = h.roll < 0 ? 0.6 : 0.09; // bikes lean into the bend
+      const tr = clamp(-lat * h.roll, -lim, lim);
       const tp = clamp(lon * h.dive, -0.06, 0.06);
       this.rollV += ((tr - this.bodyRoll) * k - this.rollV * d) * dt;
       this.bodyRoll += this.rollV * dt;

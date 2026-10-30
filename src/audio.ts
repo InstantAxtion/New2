@@ -31,6 +31,7 @@ const PROFILES: Record<Engine, Profile> = {
   v6: { idle: 38, red: 150, main: 'sawtooth', sub: 'square', beat: 0.25, beatDepth: 0.2, bright: 0.95, noise: 0.03, gears: 6, loud: 0.85 },
   diesel: { idle: 26, red: 70, main: 'sawtooth', sub: 'square', beat: 0.5, beatDepth: 0.35, bright: 0.6, noise: 0.25, gears: 6, loud: 0.95 },
   flat4: { idle: 24, red: 85, main: 'triangle', sub: 'square', beat: 0.5, beatDepth: 0.7, bright: 0.7, noise: 0.08, gears: 4, loud: 0.8 },
+  twin: { idle: 34, red: 190, main: 'square', sub: 'sawtooth', beat: 0.5, beatDepth: 0.6, bright: 1.2, noise: 0.05, gears: 6, loud: 0.9 },
   ev: { idle: 0, red: 0, main: 'sine', sub: 'sine', beat: 0, beatDepth: 0, bright: 1, noise: 0, gears: 1, electric: true, loud: 0.5 },
 };
 

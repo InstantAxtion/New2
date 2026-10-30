@@ -159,9 +159,11 @@ export interface Openings {
 }
 
 /** Doors, a bonnet and a boot that swing open; shut, they're hidden and the body shows. */
-export function buildOpenings(s: CarSpec & BodyShape, paint: THREE.Material, dark: THREE.Material, leather: number, electric: boolean): Openings {
-  const P = profile(s);
+export function buildOpenings(s: CarSpec & BodyShape, paint: THREE.Material, dark: THREE.Material, leather: number, electric: boolean, none = false): Openings {
   const group = new THREE.Group();
+  if (none) return { group, set() {}, update() {}, moving: false };
+  const P = profile(s);
+  const scissor = s.features.includes('scissor');
   const inner = new THREE.MeshStandardMaterial({ color: leather, roughness: 0.8, side: THREE.DoubleSide });
   const black = new THREE.MeshStandardMaterial({ color: 0x101012, roughness: 0.9, side: THREE.DoubleSide });
   const metal = new THREE.MeshStandardMaterial({ color: 0x8b8f96, roughness: 0.4, metalness: 0.7 });
@@ -300,7 +302,9 @@ export function buildOpenings(s: CarSpec & BodyShape, paint: THREE.Material, dar
     const ease = (t: number) => t * t * (3 - 2 * t);
     for (const d of doors) {
       const a = ease(now.door);
-      d.pivot.rotation.y = -d.side * a * 1.05;
+      // Scissor doors swing up from the front; ordinary ones swing out
+      if (scissor) d.pivot.rotation.set(a * 1.25, -d.side * a * 0.18, 0, 'YXZ');
+      else d.pivot.rotation.y = -d.side * a * 1.05;
       d.pivot.visible = now.door > 0.001;
       d.aperture.visible = now.door > 0.001;
     }

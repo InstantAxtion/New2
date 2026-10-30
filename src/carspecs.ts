@@ -3,13 +3,13 @@ import type { BodyShape } from './carbody';
 export type Finish = 'metallic' | 'solid' | 'matte' | 'pearl';
 export type RimStyle = 'five' | 'multi' | 'turbine' | 'steel' | 'beadlock';
 export type Trim = 'black' | 'wood' | 'carbon' | 'alu';
-export type CabinStyle = 'sport' | 'comfort' | 'luxury' | 'classic' | 'ev' | 'utility' | 'van';
-export type Engine = 'v8' | 'v12' | 'flat6' | 'i4' | 'i6' | 'v6' | 'diesel' | 'ev' | 'flat4';
+export type CabinStyle = 'sport' | 'comfort' | 'luxury' | 'classic' | 'ev' | 'utility' | 'van' | 'bike';
+export type Engine = 'v8' | 'v12' | 'flat6' | 'i4' | 'i6' | 'v6' | 'diesel' | 'ev' | 'flat4' | 'twin';
 export type Lights = 'slim' | 'round' | 'quad' | 'square' | 'bar';
 export type Feature =
   | 'lip' | 'wing' | 'ducktail' | 'scoop' | 'rails' | 'rack' | 'spare' | 'bed' | 'bullbar' | 'lightbar' | 'snorkel'
   | 'fogs' | 'diffuser' | 'splitter' | 'skirts' | 'exhaust2' | 'exhaust4' | 'exhaustC' | 'antenna' | 'chrome' | 'fins'
-  | 'nogrille' | 'softtop' | 'intakes' | 'mudflaps';
+  | 'nogrille' | 'softtop' | 'intakes' | 'mudflaps' | 'scissor' | 'poptop' | 'rooftent';
 
 /** How a car drives and leans. */
 export interface Handling {
@@ -42,6 +42,8 @@ export interface CarSpec extends BodyShape {
   defaultColor: number;
   rim: RimStyle;
   finish: Finish;
+  /** A motorbike rather than a car. */
+  bike?: boolean;
 }
 
 /** The player's choices for one car. */
@@ -160,6 +162,55 @@ export const CARS: CarSpec[] = [
     doors: 2, lights: 'slim', cabin: 'sport', engine: 'v12', handling: H(0.003, 0.003, 4.8, 11), rim: 'turbine', finish: 'pearl',
     features: ['wing', 'diffuser', 'splitter', 'skirts', 'exhaustC', 'intakes', 'nogrille'],
   },
+  {
+    id: 'veloce', name: 'Strada Veloce', blurb: 'Low, wedge-shaped mid-engined V8', top: 320, accel: 9.4, grip: 11.5,
+    length: 4.55, width: 2.0, wheel: 0.35, axles: [1.4, -1.35], defaultColor: 0xe6c21c,
+    sill: 0.15, belt: 0.74, nose: 0.4, tail: 0.84, deck: 0.9, roof: 1.12, A: 0.8, B: -0.2, C: -0.95, D: -1.92, tumble: 0.68,
+    doors: 2, lights: 'slim', cabin: 'sport', engine: 'v8', handling: H(0.003, 0.003, 4.7, 10.5), rim: 'five', finish: 'solid',
+    features: ['lip', 'diffuser', 'skirts', 'exhaust4', 'intakes', 'nogrille', 'ducktail'],
+  },
+  {
+    id: 'hyper', name: 'Halo Hyper', blurb: 'Hypercar with scissor doors', top: 380, accel: 11, grip: 13,
+    length: 4.72, width: 2.06, wheel: 0.36, axles: [1.45, -1.4], defaultColor: 0x1d3a8a,
+    sill: 0.12, belt: 0.68, nose: 0.38, tail: 0.8, deck: 0.86, roof: 1.08, A: 0.62, B: -0.26, C: -0.9, D: -2.0, tumble: 0.66,
+    doors: 2, lights: 'slim', cabin: 'sport', engine: 'v12', handling: H(0.0025, 0.0025, 5, 12), rim: 'turbine', finish: 'pearl',
+    features: ['wing', 'diffuser', 'splitter', 'skirts', 'exhaustC', 'intakes', 'nogrille', 'scissor'],
+  },
+  {
+    id: 'starliner', name: "Starliner '57", blurb: 'A big fifties cruiser: chrome, fins, two-tone', top: 175, accel: 3.8, grip: 6,
+    length: 5.5, width: 2.02, wheel: 0.37, axles: [1.75, -1.62], defaultColor: 0xd85f7a,
+    sill: 0.26, belt: 0.92, nose: 0.74, tail: 0.86, deck: 0.95, roof: 1.44, A: 0.75, B: 0.15, C: -1.0, D: -1.6, tumble: 0.82,
+    doors: 2, lights: 'round', cabin: 'classic', engine: 'v8', handling: H(0.018, 0.013, 2.6, 3.4), rim: 'steel', finish: 'solid',
+    features: ['chrome', 'fins', 'exhaust2', 'antenna'],
+  },
+  {
+    id: 'spider', name: "Riviera Spider '62", blurb: 'A little classic convertible', top: 180, accel: 4.6, grip: 7.6,
+    length: 3.95, width: 1.62, wheel: 0.31, axles: [1.18, -1.12], defaultColor: 0x9a1c26,
+    sill: 0.22, belt: 0.74, nose: 0.52, tail: 0.66, deck: 0.72, roof: 1.12, A: 0.45, B: 0.2, C: 0, D: 0, open: true,
+    doors: 2, lights: 'round', cabin: 'classic', engine: 'i4', handling: H(0.012, 0.009, 3.6, 5), rim: 'steel', finish: 'solid',
+    features: ['chrome', 'softtop', 'exhaust2'],
+  },
+  {
+    id: 'wanderer', name: 'Wanderer Camper', blurb: 'Retro camper; the roof pops up when you stop', top: 130, accel: 2.8, grip: 5.5,
+    length: 4.6, width: 1.9, wheel: 0.35, axles: [1.2, -1.25], defaultColor: 0xe3a33a,
+    sill: 0.36, belt: 1.1, nose: 0.95, tail: 1.85, deck: 1.9, roof: 1.98, A: 2.0, B: 1.75, C: -2.2, D: -2.28, tumble: 0.9,
+    doors: 2, lights: 'round', cabin: 'van', engine: 'flat4', handling: H(0.018, 0.013, 2.4, 3.6), rim: 'steel', finish: 'solid',
+    features: ['chrome', 'poptop', 'mudflaps'],
+  },
+  {
+    id: 'nomad', name: 'Nomad Overlander', blurb: 'Expedition 4x4 with a roof tent', top: 160, accel: 4, grip: 6.4,
+    length: 4.9, width: 2.02, wheel: 0.48, axles: [1.55, -1.45], defaultColor: 0xc4ad85,
+    sill: 0.58, belt: 1.28, nose: 1.15, tail: 1.25, deck: 1.28, roof: 2.0, A: 1.32, B: 1.02, C: -2.3, D: -2.42, tumble: 0.94,
+    doors: 4, lights: 'round', cabin: 'utility', engine: 'diesel', handling: H(0.02, 0.014, 2.5, 3.4), rim: 'beadlock', finish: 'matte',
+    features: ['bullbar', 'rack', 'rooftent', 'snorkel', 'spare', 'fogs', 'mudflaps', 'lightbar'],
+  },
+  {
+    id: 'bike', name: 'Horizon Tourer', blurb: 'A motorbike: lean into the bends', top: 230, accel: 8.5, grip: 9,
+    length: 2.2, width: 0.8, wheel: 0.33, axles: [0.74, -0.72], defaultColor: 0x1f4fa8,
+    sill: 0.3, belt: 0.9, nose: 0.8, tail: 0.8, deck: 0.9, roof: 1.2, A: 0.3, B: 0, C: -0.3, D: -0.5, open: true,
+    doors: 2, lights: 'round', cabin: 'bike', engine: 'twin', handling: H(-0.055, 0.006, 5.5, 8), rim: 'five', finish: 'metallic',
+    features: [], bike: true,
+  },
 ];
 
 export const COLORS = [0xb3121b, 0xd9a21b, 0xf2f1ec, 0x1b2233, 0x2a6fb5, 0x3d4a3a, 0x3f8f86, 0x8fc3d6, 0xc85a8f, 0x6a4bb0, 0x1e1f22, 0xa9aeb5, 0xe0701e, 0x6b6a43, 0x48505c, 0x6fa8a0];
@@ -172,8 +223,8 @@ export function defaultCustom(spec: CarSpec): Custom {
   return {
     color: spec.defaultColor,
     finish: spec.finish,
-    color2: spec.id === 'van' ? 0xefefea : spec.id === 'muscle' ? 0xf2f1ec : 0x1e1f22,
-    twoTone: spec.id === 'van' || spec.id === 'classic',
+    color2: spec.id === 'van' ? 0xefefea : spec.id === 'muscle' || spec.id === 'starliner' || spec.id === 'wanderer' ? 0xf2f1ec : 0x1e1f22,
+    twoTone: spec.id === 'van' || spec.id === 'classic' || spec.id === 'starliner' || spec.id === 'wanderer',
     stripes: spec.id === 'muscle',
     rim: spec.rim,
     rimColor: spec.rim === 'beadlock' ? 0x1d1e21 : spec.rim === 'steel' ? 0xe6e7ea : 0xc9ccd1,

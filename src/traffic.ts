@@ -52,7 +52,7 @@ export class Traffic {
       this.group.add(user.group);
       this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0, stun: 0, lane: 1 });
     };
-    const specs = CARS.filter((c) => c.id !== 'van');
+    const specs = CARS.filter((c) => c.id !== 'van' && !c.bike);
     for (let i = 0; i < 7; i++) add('car', carUser(new CarModel(specs[(i * 3 + 1) % specs.length], { color: COLORS[(i * 5 + 2) % COLORS.length], stripes: false })));
     add('camper', carUser(new CarModel(CARS.find((c) => c.id === 'van')!, { color: 0xe9e4d8 })));
     add('truck', makeTruck(0x2c5d8a));
