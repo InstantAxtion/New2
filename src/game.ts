@@ -7,6 +7,8 @@ import { CARS, CarModel, type CarSpec } from './cars';
 import { STYLES, Vehicle, type AutoEnv, type Controls } from './drive';
 import { CameraRig } from './camera';
 import { Traffic } from './traffic';
+import { Pedestrians } from './peds';
+import { nightGlow } from './special';
 import { EngineSound } from './audio';
 import { shared, waterMaterial, type Tier } from './materials';
 import type { MusicVideos } from './music';
@@ -29,6 +31,10 @@ export class Game {
   readonly sky: Sky;
   readonly water: THREE.Mesh;
   readonly traffic: Traffic;
+  readonly peds: Pedestrians;
+  /** How much of the night the current place forces (the neon city). */
+  private nightLock = 0;
+  private fogScale = 1;
   readonly rig: CameraRig;
   readonly engine = new EngineSound();
   car!: CarModel;
@@ -104,6 +110,8 @@ export class Game {
     this.traffic = new Traffic(this.world);
     this.traffic.density = settings.trafficDensity;
     this.scene.add(this.traffic.group);
+    this.peds = new Pedestrians(this.world);
+    this.scene.add(this.peds.group);
 
     this.rig = new CameraRig(this.camera, this.world);
     this.rig.mode = settings.cam;
@@ -209,6 +217,7 @@ export class Game {
     this.chunks.setWorld(this.world);
     this.vehicle.world = this.world;
     this.traffic.world = this.world;
+    this.peds.world = this.world;
     this.rig.world = this.world;
     this.traffic.clear();
     this.vehicle.place(z);
@@ -310,6 +319,7 @@ export class Game {
     this.car.setInside(this.phase !== 'garage' && this.rig.mode === 'hood');
 
     if (this.phase === 'drive') this.traffic.update(dt, v, night, (z) => this.speedLimit(z));
+    this.peds.update(v.z, this.elapsed);
 
     if (this.phase === 'garage') this.rig.orbit(v, dt, this.elapsed);
     else {
@@ -343,11 +353,23 @@ export class Game {
       if (this.tier === 'pbr') wc.setRGB(0.02 + winter * 0.6, 0.18 + winter * 0.5, 0.26 + winter * 0.55);
       else wc.setRGB(0.17 + winter * 0.55, 0.5 + winter * 0.32, 0.68 + winter * 0.22);
     }
-    this.sky.update(this.hour, this.elapsed, new THREE.Vector3(v.x, v.y, v.z), this.tier === 'pbr');
+    // The neon city is always at night: pull the clock towards midnight there
+    // (It already fades in with distance as the regions blend.)
+    this.nightLock = this.world.nightAt(v.z);
+    let shown = this.hour;
+    if (this.nightLock > 0.001) {
+      const h = shown < 12 ? shown + 24 : shown;
+      shown = (h + (23.5 + (h > 23.5 ? 24 : 0) - h) * this.nightLock) % 24;
+    }
+    this.sky.update(shown, this.elapsed, new THREE.Vector3(v.x, v.y, v.z), this.tier === 'pbr');
+    // Mist in the rainforest, haze over the lakes
+    this.fogScale = this.world.fogAt(v.z);
+    this.sky.setFogFar(QUALITY[this.settings.quality].fogFar * this.fogScale);
+    for (const g of nightGlow) g.m.emissiveIntensity = g.day + (g.night - g.day) * this.sky.night;
     this.envTimer -= dt;
-    if (this.envTimer <= 0 && Math.abs(this.hour - this.envHour) > 0.15) {
+    if (this.envTimer <= 0 && Math.abs(shown - this.envHour) > 0.15) {
       this.envTimer = 4;
-      this.envHour = this.hour;
+      this.envHour = shown;
       this.updateEnvironment();
     }
 

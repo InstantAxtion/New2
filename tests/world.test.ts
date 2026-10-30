@@ -124,3 +124,29 @@ describe('auto-drive with traffic', () => {
     expect(Math.abs(v.v)).toBeLessThan(0.5);
   });
 });
+
+describe('new worlds', () => {
+  it('builds bridges over lakes and keeps the road dry', () => {
+    const w = new World(21, ['lakes']);
+    let bridged = 0;
+    for (let z = 0; z < SEGMENT * 6; z += 10) {
+      if (w.bridge(z) > 0.6) {
+        bridged++;
+        expect(w.roadY(z)).toBeGreaterThan(1);
+      }
+    }
+    expect(bridged).toBeGreaterThan(5);
+  });
+
+  it('has towns with crossings and a speed limit', () => {
+    const w = new World(5, ['hills', 'flatlands']);
+    const crossings = w.crossings(0, 40000);
+    expect(crossings.length).toBeGreaterThan(3);
+    for (const z of crossings) expect(w.speedLimit(z)).toBeLessThan(20);
+  });
+
+  it('keeps the neon city dark', () => {
+    const w = new World(3, ['city']);
+    expect(w.nightAt(500)).toBeCloseTo(1);
+  });
+});

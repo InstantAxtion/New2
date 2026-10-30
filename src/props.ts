@@ -298,6 +298,52 @@ function build(type: PropType): THREE.BufferGeometry {
         cyl(0.9, 1.0, 1.6, 0xfff2a8, 10, 0, 12.8, 0),
         cone(1.2, 1.4, 0xd6403a, 10, 0, 14.3, 0),
       ]);
+    case 'tower1':
+      return merge([box(14, 40, 14, 0x5a6270, 0, 20, 0), box(10, 3, 10, 0x3a3f47, 0, 41.5, 0)]);
+    case 'tower2':
+      return merge([box(18, 26, 16, 0x6b6560, 0, 13, 0), box(12, 10, 10, 0x6b6560, 0, 31, 0)]);
+    case 'tower3':
+      return merge([box(16, 70, 16, 0x4a5568, 0, 35, 0), box(6, 8, 6, 0x3a3f47, 0, 74, 0), cyl(0.15, 0.15, 10, 0x999999, 4, 0, 83, 0)]);
+    case 'billboard':
+      return merge([cyl(0.25, 0.3, 7, 0x55585e, 6, 0, 3.5, 0), box(7, 3.5, 0.3, 0xff3fa4, 0, 8.5, 0)]);
+    case 'lamp':
+      return merge([cyl(0.08, 0.12, 6.5, 0x4a4d52, 6, 0, 3.25, 0), box(0.12, 0.12, 1.6, 0x4a4d52, 0, 6.4, 0.75), box(0.35, 0.12, 0.6, 0xfff1c8, 0, 6.3, 1.5)]);
+    case 'jungleTree':
+      return merge([
+        cyl(0.4, 0.7, 8, 0x5b4632, 7, 0, 4, 0),
+        blob(3.2, 0x2f6b2a, 0, 9.5, 0, 0.4, 0.6),
+        blob(2.4, 0x3c7d32, 2, 10.2, 0.6, 0.5, 0.6),
+        blob(2.2, 0x2a5f26, -1.8, 9.8, -0.8, 0.5, 0.6),
+      ]);
+    case 'fern':
+      return merge([blob(0.8, 0x3f7f32, 0, 0.45, 0, 0.3, 0.6), blob(0.6, 0x4c9139, 0.6, 0.4, 0.3, 0.3, 0.6)]);
+    case 'hoodoo':
+      return merge([
+        rockBlob(1.6, 0xa65a36, 0, 1.2, 0),
+        cyl(0.9, 1.4, 6, 0xb5683f, 7, 0, 4, 0),
+        cyl(0.7, 0.9, 4, 0xc07447, 7, 0, 8.5, 0),
+        rockBlob(1.3, 0x8f4a2c, 0, 11, 0),
+      ]);
+    case 'arch': {
+      const g = paint(new THREE.TorusGeometry(9, 2.2, 8, 20, Math.PI), 0xb3613a);
+      g.scale(1, 1.2, 0.8);
+      return merge([g, rockBlob(3, 0xa05634, -9, 0.5, 0), rockBlob(3, 0xa05634, 9, 0.5, 0)]);
+    }
+    case 'pier': {
+      const parts = [box(2.4, 0.2, 14, 0x8a6a48, 0, 0.6, 7)];
+      for (let z = 0; z <= 14; z += 3.5) for (const x of [-1.1, 1.1]) parts.push(cyl(0.12, 0.12, 4, 0x5a4532, 6, x, -1.3, z));
+      return merge(parts);
+    }
+    case 'shop': {
+      const wall = 0xd9cbb4;
+      return merge([
+        box(8, 4.2, 6, wall, 0, 2.1, 0),
+        box(8.4, 0.6, 6.4, 0x4a4d52, 0, 4.5, 0),
+        box(6.6, 2.2, 0.1, 0x2c3a46, 0, 1.5, 3.02),
+        box(7.4, 0.12, 1.4, 0xb3473a, 0, 3.1, 3.6),
+        box(4, 0.7, 0.12, 0x23262b, 0, 3.75, 3.06),
+      ]);
+    }
     case 'post':
       return merge([box(0.14, 1.1, 0.14, 0xf2f2f2, 0, 0.55, 0), box(0.16, 0.12, 0.16, 0xff8a1e, 0, 0.95, 0)]);
     case 'snowman':

@@ -1,11 +1,12 @@
 import { fbm2, noise2, ridged2, smoothstep, clamp, lerp } from './noise';
 
-export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter';
+export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon';
 
 export type PropType =
   | 'pine' | 'pineSnow' | 'tree' | 'treeAutumn' | 'bush' | 'palm' | 'cactus' | 'rock' | 'rockSnow'
   | 'house' | 'barn' | 'windmill' | 'turbine' | 'hay' | 'sheep' | 'boat' | 'umbrella'
-  | 'lighthouse' | 'deadTree' | 'cabin' | 'snowman' | 'mesaRock' | 'post';
+  | 'lighthouse' | 'deadTree' | 'cabin' | 'snowman' | 'mesaRock' | 'post'
+  | 'tower1' | 'tower2' | 'tower3' | 'billboard' | 'lamp' | 'jungleTree' | 'fern' | 'hoodoo' | 'arch' | 'pier' | 'shop';
 
 export interface PropSpec {
   type: PropType;
@@ -25,6 +26,18 @@ export interface PropSpec {
   cluster?: number;
 }
 
+/** Lakes cross the road now and then (0..1); `road` gives the bridge strength instead. */
+export function lakeAt(x: number, z: number, seed: number, road = false): number {
+  const along = noise2(z / 420, 3.7, seed + 131);
+  const shape = along + noise2(x / 160, z / 160, seed + 132) * 0.35;
+  return road ? smoothstep(0.12, 0.3, along) : smoothstep(0.08, 0.3, shape);
+}
+
+/** Gorges the canyon road bridges over (0..1). */
+export function gorgeAt(z: number, seed: number): number {
+  return smoothstep(0.42, 0.55, noise2(z / 300, 9.1, seed + 141));
+}
+
 export interface Ctx {
   /** Lateral offset from the road centre (perpendicular-ish), metres. Negative = left. */
   u: number;
@@ -32,6 +45,7 @@ export interface Ctx {
   roadY: number;
   /** +1 or -1: which side the sea is on (seaside only). */
   seaSide: number;
+  seed?: number;
 }
 
 export interface Biome {
@@ -49,6 +63,14 @@ export interface Biome {
   haze: [number, number, number, number];
   /** Shoulder/verge colour next to the asphalt. */
   verge: [number, number, number];
+  /** How far you can see (1 = normal, less = mistier). */
+  fog?: number;
+  /** Always night here (the neon city). */
+  night?: boolean;
+  /** The road can cross water or a gorge on a bridge here. */
+  bridges?: (x: number, z: number, seed: number) => number;
+  /** Rural regions get the occasional small town. */
+  towns?: boolean;
 }
 
 const set = (out: number[], r: number, g: number, b: number) => {
@@ -100,6 +122,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     ],
     haze: [0.75, 0.88, 1.0, 0.25],
     verge: [0.85, 0.79, 0.6],
+    towns: true,
   },
   hills: {
     id: 'hills', name: 'Rolling Hills', emoji: '⛰️', roadBase: 9, roadAmp: 14,
@@ -124,6 +147,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     ],
     haze: [0.8, 0.9, 1.0, 0.1],
     verge: [0.55, 0.53, 0.47],
+    towns: true,
   },
   flatlands: {
     id: 'flatlands', name: 'Flatlands', emoji: '🌾', roadBase: 5, roadAmp: 1.5,
@@ -153,6 +177,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     ],
     haze: [1.0, 0.95, 0.85, 0.12],
     verge: [0.6, 0.57, 0.48],
+    towns: true,
   },
   desert: {
     id: 'desert', name: 'Desert', emoji: '🏜️', roadBase: 7, roadAmp: 5,
@@ -247,6 +272,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     ],
     haze: [1.0, 0.86, 0.7, 0.15],
     verge: [0.58, 0.52, 0.42],
+    towns: true,
   },
   winter: {
     id: 'winter', name: 'Winter', emoji: '❄️', roadBase: 14, roadAmp: 10,
@@ -267,6 +293,98 @@ export const BIOMES: Record<BiomeId, Biome> = {
     ],
     haze: [0.9, 0.93, 1.0, 0.3],
     verge: [0.9, 0.92, 0.96],
+  },
+  city: {
+    id: 'city', name: 'Neon City', emoji: '🌃', roadBase: 6, roadAmp: 1, night: true, fog: 0.75,
+    height(x, z, c) {
+      return c.roadY + 0.2 + fbm2(x / 400, z / 400, 2, 91) * 1.5 * ramp(c.u, 60, 200);
+    },
+    color(x, z, h, rel, c, out) {
+      // Pavement and plazas
+      const n = noise2(x / 20, z / 20, 92) * 0.5 + 0.5;
+      set(out, 0.42 + n * 0.08, 0.42 + n * 0.08, 0.44 + n * 0.08);
+      if (Math.abs(c.u) > 40 && noise2(x / 90, z / 90, 93) > 0.35) set(out, 0.3, 0.42, 0.26); // little parks
+    },
+    props: [
+      { type: 'tower1', n: 7, u: [16, 70], scale: [0.85, 1.25] },
+      { type: 'tower2', n: 5, u: [20, 90], scale: [0.85, 1.3] },
+      { type: 'tower3', n: 4, u: [60, 260], scale: [0.9, 1.4] },
+      { type: 'billboard', n: 2.5, u: [11, 30], scale: [0.9, 1.2] },
+      { type: 'tree', n: 3, u: [9, 14], scale: [0.6, 0.8] },
+    ],
+    haze: [0.45, 0.35, 0.65, 0.35],
+    verge: [0.46, 0.46, 0.48],
+  },
+  rainforest: {
+    id: 'rainforest', name: 'Rainforest', emoji: '🌴', roadBase: 9, roadAmp: 8, fog: 0.62,
+    height(x, z, c) {
+      return c.roadY + (fbm2(x / 140, z / 140, 4, 101) * 26 + 6) * ramp(c.u, 10, 90) + ridged2(x / 60, z / 60, 2, 102) * 6 * ramp(c.u, 14, 60);
+    },
+    color(x, z, h, rel, c, out) {
+      set(out, 0.16, 0.32, 0.12);
+      mix(out, 0.26, 0.4, 0.14, noise2(x / 18, z / 18, 103) * 0.5 + 0.5);
+      if (h < 0.6) set(out, 0.36, 0.32, 0.22);
+    },
+    props: [
+      { type: 'jungleTree', n: 34, u: [8.5, 260], scale: [1.2, 2.1], cluster: 6 },
+      { type: 'palm', n: 10, u: [9, 120], scale: [0.9, 1.4], cluster: 3 },
+      { type: 'fern', n: 40, u: [8, 70], scale: [0.8, 1.6], cluster: 5 },
+      { type: 'bush', n: 10, u: [8, 50], scale: [0.8, 1.4] },
+    ],
+    haze: [0.72, 0.86, 0.74, 0.45],
+    verge: [0.36, 0.32, 0.24],
+  },
+  lakes: {
+    id: 'lakes', name: 'Lakes & Bridges', emoji: '🌉', roadBase: 5.5, roadAmp: 1.5, fog: 0.9,
+    height(x, z, c) {
+      const lake = lakeAt(x, z, c.seed ?? 0);
+      const land = c.roadY + 0.5 + (fbm2(x / 170, z / 170, 4, 111) * 14 + 4) * ramp(c.u, 10, 120);
+      return land + (-7 - land) * lake;
+    },
+    color(x, z, h, rel, c, out) {
+      set(out, 0.38, 0.6, 0.27);
+      mix(out, 0.5, 0.66, 0.3, noise2(x / 30, z / 30, 112) * 0.5 + 0.5);
+      if (h < 1.4) set(out, 0.8, 0.74, 0.56);
+    },
+    props: [
+      { type: 'pine', n: 14, u: [12, 260], scale: [0.8, 1.4], cluster: 6 },
+      { type: 'tree', n: 6, u: [12, 200], scale: [0.8, 1.3], cluster: 4 },
+      { type: 'boat', n: 3, u: [30, 300], scale: [0.8, 1.3], h: [-99, -1.2], float: true },
+      { type: 'pier', n: 1.2, u: [20, 120], scale: [1, 1.3], h: [-2.5, 0.6], float: true },
+      { type: 'cabin', n: 1, u: [16, 90], scale: [1, 1.1] },
+      { type: 'lighthouse', n: 0.12, u: [30, 90], scale: [0.8, 1], h: [0.5, 4] },
+    ],
+    haze: [0.8, 0.9, 1.0, 0.2],
+    verge: [0.55, 0.53, 0.47],
+    bridges: (x, z, seed) => lakeAt(x, z, seed, true),
+  },
+  canyon: {
+    id: 'canyon', name: 'Canyon', emoji: '🪨', roadBase: 22, roadAmp: 6,
+    height(x, z, c) {
+      const g = gorgeAt(z, c.seed ?? 0);
+      const wall = smoothstep(14, 38, Math.abs(c.u)) * (55 + noise2(x / 160, z / 160, 121) * 35);
+      const steps = Math.floor(wall / 9) * 9 + smoothstep(0.6, 1, (wall / 9) % 1) * 9;
+      const rim = c.roadY + steps * (1 - g) + ridged2(x / 70, z / 70, 2, 122) * 5 * ramp(c.u, 20, 60);
+      // A gorge drops away under the road (crossed on a bridge)
+      return rim + (c.roadY - 48 - rim) * g * (1 - smoothstep(60, 110, Math.abs(c.u)));
+    },
+    color(x, z, h, rel, c, out) {
+      set(out, 0.86, 0.62, 0.42);
+      if (rel > 3 || rel < -4) {
+        const band = Math.sin(h * 0.8) * 0.5 + 0.5;
+        set(out, lerp(0.72, 0.56, band), lerp(0.36, 0.26, band), lerp(0.22, 0.17, band));
+      }
+    },
+    props: [
+      { type: 'hoodoo', n: 3, u: [12, 40], scale: [0.7, 1.4] },
+      { type: 'arch', n: 0.25, u: [30, 70], scale: [0.9, 1.2] },
+      { type: 'rock', n: 5, u: [9, 60], scale: [0.6, 2] },
+      { type: 'cactus', n: 2, u: [9, 30], scale: [0.7, 1.2] },
+      { type: 'deadTree', n: 1, u: [10, 40], scale: [0.8, 1.2] },
+    ],
+    haze: [1.0, 0.82, 0.62, 0.22],
+    verge: [0.78, 0.58, 0.42],
+    bridges: (x, z, seed) => gorgeAt(z, seed),
   },
 };
 

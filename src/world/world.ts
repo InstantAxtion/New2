@@ -138,6 +138,7 @@ export class World {
       this.ctx.u = u;
       this.ctx.roadY = roadY;
       this.ctx.seaSide = this.seaSide(k);
+      this.ctx.seed = this.seed;
       h += w * biome.height(x, z, this.ctx);
     }
     return h;
@@ -148,9 +149,126 @@ export class World {
     const u = this.lateral(x, z);
     const ry = this.roadY(z);
     const a = Math.abs(u);
-    if (a <= FLAT) return ry - 0.12;
-    const t = smoothstep(FLAT, FLAT + 26, a);
+    const bridge = this.bridge(z);
+    // Towns and the city get a wider flat strip for pavements
+    const flat = FLAT + this.urban(z) * 9;
+    if (a <= flat && bridge < 0.01) return ry - 0.12;
+    let t = smoothstep(flat, flat + 26, a);
+    t = t + (1 - t) * bridge;
     return ry - 0.12 + (this.natural(x, z, u, ry) - ry + 0.12) * t;
+  }
+
+  // ---- Bridges, towns, the city ----
+
+  private memo = new Map<string, number>();
+  /** Remember per-z answers (terrain asks for the same rows many times). */
+  private cached(key: string, z: number, f: () => number): number {
+    const k = key + Math.round(z * 4);
+    let v = this.memo.get(k);
+    if (v === undefined) {
+      if (this.memo.size > 20000) this.memo.clear();
+      v = f();
+      this.memo.set(k, v);
+    }
+    return v;
+  }
+
+  /** 0..1: the road is on a bridge here (over a lake or a gorge). */
+  bridge(z: number): number {
+    return this.cached('b', z, () => this.bridgeRaw(z));
+  }
+
+  private bridgeRaw(z: number): number {
+    let b = 0;
+    for (const { biome, w } of this.weights(z)) if (biome.bridges) b += w * biome.bridges(this.roadX(z), z, this.seed);
+    return smoothstep(0.35, 0.65, b);
+  }
+
+  /** 0..1: inside a small town. */
+  townAt(z: number): number {
+    return this.cached('t', z, () => this.townRaw(z));
+  }
+
+  private townRaw(z: number): number {
+    const cell = Math.floor(z / 2400);
+    let best = 0;
+    for (const c of [cell - 1, cell, cell + 1]) {
+      const centre = this.townCentre(c);
+      if (centre === null) continue;
+      best = Math.max(best, 1 - smoothstep(170, 250, Math.abs(z - centre)));
+    }
+    return best;
+  }
+
+  private townCentre(c: number): number | null {
+    if (hash1(c, this.seed + 201) < 0.4) return null;
+    const centre = c * 2400 + 500 + hash1(c, this.seed + 202) * 1400;
+    const b = this.dominant(centre);
+    return b.towns && this.bridge(centre) < 0.01 ? centre : null;
+  }
+
+  /** 0..1: in the neon city. */
+  cityAt(z: number): number {
+    return this.weights(z).reduce((m, x) => m + (x.biome.id === 'city' ? x.w : 0), 0);
+  }
+
+  urban(z: number): number {
+    return this.cached('u', z, () => Math.max(this.townAt(z), smoothstep(0.3, 0.8, this.cityAt(z))));
+  }
+
+  /** Always-night share here (the city). */
+  nightAt(z: number): number {
+    return this.weights(z).reduce((m, x) => m + (x.biome.night ? x.w : 0), 0);
+  }
+
+  /** How far you can see here, relative to normal. */
+  fogAt(z: number): number {
+    return this.weights(z).reduce((m, x) => m + (x.biome.fog ?? 1) * x.w, 0);
+  }
+
+  /** Speed limit at z in m/s (towns and the city). */
+  speedLimit(z: number): number {
+    if (this.cityAt(z) > 0.5) return 60 / 3.6;
+    if (this.townAt(z) > 0.5) return 50 / 3.6;
+    return Infinity;
+  }
+
+  /** Zebra crossings between z0 and z1. */
+  crossings(z0: number, z1: number): number[] {
+    const out: number[] = [];
+    const cell0 = Math.floor(z0 / 2400) - 1, cell1 = Math.floor(z1 / 2400) + 1;
+    for (let c = cell0; c <= cell1; c++) {
+      const centre = this.townCentre(c);
+      if (centre === null) continue;
+      for (const z of [centre - 110, centre, centre + 110]) if (z >= z0 && z < z1) out.push(z);
+    }
+    for (let z = Math.ceil((z0 - 40) / 160) * 160 + 40; z < z1; z += 160) {
+      if (z >= z0 && this.cityAt(z) > 0.7) out.push(z);
+    }
+    return out.sort((a, b) => a - b);
+  }
+
+  /**
+   * The person using a crossing at time t: lateral position (from -7 to +7 across the
+   * road) while they walk, or null when nobody is crossing.
+   */
+  pedestrian(cz: number, t: number): { u: number; dir: number } | null {
+    const period = 26;
+    const phase = (t + hash1(Math.round(cz), this.seed + 301) * period) % period;
+    if (phase > 9) return null;
+    const dir = hash1(Math.round(cz), this.seed + 302) < 0.5 ? 1 : -1;
+    return { u: dir * (-7 + (phase / 9) * 14), dir };
+  }
+
+  /** Distance to a crossing ahead that someone is on (or about to step onto). */
+  stopFor(z: number, dir: number, t: number): number | null {
+    for (const cz of this.crossings(z - 80, z + 80)) {
+      const d = (cz - z) * dir;
+      if (d < 2 || d > 75) continue;
+      const p = this.pedestrian(cz, t) ?? this.pedestrian(cz, t + 2.5);
+      if (p && Math.abs(p.u) < 6.5) return d;
+    }
+    return null;
   }
 
   /** The surface the car rolls on: the road if on it, the ground otherwise. */
@@ -199,6 +317,17 @@ export class World {
         }
         case 'autumn': add(1, 0.45); add(2, 0.55); break;
         case 'winter': add(5, 1); break;
+        case 'city': add(4, 0.85); add(3, 0.15); break;
+        case 'rainforest': add(2, 0.5); add(0, 0.5); break;
+        case 'lakes':
+          if (h < 1.6) add(3, 1);
+          else { add(0, 0.85); add(1, 0.15); }
+          break;
+        case 'canyon': {
+          const wall = rel > 3 || rel < -4 ? 1 : 0;
+          add(4, wall); add(3, 1 - wall);
+          break;
+        }
       }
     }
     // Lake shores
@@ -206,6 +335,13 @@ export class World {
       const t = smoothstep(0.7, 0.2, h);
       for (let i = 0; i < 6; i++) out[i] *= 1 - t;
       out[3] += t;
+    }
+    // Pavement in towns
+    const urb = this.urban(z);
+    if (urb > 0) {
+      const t = urb * (1 - smoothstep(FLAT + 6, FLAT + 11, Math.abs(u)));
+      for (let i = 0; i < 6; i++) out[i] *= 1 - t;
+      out[4] += t;
     }
     // Gravel shoulder next to the road
     const a = Math.abs(u);
@@ -237,6 +373,11 @@ export class World {
     if (a < FLAT + 1.5) {
       const t = 1 - smoothstep(FLAT - 1, FLAT + 1.5, a);
       out[0] += (vr - out[0]) * t; out[1] += (vg - out[1]) * t; out[2] += (vb - out[2]) * t;
+    }
+    const urb = this.urban(z);
+    if (urb > 0) {
+      const t = urb * (1 - smoothstep(FLAT + 6, FLAT + 11, a));
+      out[0] += (0.55 - out[0]) * t; out[1] += (0.55 - out[1]) * t; out[2] += (0.56 - out[2]) * t;
     }
   }
 }

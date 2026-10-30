@@ -6,6 +6,8 @@ import { rng } from './world/noise';
 import { propGeometry } from './props';
 import { foliageMaterial, grassMaterial, propMaterial, terrainMaterial, type Tier } from './materials';
 import { foliageParts, type FoliageMat } from './foliage';
+import { specialMaterial, specialParts, type SpecialMat } from './special';
+import type { BiomeId } from './world/biomes';
 import { roadTexture } from './textures';
 import { assets } from './assets';
 
@@ -57,6 +59,9 @@ function grassGeometry(): THREE.BufferGeometry {
   for (let i = 0; i < n.count; i++) n.setXYZ(i, 0, 1, 0);
   return g;
 }
+
+const SPECIAL = new Set<string>(['building', 'roofTop', 'neon', 'lampHead', 'metal']);
+const NEON = [0xff2fa0, 0x2fe4ff, 0xb44dff, 0xffd02f, 0x3dff8a, 0xff5a2f];
 
 /** The biome colours are written in sRGB; the GPU wants linear. */
 const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
@@ -181,6 +186,8 @@ export class ChunkManager {
     c.group.position.set(this.originX(i), 0, i * CHUNK);
     c.group.add(this.terrain(i));
     c.group.add(this.road(i));
+    const extra = this.bridgesAndCrossings(i);
+    if (extra) c.group.add(extra);
     const gr = this.grass(i);
     if (gr) c.group.add(gr);
     this.pendingProps.push(c);
@@ -346,6 +353,81 @@ export class ChunkManager {
     return m;
   }
 
+  private concreteMat = new THREE.MeshStandardMaterial({ color: 0x9b9a96, roughness: 0.85 });
+  private stripeMat = new THREE.MeshStandardMaterial({ color: 0xf0f0ea, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+
+  /** Bridge decks, parapets and piers, and zebra crossings painted on the road. */
+  private bridgesAndCrossings(i: number): THREE.Group | null {
+    const w = this.world;
+    const z0 = i * CHUNK;
+    const ox = this.originX(i);
+    const g = new THREE.Group();
+    const at = (z: number, o: number, y: number) => {
+      const [tx, tz] = w.tangent(z);
+      return new THREE.Vector3(w.roadX(z) - tz * o - ox, y, z + tx * o - z0);
+    };
+    // Bridge: a strip mesh along the road for each face
+    const pos: number[] = [];
+    const quad = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3) => {
+      pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, b.x, b.y, b.z, d.x, d.y, d.z, c.x, c.y, c.z);
+    };
+    const step = 2;
+    for (let z = z0; z < z0 + CHUNK; z += step) {
+      if (w.bridge(z) < 0.4 && w.bridge(z + step) < 0.4) continue;
+      const y0 = w.roadY(z), y1 = w.roadY(z + step);
+      const E = ROAD_HALF + 0.5;
+      for (const sd of [-1, 1]) {
+        const o = sd * E;
+        // Parapet: inner face, top, outer face
+        quad(at(z, o, y0), at(z + step, o, y1), at(z, o, y0 + 0.9), at(z + step, o, y1 + 0.9));
+        quad(at(z, o, y0 + 0.9), at(z + step, o, y1 + 0.9), at(z, o + sd * 0.35, y0 + 0.9), at(z + step, o + sd * 0.35, y1 + 0.9));
+        quad(at(z, o + sd * 0.35, y0 + 0.9), at(z + step, o + sd * 0.35, y1 + 0.9), at(z, o + sd * 0.35, y0 - 0.9), at(z + step, o + sd * 0.35, y1 - 0.9));
+        // Deck edge between road and parapet
+        quad(at(z, sd * ROAD_HALF, y0 + 0.01), at(z + step, sd * ROAD_HALF, y1 + 0.01), at(z, o, y0 + 0.01), at(z + step, o, y1 + 0.01));
+      }
+      // Underside of the deck
+      quad(at(z, -E - 0.35, y0 - 0.9), at(z + step, -E - 0.35, y1 - 0.9), at(z, E + 0.35, y0 - 0.9), at(z + step, E + 0.35, y1 - 0.9));
+    }
+    if (pos.length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.computeVertexNormals();
+      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x9b9a96, roughness: 0.85, side: THREE.DoubleSide }));
+      m.castShadow = m.receiveShadow = true;
+      g.add(m);
+      // Piers down to the water or the floor of the gorge
+      const piers: THREE.BufferGeometry[] = [];
+      for (let z = Math.ceil(z0 / 30) * 30; z < z0 + CHUNK; z += 30) {
+        if (w.bridge(z) < 0.6) continue;
+        const ry = w.roadY(z);
+        for (const sd of [-1, 1]) {
+          const p = at(z, sd * 2.6, 0);
+          const ground = Math.min(w.height(p.x + ox, p.z + z0), -1);
+          const h = ry - 0.9 - ground + 2;
+          if (h < 2) continue;
+          piers.push(new THREE.CylinderGeometry(0.75, 0.9, h, 10).translate(p.x, ground - 2 + h / 2, p.z));
+        }
+      }
+      if (piers.length) {
+        const pm = new THREE.Mesh(mergeGeometries(piers)!, this.concreteMat);
+        pm.castShadow = true;
+        g.add(pm);
+      }
+    }
+    // Zebra crossings
+    const stripes: THREE.BufferGeometry[] = [];
+    for (const cz of w.crossings(z0, z0 + CHUNK)) {
+      const [tx, tz] = w.tangent(cz);
+      const yaw = Math.atan2(tx, tz);
+      for (let k = -3; k <= 3; k++) {
+        const p = at(cz, k * 1.15, w.roadY(cz) + 0.015);
+        stripes.push(new THREE.PlaneGeometry(0.55, 3.4).rotateX(-Math.PI / 2).rotateY(yaw).translate(p.x, p.y, p.z));
+      }
+    }
+    if (stripes.length) g.add(new THREE.Mesh(mergeGeometries(stripes)!, this.stripeMat));
+    return g.children.length ? g : null;
+  }
+
   private props(i: number): THREE.InstancedMesh[] {
     const w = this.world;
     const z0 = i * CHUNK;
@@ -364,26 +446,42 @@ export class ChunkManager {
       if (!items.has(type)) { items.set(type, []); tints.set(type, []); }
       items.get(type)!.push(m4.clone());
       const t = 0.88 + r() * 0.22;
-      tints.get(type)!.push(new THREE.Color(t, t * (0.95 + r() * 0.1), t));
+      if (type === 'billboard') tints.get(type)!.push(new THREE.Color(NEON[Math.floor(r() * NEON.length)]));
+      else tints.get(type)!.push(new THREE.Color(t, t * (0.95 + r() * 0.1), t));
     };
 
-    // Roadside posts
-    for (let z = Math.ceil(z0 / 32) * 32; z < z0 + CHUNK; z += 32) {
+    // Roadside: street lamps in towns and the city, marker posts elsewhere (none on bridges)
+    for (let z = Math.ceil(z0 / 28) * 28; z < z0 + CHUNK; z += 28) {
       const [tx, tz] = w.tangent(z);
       const rx = w.roadX(z), ry = w.roadY(z);
-      for (const o of [-ROAD_HALF - 1.1, ROAD_HALF + 1.1]) {
-        put('post', rx - tz * o, ry - 0.1, z + tx * o, 1, 0);
+      if (w.bridge(z) > 0.3) continue;
+      if (w.urban(z) > 0.5) {
+        const side = Math.round(z / 28) % 2 === 0 ? 1 : -1;
+        const o = side * (ROAD_HALF + 1.8);
+        // The lamp's arm (local +z) reaches out over the road
+        put('lamp', rx - tz * o, ry - 0.1, z + tx * o, 1, Math.atan2(tz * side, -tx * side));
+      } else if (z % 32 < 28 && Math.round(z / 28) % 8 !== 3) {
+        for (const o of [-ROAD_HALF - 1.1, ROAD_HALF + 1.1]) put('post', rx - tz * o, ry - 0.1, z + tx * o, 1, 0);
       }
     }
 
+    // Towns: houses and shops close to the road
+    const townSpecs: PropSpec[] = [
+      { type: 'house', n: 16, u: [15, 34], scale: [0.9, 1.1] },
+      { type: 'shop', n: 9, u: [14, 22], scale: [0.95, 1.05] },
+      { type: 'tree', n: 6, u: [11, 14], scale: [0.6, 0.9] },
+    ];
+
     const seen = new Set<string>();
     const regions = [...w.weights(z0), ...w.weights(z0 + CHUNK)];
+    const town = Math.max(w.townAt(z0), w.townAt(z0 + CHUNK / 2), w.townAt(z0 + CHUNK));
     for (const { biome, k } of regions) {
       const key = biome.id + k;
       if (seen.has(key)) continue;
       seen.add(key);
       const sea = w.seaSide(k);
-      for (const spec of biome.props) {
+      const specs = town > 0.3 && biome.towns ? [...townSpecs, ...biome.props] : biome.props;
+      for (const spec of specs) {
         const expected = spec.n * 3 * this.quality.props * (CHUNK / 100);
         let count = Math.floor(expected) + (r() < expected % 1 ? 1 : 0);
         const cl = spec.cluster ?? 1;
@@ -404,6 +502,11 @@ export class ChunkManager {
           // Accept by how much this region shapes the world here
           const ww = w.weights(z).find((b) => b.k === k);
           if (!ww || r() > ww.w) continue;
+          const isTown = townSpecs.includes(spec);
+          if (isTown && w.townAt(z) < 0.5) continue;
+          // Keep the countryside clear of the road in town, and nothing on bridges
+          if (!isTown && w.townAt(z) > 0.3 && Math.abs(u) < 36) continue;
+          if (w.bridge(z) > 0.3 && Math.abs(u) < 14 && !spec.float) continue;
           const [, tz] = w.tangent(z);
           const x = w.roadX(z) - u / tz;
           const h = w.height(x, z);
@@ -418,14 +521,14 @@ export class ChunkManager {
     const out: THREE.InstancedMesh[] = [];
     for (const [type, mats] of items) {
       // Good graphics: real trees made of bark and leaf cards
-      const parts = this.quality.tier === 'pbr' ? foliageParts(type) : null;
+      const parts = this.quality.tier === 'pbr' ? (foliageParts(type) ?? specialParts(type)) : null;
       if (parts) {
         const ts = tints.get(type)!;
         for (const part of parts) {
-          let mat = this.foliageMats.get(part.mat);
+          let mat = this.foliageMats.get(part.mat as FoliageMat);
           if (!mat) {
-            mat = foliageMaterial(part.mat);
-            this.foliageMats.set(part.mat, mat);
+            mat = SPECIAL.has(part.mat) ? specialMaterial(part.mat as SpecialMat) : foliageMaterial(part.mat as FoliageMat);
+            this.foliageMats.set(part.mat as FoliageMat, mat);
           }
           const im = new THREE.InstancedMesh(part.geo, mat, mats.length);
           mats.forEach((m, j) => {
@@ -453,4 +556,4 @@ export class ChunkManager {
   }
 }
 
-export type { PropSpec };
+export type { PropSpec, BiomeId };

@@ -6,7 +6,7 @@ import type { PropType } from './world/biomes';
 // Realistic trees for the good-graphics tiers: bark-textured trunks and branches, and
 // foliage made of many alpha-cut "cards" painted with leaves or needles.
 
-export type FoliageMat = 'leaf' | 'leafAutumn' | 'needle' | 'needleSnow' | 'frond' | 'bark' | 'palmBark';
+export type FoliageMat = 'leaf' | 'leafAutumn' | 'leafJungle' | 'fern' | 'needle' | 'needleSnow' | 'frond' | 'bark' | 'palmBark';
 
 function canvas(w: number, h: number) {
   const c = document.createElement('canvas');
@@ -147,12 +147,39 @@ function frondTexture(): THREE.Texture {
   return finish(c);
 }
 
+/** A fern frond: a stem with paired leaflets shrinking to the tip. */
+function fernTexture(): THREE.Texture {
+  const W = 256, H = 64;
+  const { c, g } = canvas(W, H);
+  const r = rng(71);
+  g.strokeStyle = '#3d5a24';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(0, H / 2);
+  g.lineTo(W - 6, H / 2);
+  g.stroke();
+  for (let i = 0; i < 26; i++) {
+    const t = i / 26;
+    const x = 8 + t * (W - 20);
+    const len = (1 - t) * 26 + 4;
+    for (const side of [-1, 1]) {
+      g.fillStyle = `hsl(${100 + r() * 16},${45 + r() * 15}%,${22 + r() * 14}%)`;
+      g.beginPath();
+      g.ellipse(x + 4, H / 2 + side * len / 2, 4, len / 2, side * 0.4, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  return finish(c);
+}
+
 const texCache = new Map<FoliageMat, THREE.Texture>();
 export function foliageTexture(m: FoliageMat): THREE.Texture | null {
   if (texCache.has(m)) return texCache.get(m)!;
   let t: THREE.Texture | null = null;
   if (m === 'leaf') t = leafTexture([[95, 45, 26], [105, 42, 22], [88, 40, 30], [115, 35, 20]], 61);
   if (m === 'leafAutumn') t = leafTexture([[28, 75, 42], [38, 80, 46], [14, 70, 36], [48, 70, 44], [70, 35, 32]], 62);
+  if (m === 'leafJungle') t = leafTexture([[110, 55, 18], [100, 50, 22], [125, 45, 16], [95, 60, 26]], 63);
+  if (m === 'fern') t = fernTexture();
   if (m === 'needle') t = needleTexture(false);
   if (m === 'needleSnow') t = needleTexture(true);
   if (m === 'frond') t = frondTexture();
@@ -322,6 +349,27 @@ function bush(seed: number): G {
   return prep(mergeGeometries(cards)!, (p) => p.y * 0.4, (p) => 0.6 + 0.4 * Math.min(1, p.y / 1.3));
 }
 
+/** Fronds arching out of the ground. */
+function fern(seed: number): G {
+  const r = rng(seed);
+  const fronds: G[] = [];
+  for (let i = 0; i < 9; i++) {
+    const g = new THREE.PlaneGeometry(1.6, 0.4, 6, 1).rotateX(-Math.PI / 2);
+    g.translate(0.8, 0, 0);
+    const pos = g.attributes.position;
+    const lift = 0.9 + r() * 0.5;
+    for (let k = 0; k < pos.count; k++) {
+      const x = pos.getX(k);
+      pos.setY(k, x * lift - x * x * 0.55);
+    }
+    g.rotateY((i / 9) * Math.PI * 2 + r() * 0.4);
+    const nor = g.attributes.normal;
+    for (let k = 0; k < nor.count; k++) nor.setXYZ(k, 0, 1, 0);
+    fronds.push(g);
+  }
+  return prep(mergeGeometries(fronds)!, (p) => p.y * 0.6, (p) => 0.6 + 0.4 * Math.min(1, p.y / 0.8));
+}
+
 export interface Part {
   geo: THREE.BufferGeometry;
   mat: FoliageMat;
@@ -360,6 +408,17 @@ export function foliageParts(type: PropType): Part[] | null {
     }
     case 'bush':
       parts = [{ geo: bush(12), mat: 'leaf' }];
+      break;
+    case 'jungleTree': {
+      const t = broadleaf(13);
+      // Taller and wider than a field tree
+      t.wood.scale(1.15, 1.6, 1.15);
+      t.leaves.scale(1.5, 1.25, 1.5).translate(0, 2.4, 0);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leafJungle' }];
+      break;
+    }
+    case 'fern':
+      parts = [{ geo: fern(14), mat: 'fern' }];
       break;
   }
   for (const p of parts ?? []) p.geo.computeBoundingSphere();
