@@ -1,0 +1,187 @@
+import * as THREE from 'three';
+
+export type TimeMode = 'cycle' | 'dawn' | 'day' | 'sunset' | 'night';
+export const TIME_PRESETS: Record<Exclude<TimeMode, 'cycle'>, number> = { dawn: 6.4, day: 12.5, sunset: 18.6, night: 23 };
+
+interface Key {
+  t: number;
+  top: number;
+  horizon: number;
+  sun: number;
+  sunI: number;
+  hemiSky: number;
+  hemiGround: number;
+  hemiI: number;
+}
+
+// Colours of the sky through the day
+const KEYS: Key[] = [
+  { t: 0, top: 0x040816, horizon: 0x111a33, sun: 0x8899cc, sunI: 0.25, hemiSky: 0x33456e, hemiGround: 0x0c0c14, hemiI: 0.55 },
+  { t: 4.8, top: 0x0a1230, horizon: 0x2a2a4a, sun: 0x8899cc, sunI: 0.2, hemiSky: 0x3a4a78, hemiGround: 0x101018, hemiI: 0.55 },
+  { t: 6.0, top: 0x2b3f78, horizon: 0xf2a06e, sun: 0xffa060, sunI: 0.8, hemiSky: 0x8a90c0, hemiGround: 0x3a3028, hemiI: 0.8 },
+  { t: 7.5, top: 0x4f8fd8, horizon: 0xf5d8b0, sun: 0xffe0b0, sunI: 1.6, hemiSky: 0xbfd8ff, hemiGround: 0x5a5040, hemiI: 1.0 },
+  { t: 12, top: 0x2f7fe0, horizon: 0xc4e2ff, sun: 0xfff8ec, sunI: 2.2, hemiSky: 0xcfe6ff, hemiGround: 0x6a6048, hemiI: 1.15 },
+  { t: 16.5, top: 0x3c7ed4, horizon: 0xf5ddb0, sun: 0xffe6b8, sunI: 1.8, hemiSky: 0xc8dcff, hemiGround: 0x5e5240, hemiI: 1.05 },
+  { t: 18.6, top: 0x3d4a8c, horizon: 0xff8f52, sun: 0xff8a4a, sunI: 1.2, hemiSky: 0xb09ad0, hemiGround: 0x4a3428, hemiI: 0.85 },
+  { t: 19.8, top: 0x1a2050, horizon: 0x7a4a6a, sun: 0xd06a6a, sunI: 0.4, hemiSky: 0x5a5a90, hemiGround: 0x201820, hemiI: 0.65 },
+  { t: 21, top: 0x060b20, horizon: 0x18203e, sun: 0x8899cc, sunI: 0.25, hemiSky: 0x33456e, hemiGround: 0x0c0c14, hemiI: 0.55 },
+  { t: 24, top: 0x040816, horizon: 0x111a33, sun: 0x8899cc, sunI: 0.25, hemiSky: 0x33456e, hemiGround: 0x0c0c14, hemiI: 0.55 },
+];
+
+const ca = new THREE.Color(), cb = new THREE.Color();
+function lerpHex(a: number, b: number, t: number, out: THREE.Color) {
+  ca.setHex(a); cb.setHex(b);
+  return out.copy(ca).lerp(cb, t);
+}
+
+const vert = /* glsl */ `
+varying vec3 vDir;
+void main() {
+  vDir = normalize(position);
+  vec4 p = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * p;
+  gl_Position.z = gl_Position.w; // always at the far plane
+}`;
+
+const frag = /* glsl */ `
+uniform vec3 top;
+uniform vec3 horizon;
+uniform vec3 sunDir;
+uniform vec3 sunColor;
+uniform float night;
+uniform float time;
+uniform float clouds;
+varying vec3 vDir;
+
+float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += n(p) * a; p *= 2.07; a *= 0.5; }
+  return s;
+}
+
+void main() {
+  vec3 d = normalize(vDir);
+  float y = max(d.y, 0.0);
+  vec3 col = mix(horizon, top, pow(y, 0.55));
+  if (d.y < 0.0) col = horizon;
+  float sd = max(dot(d, normalize(sunDir)), 0.0);
+  float up = step(-0.05, sunDir.y);
+  col += sunColor * pow(sd, 10.0) * 0.35 * up;
+  col += sunColor * smoothstep(0.9993, 0.9996, sd) * 2.0 * up;
+  // Moon (opposite the sun)
+  float md = max(dot(d, normalize(-sunDir)), 0.0);
+  col += vec3(0.9, 0.92, 1.0) * smoothstep(0.9994, 0.9996, md) * night;
+  // Stars
+  if (night > 0.01 && d.y > 0.0) {
+    vec2 sp = floor(d.xz / (d.y + 0.6) * 220.0);
+    float s = h(sp);
+    col += vec3(step(0.9965, s) * night * (0.5 + 0.5 * sin(time * 2.0 + s * 90.0)));
+  }
+  // Clouds
+  if (d.y > 0.02 && clouds > 0.0) {
+    vec2 cp = d.xz / (d.y + 0.08) * 1.6 + vec2(time * 0.006, time * 0.002);
+    float c = smoothstep(0.52, 0.78, fbm(cp));
+    vec3 cc = mix(horizon * 1.05 + vec3(0.12), sunColor * 0.6 + horizon * 0.5, 0.35) * (1.0 - night * 0.75);
+    col = mix(col, cc, c * clouds * smoothstep(0.02, 0.2, d.y));
+  }
+  gl_FragColor = vec4(col, 1.0);
+  #include <colorspace_fragment>
+}`;
+
+export class Sky {
+  readonly mesh: THREE.Mesh;
+  readonly sun = new THREE.DirectionalLight(0xffffff, 2);
+  readonly hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
+  readonly fog: THREE.Fog;
+  private uniforms;
+  /** Hour of the day, 0..24. */
+  hour = 12;
+  /** 0 by day, 1 at night. */
+  night = 0;
+  private haze = new THREE.Color(1, 1, 1);
+  private hazeAmt = 0;
+
+  constructor(fogFar: number) {
+    this.uniforms = {
+      top: { value: new THREE.Color() },
+      horizon: { value: new THREE.Color() },
+      sunDir: { value: new THREE.Vector3(0, 1, 0) },
+      sunColor: { value: new THREE.Color() },
+      night: { value: 0 },
+      time: { value: 0 },
+      clouds: { value: 1 },
+    };
+    const mat = new THREE.ShaderMaterial({
+      uniforms: this.uniforms,
+      vertexShader: vert,
+      fragmentShader: frag,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+    });
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1000, 24, 14), mat);
+    this.mesh.renderOrder = -1;
+    this.mesh.frustumCulled = false;
+    this.fog = new THREE.Fog(0xffffff, fogFar * 0.25, fogFar);
+    this.sun.castShadow = false;
+  }
+
+  setFogFar(far: number) {
+    this.fog.near = far * 0.22;
+    this.fog.far = far;
+  }
+
+  /** Tint the horizon with the current region's haze. */
+  setHaze(r: number, g: number, b: number, amt: number) {
+    this.haze.setRGB(r, g, b);
+    this.hazeAmt = amt;
+  }
+
+  update(hour: number, elapsed: number, target: THREE.Vector3) {
+    this.hour = ((hour % 24) + 24) % 24;
+    let i = 0;
+    while (i < KEYS.length - 2 && KEYS[i + 1].t <= this.hour) i++;
+    const a = KEYS[i], b = KEYS[i + 1];
+    const t = (this.hour - a.t) / (b.t - a.t);
+    const u = this.uniforms;
+    lerpHex(a.top, b.top, t, u.top.value);
+    lerpHex(a.horizon, b.horizon, t, u.horizon.value);
+    u.horizon.value.lerp(this.haze, this.hazeAmt * (1 - this.night));
+    lerpHex(a.sun, b.sun, t, u.sunColor.value);
+
+    // Sun path: rises in the east (+x), sets in the west
+    const ang = ((this.hour - 6) / 12) * Math.PI;
+    const dir = new THREE.Vector3(Math.cos(ang), Math.sin(ang), 0.35).normalize();
+    u.sunDir.value.copy(dir);
+    this.night = THREE.MathUtils.clamp(-dir.y * 4 + 0.2, 0, 1);
+    u.night.value = this.night;
+    u.time.value = elapsed;
+
+    // The light comes from the sun by day and the moon by night
+    const lightDir = dir.y > -0.05 ? dir : dir.clone().negate();
+    this.sun.position.copy(target).addScaledVector(lightDir, 120);
+    this.sun.target.position.copy(target);
+    this.sun.target.updateMatrixWorld();
+    lerpHex(a.sun, b.sun, t, this.sun.color);
+    this.sun.intensity = THREE.MathUtils.lerp(a.sunI, b.sunI, t);
+    lerpHex(a.hemiSky, b.hemiSky, t, this.hemi.color);
+    lerpHex(a.hemiGround, b.hemiGround, t, this.hemi.groundColor);
+    this.hemi.intensity = THREE.MathUtils.lerp(a.hemiI, b.hemiI, t);
+
+    this.fog.color.copy(u.horizon.value);
+  }
+
+  follow(pos: THREE.Vector3) {
+    this.mesh.position.copy(pos);
+  }
+
+  setClouds(on: boolean) {
+    this.uniforms.clouds.value = on ? 1 : 0;
+  }
+}

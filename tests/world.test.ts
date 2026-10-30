@@ -1,0 +1,94 @@
+import { describe, expect, it } from 'vitest';
+import { World, SEGMENT, ROAD_HALF, LANE } from '../src/world/world';
+import { BIOME_IDS } from '../src/world/biomes';
+import { Vehicle } from '../src/drive';
+import { CARS } from '../src/cars';
+
+describe('world', () => {
+  it('is deterministic for a seed', () => {
+    const a = new World(42, []);
+    const b = new World(42, []);
+    for (const z of [0, 123.4, 9999, -500, 1e6]) {
+      expect(a.roadX(z)).toBe(b.roadX(z));
+      expect(a.height(a.roadX(z) + 50, z)).toBe(b.height(b.roadX(z) + 50, z));
+    }
+  });
+
+  it('never repeats a region twice in a row', () => {
+    for (const themes of [[], ['seaside', 'desert', 'forest'], ['hills', 'winter']] as const) {
+      const w = new World(7, [...themes]);
+      for (let k = -50; k < 200; k++) expect(w.regionBiome(k)).not.toBe(w.regionBiome(k + 1));
+    }
+  });
+
+  it('visits every theme', () => {
+    const w = new World(3, []);
+    const seen = new Set<string>();
+    for (let k = 0; k < BIOME_IDS.length * 2; k++) seen.add(w.regionBiome(k));
+    expect(seen.size).toBe(BIOME_IDS.length);
+  });
+
+  it('sticks to a single chosen theme', () => {
+    const w = new World(3, ['desert']);
+    for (let z = 0; z < SEGMENT * 5; z += 100) expect(w.dominant(z).id).toBe('desert');
+  });
+
+  it('blends weights that sum to 1', () => {
+    const w = new World(9, []);
+    for (let z = -3000; z < 30000; z += 37) {
+      const sum = w.weights(z).reduce((s, x) => s + x.w, 0);
+      expect(sum).toBeCloseTo(1, 6);
+    }
+  });
+
+  it('keeps the road above the sea and the ground flat beside it', () => {
+    for (const id of BIOME_IDS) {
+      const w = new World(11, [id]);
+      for (let z = 0; z < SEGMENT * 3; z += 23) {
+        const ry = w.roadY(z);
+        expect(ry).toBeGreaterThan(0.5);
+        const [tx, tz] = w.tangent(z);
+        for (const o of [-ROAD_HALF, 0, ROAD_HALF]) {
+          const x = w.roadX(z) - tz * o;
+          expect(Math.abs(w.surface(x, z + tx * o) - ry)).toBeLessThan(0.3);
+        }
+      }
+    }
+  });
+
+  it('has bends the autopilot can take', () => {
+    const w = new World(5, []);
+    let max = 0;
+    for (let z = 0; z < 20000; z += 5) max = Math.max(max, Math.abs(w.curvature(z)));
+    expect(1 / max).toBeGreaterThan(50); // tightest bend radius in metres
+  });
+});
+
+describe('autopilot', () => {
+  it('drives kilometres in its lane without leaving the road', () => {
+    for (const themes of [[], ['alpine'], ['seaside']] as const) {
+      const w = new World(1234, [...themes]);
+      const v = new Vehicle(w, CARS[0]);
+      v.place(100);
+      v.cruise = 120 / 3.6;
+      let worst = 0;
+      const dt = 1 / 60;
+      for (let i = 0; i < 60 * 240; i++) {
+        v.step(dt, v.autopilot(), false);
+        if (i > 60 * 10) worst = Math.max(worst, Math.abs(w.lateral(v.x, v.z) - LANE));
+      }
+      expect(v.z).toBeGreaterThan(3000);
+      expect(worst).toBeLessThan(ROAD_HALF - LANE + 0.5);
+    }
+  });
+
+  it('lets the driver stop and reverse', () => {
+    const w = new World(1, []);
+    const v = new Vehicle(w, CARS[1]);
+    v.place(0);
+    for (let i = 0; i < 300; i++) v.step(1 / 60, { throttle: 1, brake: 0, steer: 0 }, true);
+    expect(v.v).toBeGreaterThan(10);
+    for (let i = 0; i < 600; i++) v.step(1 / 60, { throttle: 0, brake: 1, steer: 0 }, true);
+    expect(v.v).toBeLessThan(0);
+  });
+});
