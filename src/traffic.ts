@@ -17,7 +17,12 @@ interface Other {
   want: number;
   active: boolean;
   dist: number;
+  /** Seconds it stays stopped after a bump. */
+  stun: number;
 }
+
+/** Widths for collisions. */
+const WIDTH: Record<Kind, number> = { car: 1.9, camper: 2.0, truck: 2.5, bus: 2.5, bike: 0.8 };
 
 function carUser(m: CarModel): RoadUser {
   return {
@@ -43,7 +48,7 @@ export class Traffic {
     const add = (kind: Kind, user: RoadUser) => {
       user.group.visible = false;
       this.group.add(user.group);
-      this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0 });
+      this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0, stun: 0 });
     };
     const specs = CARS.filter((c) => c.id !== 'van');
     for (let i = 0; i < 7; i++) add('car', carUser(new CarModel(specs[(i * 3 + 1) % specs.length], { color: COLORS[(i * 5 + 2) % COLORS.length], stripes: false })));
@@ -114,6 +119,23 @@ export class Traffic {
         const gap = (o.z - c.z) * c.dir - (o.user.length + c.user.length) / 2;
         if (gap > 0 && gap < 40) target = Math.min(target, o.v + (gap - 12) * 0.3);
       }
+      // Brake for the player if they're in this vehicle's path
+      {
+        const q = this.place(c);
+        const fx = q.tx * c.dir, fz = q.tz * c.dir;
+        const dx = me.x - q.x, dz = me.z - q.z;
+        const ahead = dx * fx + dz * fz;
+        const side = -dx * fz + dz * fx;
+        const gap = ahead - (c.user.length + me.spec.length) / 2;
+        if (ahead > 0 && gap < 45 && Math.abs(side) < 2.3) {
+          const meAlong = me.v * (Math.sin(me.heading) * fx + Math.cos(me.heading) * fz);
+          target = Math.min(target, Math.max(0, meAlong + (gap - 7) * 0.45));
+        }
+      }
+      if (c.stun > 0) {
+        c.stun -= dt;
+        target = 0;
+      }
       c.v += Math.max(-4 * dt, Math.min(2 * dt, Math.max(0, target) - c.v));
       c.z += c.dir * c.v * dt;
       c.dist += c.v * dt;
@@ -129,18 +151,38 @@ export class Traffic {
       g.rotation.set(0, Math.atan2(p.tx * c.dir, p.tz * c.dir), 0);
       c.user.animate(c.dist, night);
 
-      // Bump into the player?
-      const dx = p.x - me.x, dz = p.z - me.z;
-      const reach = c.user.length / 2 + me.spec.length / 2 - 0.6;
-      const lateral = Math.abs(dx * p.tz - dz * p.tx);
-      const along = Math.abs(dx * p.tx + dz * p.tz);
-      if (lateral < 1.7 && along < reach && Math.abs(p.y - me.y) < 2) {
-        me.v = c.dir === fwd ? Math.min(me.v, c.v * 0.6) : -Math.sign(me.v || 1) * 2;
+      // Solid, gentle bumps: push the player out of the other vehicle and match speeds
+      const fx = p.tx * c.dir, fz = p.tz * c.dir;
+      const dx = me.x - p.x, dz = me.z - p.z;
+      const along = dx * fx + dz * fz;
+      const lat = -dx * fz + dz * fx;
+      const halfL = (c.user.length + me.spec.length) / 2 - 0.2;
+      const halfW = (WIDTH[c.kind] + me.spec.width) / 2 - 0.1;
+      const penA = halfL - Math.abs(along);
+      const penW = halfW - Math.abs(lat);
+      if (penA > 0 && penW > 0 && Math.abs(p.y - me.y) < 2.5) {
         me.bump = 1;
-        if (c.dir !== fwd) {
-          c.active = false;
-          g.visible = false;
-        } else c.z += c.dir * 3;
+        const same = c.dir === fwd;
+        if (penA < penW) {
+          // Nose to tail (or head-on): separate along the road
+          const s2 = Math.sign(along) || 1;
+          me.x += fx * s2 * penA;
+          me.z += fz * s2 * penA;
+          if (same) {
+            if (along < 0) me.v = Math.min(me.v, c.v * 0.85);
+            else c.v = Math.min(c.v, Math.max(0, me.v) * 0.85);
+          } else {
+            me.v = -Math.sign(me.v || 1) * Math.min(Math.abs(me.v) * 0.25, 3);
+            c.v = 0;
+            c.stun = 2.5;
+          }
+        } else {
+          // Side swipe: nudge apart
+          const s2 = Math.sign(lat) || 1;
+          me.x += -fz * s2 * penW;
+          me.z += fx * s2 * penW;
+          me.v *= 0.92;
+        }
       }
     }
   }

@@ -594,7 +594,7 @@ export class Game {
         }
         if (ok) p = { kind: 'quad', corners: pts };
       } else if (this.settings.pip) {
-        const width = Math.min(240, W * (W > H ? 0.26 : 0.42));
+        const width = Math.min(340, W * (W > H ? 0.34 : 0.6));
         p = { kind: 'pip', x: 12, y: this.pipY, width };
       }
     }

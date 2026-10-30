@@ -145,7 +145,8 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
 
   // ---- Centre screen ----
   const tablet = style === 'ev';
-  const screenWidth = tablet ? 0.42 : style === 'classic' ? 0.2 : style === 'luxury' ? Math.min(0.36, inner(zF) * 0.45) : Math.min(0.3, inner(zF) * 0.38);
+  // Big screens: they're for watching music videos
+  const screenWidth = tablet ? 0.52 : style === 'classic' ? 0.28 : style === 'luxury' ? Math.min(0.46, inner(zF) * 0.55) : Math.min(0.42, inner(zF) * 0.5);
   const cv = document.createElement('canvas');
   cv.width = 512; cv.height = 288;
   const screenCtx = cv.getContext('2d')!;
@@ -166,19 +167,19 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     stand.position.set(0, yT + 0.02, zF + 0.1);
     I.add(stand);
   } else {
-    screenY = yT - 0.03 - (screenWidth * 0.5625) / 2;
-    screen.position.set(-0.04, screenY, zF - 0.06);
+    screenY = yT - 0.025 - (screenWidth * 0.5625) / 2;
+    screen.position.set(-0.08, screenY, zF - 0.06);
     screen.rotation.set(-0.14, Math.PI - 0.16, 0, 'YXZ');
     for (const x of [-1, 1]) {
       const vent = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.045, 0.03), trimDark);
-      vent.position.set(-0.04 + x * (screenWidth / 2 + 0.11), screenY, zF - 0.035);
+      vent.position.set(-0.08 + x * (screenWidth / 2 + 0.1), screenY, zF - 0.035);
       const vring = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.055, 0.02), style === 'sport' ? trimM : chrome);
       vring.position.copy(vent.position).add(new THREE.Vector3(0, 0, 0.005));
       I.add(vring, vent);
     }
     for (let k = 0; k < 3; k++) {
       const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 16).rotateX(Math.PI / 2), chrome);
-      knob.position.set(-0.04 + (k - 1) * 0.08, screenY - screenWidth * 0.29 - 0.06, zF - 0.03);
+      knob.position.set(-0.08 + (k - 1) * 0.08, screenY - screenWidth * 0.29 - 0.05, zF - 0.03);
       I.add(knob);
     }
   }
