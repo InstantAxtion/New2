@@ -56,6 +56,29 @@ export class EngineSound {
     noise.start();
   }
 
+  /** A rumble of thunder. */
+  thunder(strength = 1) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const len = ctx.sampleRate * 4;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      last = last * 0.985 + (Math.random() * 2 - 1) * 0.15;
+      d[i] = last * Math.pow(1 - i / len, 2) * (1 + 0.6 * Math.sin(i / 3000));
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 180;
+    const g = ctx.createGain();
+    g.gain.value = 2.2 * strength * Math.max(this.volume, 0.3);
+    src.connect(lp).connect(g).connect(ctx.destination);
+    src.start();
+  }
+
   suspend() {
     void this.ctx?.suspend();
   }

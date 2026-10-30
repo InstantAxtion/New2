@@ -9,6 +9,7 @@ import { CameraRig } from './camera';
 import { Traffic } from './traffic';
 import { Pedestrians } from './peds';
 import { nightGlow } from './special';
+import { Weather } from './weather';
 import { EngineSound } from './audio';
 import { shared, waterMaterial, type Tier } from './materials';
 import type { MusicVideos } from './music';
@@ -32,6 +33,8 @@ export class Game {
   readonly water: THREE.Mesh;
   readonly traffic: Traffic;
   readonly peds: Pedestrians;
+  readonly weather: Weather;
+  private wipePhase = 0;
   /** How much of the night the current place forces (the neon city). */
   private nightLock = 0;
   private fogScale = 1;
@@ -112,6 +115,10 @@ export class Game {
     this.scene.add(this.traffic.group);
     this.peds = new Pedestrians(this.world);
     this.scene.add(this.peds.group);
+    this.weather = new Weather(settings.quality === 'low' ? 1500 : 3500);
+    this.weather.kind = settings.weather;
+    this.weather.onThunder = (s) => this.engine.thunder?.(s);
+    this.scene.add(this.weather.group);
 
     this.rig = new CameraRig(this.camera, this.world);
     this.rig.mode = settings.cam;
@@ -364,7 +371,20 @@ export class Game {
     this.sky.update(shown, this.elapsed, new THREE.Vector3(v.x, v.y, v.z), this.tier === 'pbr');
     // Mist in the rainforest, haze over the lakes
     this.fogScale = this.world.fogAt(v.z);
-    this.sky.setFogFar(QUALITY[this.settings.quality].fogFar * this.fogScale);
+    // Weather: rain, snow, fog and storms
+    const wx = this.weather;
+    wx.kind = this.settings.weather;
+    wx.update(dt, this.elapsed, this.camera.position);
+    this.sky.cover = wx.look.cover;
+    this.sky.flash = wx.flash;
+    this.chunks.setWet(wx.look.wet);
+    shared.snow.value = wx.snowCover;
+    this.sky.setFogFar(QUALITY[this.settings.quality].fogFar * this.fogScale * wx.look.fog);
+    // Wipers sweep while it rains or snows
+    const wiping = wx.look.rain + wx.look.snow > 0.15 && this.phase === 'drive';
+    if (wiping || Math.sin(this.wipePhase) > -0.99) this.wipePhase += dt * (wx.kind === 'storm' ? 5.5 : 3.5);
+    if (!wiping && Math.sin(this.wipePhase) < -0.98) this.wipePhase = -Math.PI / 2;
+    this.car.wipe(this.wipePhase);
     for (const g of nightGlow) g.m.emissiveIntensity = g.day + (g.night - g.day) * this.sky.night;
     this.envTimer -= dt;
     if (this.envTimer <= 0 && Math.abs(shown - this.envHour) > 0.15) {

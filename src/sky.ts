@@ -51,6 +51,8 @@ uniform vec3 sunColor;
 uniform float night;
 uniform float time;
 uniform float clouds;
+uniform float cover;
+uniform float flash;
 varying vec3 vDir;
 
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -89,7 +91,7 @@ void main() {
   if (d.y > 0.02 && clouds > 0.0) {
     vec2 cp = d.xz / (d.y + 0.08) * 1.6 + vec2(time * 0.006, time * 0.002);
     float f = fbm(cp);
-    float c = smoothstep(0.5, 0.8, f);
+    float c = smoothstep(0.5 - cover * 0.42, 0.8 - cover * 0.3, f);
     // Thicker parts are darker underneath; edges near the sun glow
     float thick = smoothstep(0.6, 0.95, fbm(cp * 1.7 + 3.0) * 0.5 + f * 0.6);
     vec3 lit = mix(vec3(1.0), sunColor, 0.35) * (0.85 + 0.25 * (1.0 - night));
@@ -102,6 +104,10 @@ void main() {
     float wisp = smoothstep(0.55, 0.85, fbm(vec2(cp.x * 0.4, cp.y * 2.4) + 9.0));
     col = mix(col, lit * (1.0 - night * 0.85), wisp * 0.25 * clouds * smoothstep(0.05, 0.3, d.y));
   }
+  // Overcast: a grey, flatter sky
+  float lum = dot(col, vec3(0.3, 0.55, 0.15));
+  col = mix(col, vec3(lum) * 0.85, cover * 0.75);
+  col += vec3(0.75, 0.8, 1.0) * flash;
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -129,6 +135,8 @@ export class Sky {
       night: { value: 0 },
       time: { value: 0 },
       clouds: { value: 1 },
+      cover: { value: 0 },
+      flash: { value: 0 },
     };
     const mat = new THREE.ShaderMaterial({
       uniforms: this.uniforms,
@@ -155,6 +163,10 @@ export class Sky {
     this.haze.setRGB(r, g, b);
     this.hazeAmt = amt;
   }
+
+  /** Weather on the sky and lights: cloud cover (0..1) and a lightning flash. */
+  cover = 0;
+  flash = 0;
 
   update(hour: number, elapsed: number, target: THREE.Vector3, pbr = false) {
     this.hour = ((hour % 24) + 24) % 24;
@@ -189,7 +201,16 @@ export class Sky {
     this.hemi.intensity = THREE.MathUtils.lerp(a.hemiI, b.hemiI, t) * (pbr ? 0.3 : 1);
     this.sun.intensity *= pbr ? 0.9 : 1;
 
-    this.fog.color.copy(u.horizon.value);
+    // Overcast skies dim the sun and grey the light; lightning lights everything up
+    u.cover.value = this.cover;
+    u.flash.value = this.flash;
+    this.sun.intensity *= 1 - this.cover * 0.8;
+    this.hemi.intensity *= 1 - this.cover * 0.25;
+    this.hemi.intensity += this.flash * 3;
+    const fogC = u.horizon.value.clone();
+    const lum = fogC.r * 0.3 + fogC.g * 0.55 + fogC.b * 0.15;
+    fogC.lerp(new THREE.Color(lum * 0.9, lum * 0.92, lum * 0.95), this.cover * 0.8);
+    this.fog.color.copy(fogC);
   }
 
   follow(pos: THREE.Vector3) {

@@ -117,6 +117,8 @@ export class UI {
       <div class="chips" id="themes"><button class="chip" data-theme="all">🌍 All</button>${themeChips}</div>
       <h3>Time of day</h3>
       <div class="chips" id="times">${timeChips}</div>
+      <h3>Weather</h3>
+      <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button></div>
       <h3>Traffic</h3>
       <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
       <h3>Auto-drive style</h3>
@@ -134,7 +136,7 @@ export class UI {
 <section id="hud" class="screen">
   <div class="hud-tl">
     <div class="pill" id="region"></div>
-    <div class="pill small"><span id="odo">0.0 km</span> · <span id="clock">09:00</span></div>
+    <div class="pill small"><span id="odo">0.0 mi</span> · <span id="clock">09:00</span></div>
     <div class="nowbar" id="nowbar"><span id="nowbar-text"></span>
       <button class="icon tiny" id="nb-toggle" aria-label="Play or pause">⏯</button>
       <button class="icon tiny" id="nb-next" aria-label="Next song">⏭</button></div>
@@ -147,7 +149,7 @@ export class UI {
     <button class="icon" id="zen-btn" aria-label="Hide controls">👁️</button>
     <button class="icon" id="pause-btn" aria-label="Pause">⏸</button>
   </div>
-  <div class="speedo"><b id="speed">0</b><span id="unit">km/h</span><em id="speed-note"></em></div>
+  <div class="speedo"><b id="speed">0</b><span id="unit">mph</span><em id="speed-note"></em></div>
   <div class="manual">
     <div class="steer" id="steer-btns">
       <button class="pad" data-hold="left" aria-label="Steer left">◀</button>
@@ -185,6 +187,8 @@ export class UI {
     <button class="ghost" id="to-garage">🚗 Garage &amp; world</button>
     <h3>Time of day</h3>
     <div class="chips center">${timeChips}</div>
+    <h3>Weather</h3>
+    <div class="chips center" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button></div>
     <h3>Traffic</h3>
     <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
     <h3>Auto-drive</h3>
@@ -274,7 +278,7 @@ export class UI {
     <h3>Graphics</h3>
     <div class="chips" data-set="quality"><button class="chip" data-v="low">Low</button><button class="chip" data-v="medium">Medium</button><button class="chip" data-v="high">High</button></div>
     <h3>Speed units</h3>
-    <div class="chips" data-set="units"><button class="chip" data-v="kmh">km/h</button><button class="chip" data-v="mph">mph</button></div>
+    <div class="chips" data-set="units"><button class="chip" data-v="mph">mph</button><button class="chip" data-v="kmh">km/h</button></div>
     <h3>Steering</h3>
     <div class="chips" data-set="steering"><button class="chip" data-v="buttons">◀ ▶ Buttons</button><button class="chip" data-v="tilt">📱 Tilt phone</button></div>
     <div class="chips" data-set="assist"><button class="chip" data-v="true">Lane assist on</button><button class="chip" data-v="false">Off</button></div>
@@ -282,6 +286,8 @@ export class UI {
     <div class="chips" data-set="orientation"><button class="chip" data-v="auto">🔄 Auto-rotate</button><button class="chip" data-v="landscape">▭ Landscape</button><button class="chip" data-v="portrait">▯ Vertical</button></div>
     <h3>Time of day</h3>
     <div class="chips">${timeChips}</div>
+    <h3>Weather</h3>
+    <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button></div>
     <h3>World</h3>
     <h3>Traffic</h3>
     <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
@@ -583,14 +589,21 @@ export class UI {
       this.setZen(true);
       this.toast('Tap anywhere to bring the controls back');
     };
-    const cruise = (d: number) => {
-      this.s.cruiseKmh = Math.max(20, Math.min(Math.round(this.game.spec.top / 10) * 10, this.s.cruiseKmh + d));
+    // Cruise speed steps: 5 mph or 10 km/h, snapped to round numbers in the chosen unit
+    const cruise = (dir: number) => {
+      const mph = this.s.units === 'mph';
+      const k = mph ? 0.621371 : 1;
+      const step = mph ? 5 : 10;
+      const now = Math.round((this.s.cruiseKmh * k) / step) * step;
+      const max = Math.floor((this.game.spec.top * k) / step) * step;
+      const next = Math.max(step * 3, Math.min(max, now + dir * step));
+      this.s.cruiseKmh = next / k;
       this.game.vehicle.cruise = this.s.cruiseKmh / 3.6;
       this.save();
       this.refreshHud();
     };
-    $('#slower', r).onclick = () => cruise(-10);
-    $('#faster', r).onclick = () => cruise(10);
+    $('#slower', r).onclick = () => cruise(-1);
+    $('#faster', r).onclick = () => cruise(1);
     $('#lane-btn', r).onclick = () => (this.game.vehicle.lane *= -1);
     $('#tilt-zero', r).onclick = () => this.recentreTilt();
     $('#tv-btn', r).onclick = () => this.tvButton();
@@ -634,8 +647,13 @@ export class UI {
     const v = this.game.vehicle;
     if (on) {
       v.lane = v.nearestLane();
-      if (v.v > 8) v.cruise = (Math.round((v.v * 3.6) / 10) * 10) / 3.6 || v.cruise;
-      this.s.cruiseKmh = Math.round(v.cruise * 3.6);
+      if (v.v > 8) {
+        // Take over at the current speed, rounded to 5 mph / 10 km/h
+        const k = this.s.units === 'mph' ? 0.621371 : 1;
+        const step = this.s.units === 'mph' ? 5 : 10;
+        v.cruise = (Math.round((v.v * 3.6 * k) / step) * step) / k / 3.6 || v.cruise;
+      }
+      this.s.cruiseKmh = v.cruise * 3.6;
     }
     this.toast(on ? `🤖 Auto-drive on<b>${STYLE_LABEL[this.s.driveStyle]}</b>` : '🕹️ You have the wheel');
     this.save();

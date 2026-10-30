@@ -228,8 +228,9 @@ export class World {
 
   /** Speed limit at z in m/s (towns and the city). */
   speedLimit(z: number): number {
-    if (this.cityAt(z) > 0.5) return 60 / 3.6;
-    if (this.townAt(z) > 0.5) return 50 / 3.6;
+    // 40 mph in the city, 30 mph in towns
+    if (this.cityAt(z) > 0.5) return 40 / 2.237;
+    if (this.townAt(z) > 0.5) return 30 / 2.237;
     return Infinity;
   }
 

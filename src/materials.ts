@@ -7,7 +7,7 @@ import { foliageTexture, type FoliageMat } from './foliage';
 export type Tier = 'basic' | 'pbr';
 
 /** Shared, animated shader inputs. */
-export const shared = { time: { value: 0 } };
+export const shared = { time: { value: 0 }, snow: { value: 0 } };
 
 const SWAY_VERT = /* glsl */ `
 #ifdef USE_INSTANCING
@@ -31,6 +31,7 @@ function splatMaterial(): THREE.Material {
     names.forEach((n, i) => (sh.uniforms[n] = { value: assets.ground[i] }));
     sh.uniforms.avg = { value: assets.groundAvg };
     sh.uniforms.detailMap = { value: detailTexture() };
+    sh.uniforms.uSnow = shared.snow;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec3 wA;\nattribute vec3 wB;\nvarying vec3 vWA;\nvarying vec3 vWB;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
       .replace(
@@ -43,6 +44,7 @@ function splatMaterial(): THREE.Material {
         /* glsl */ `#include <common>
         uniform sampler2D tGrass, tDry, tLeaves, tSand, tRock, tSnow, detailMap;
         uniform vec3 avg[6];
+        uniform float uSnow;
         varying vec3 vWA; varying vec3 vWB; varying vec3 vWPos; varying vec3 vWNrm;
         // Two scales, rotated against each other, hide the tiling
         vec3 layer(sampler2D t, vec2 p, vec2 dx, vec2 dy) {
@@ -83,6 +85,9 @@ function splatMaterial(): THREE.Material {
           col *= 0.82 + dA.r * 0.36;
           float dist = length(vWPos - cameraPosition);
           diffuseColor.rgb = mix(col, diffuseColor.rgb * (0.82 + dA.r * 0.36), smoothstep(160.0, 420.0, dist) * 0.6);
+          // Fresh snow settles on flat ground while it snows
+          float settle = uSnow * smoothstep(0.55, 0.85, vWNrm.y) * smoothstep(0.25, 0.6, dA.g + uSnow * 0.5);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.94) * (0.9 + dA.b * 0.15), settle);
         }`,
       );
   };

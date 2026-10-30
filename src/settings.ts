@@ -2,6 +2,7 @@ import type { BiomeId } from './world/biomes';
 import type { TimeMode } from './sky';
 import type { CamMode } from './camera';
 import type { Custom } from './carspecs';
+import type { WeatherKind } from './weather';
 
 export interface Settings {
   car: string;
@@ -31,6 +32,7 @@ export interface Settings {
   /** 0 = empty roads … 1 = busy. */
   trafficDensity: number;
   driveStyle: 'relaxed' | 'normal' | 'sporty';
+  weather: WeatherKind;
 }
 
 const KEY = 'endless-drive.settings';
@@ -44,13 +46,13 @@ export const DEFAULTS: Settings = {
   auto: false,
   cam: 'chase',
   quality: 'high',
-  units: 'kmh',
+  units: 'mph',
   steering: 'buttons',
   assist: true,
   volume: 0.5,
   clouds: true,
   traffic: true,
-  cruiseKmh: 80,
+  cruiseKmh: 96.56, // 60 mph
   musicMode: 'spotify',
   youtubeKey: '',
   prefer: 'video',
@@ -58,6 +60,7 @@ export const DEFAULTS: Settings = {
   orientation: 'auto',
   trafficDensity: 0.45,
   driveStyle: 'normal',
+  weather: 'clear',
 };
 
 export function loadSettings(): Settings {
@@ -66,6 +69,9 @@ export function loadSettings(): Settings {
     const s: Settings = { ...DEFAULTS, ...raw, colors: { ...(raw.colors || {}) }, custom: { ...(raw.custom || {}) } };
     // Colours picked before customisation existed
     for (const [id, color] of Object.entries(s.colors)) s.custom[id] = { color, ...(s.custom[id] || {}) };
+    // The game switched to mph; move older saves over once (they can switch back)
+    if (!raw.unitsV2) s.units = 'mph';
+    (s as unknown as { unitsV2: boolean }).unitsV2 = true;
     // Older saves only had traffic on/off
     if (raw.trafficDensity === undefined && raw.traffic === false) s.trafficDensity = 0;
     return s;

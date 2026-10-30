@@ -122,6 +122,15 @@ export class ChunkManager {
     } else this.roadMat = new THREE.MeshLambertMaterial(ro);
   }
 
+  /** Rain makes the road dark and shiny. */
+  setWet(wet: number) {
+    const m = this.roadMat as THREE.MeshStandardMaterial;
+    if (!m.isMeshStandardMaterial) return;
+    m.roughness = 0.78 - wet * 0.62;
+    m.color.setScalar(1 - wet * 0.38);
+    m.envMapIntensity = 1 + wet * 0.8;
+  }
+
   setWorld(world: World) {
     this.world = world;
     this.clear();
