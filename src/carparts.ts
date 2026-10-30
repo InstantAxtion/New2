@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { defaultPlate, plateTexture } from './carextras';
 import { profile, surface } from './carbody';
 import type { CarSpec, Custom, RimStyle } from './carspecs';
 import { glowTexture } from './textures';
@@ -186,10 +187,11 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
       b.add(bar);
     }
   }
-  const plateM = new THREE.MeshStandardMaterial({ color: 0xf1f1ec, roughness: 0.5 });
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.11, 0.015), plateM);
+  const reg = c.plate || defaultPlate(s.id);
+  const plateMat = (rear: boolean) => new THREE.MeshStandardMaterial({ map: plateTexture(reg, rear), roughness: 0.4 });
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.12, 0.015), plateMat(true));
   plate.position.set(0, s.sill + 0.24, tailZ(0.2) - 0.005);
-  const plateF = plate.clone();
+  const plateF = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.12, 0.015), plateMat(false));
   plateF.position.set(0, s.sill + 0.06, noseZ(0.2) + 0.005);
   b.add(plate, plateF);
 

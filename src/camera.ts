@@ -53,13 +53,13 @@ export class CameraRig {
   focus: { x: number; y: number; size: number } | null = null;
 
   /** Garage/menu view: slow orbit around the parked car. */
-  orbit(v: Vehicle, dt: number, t: number) {
+  orbit(v: Vehicle, dt: number, t: number, auto = true) {
     if (this.cam.fov !== this.baseFov || this.cam.near !== 0.1) {
       this.cam.fov = this.baseFov;
       this.cam.near = 0.1;
       this.cam.updateProjectionMatrix();
     }
-    const a = t * 0.18 + this.yaw;
+    const a = (auto ? t * 0.18 : 0.5) + this.yaw;
     // Back off so the car fits the free space on screen
     const h = window.innerHeight;
     const r = this.focus ? THREE.MathUtils.clamp((5.2 * h) / Math.max(this.focus.size, 60), 6.5, 26) : 7.5;

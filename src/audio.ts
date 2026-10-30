@@ -76,6 +76,16 @@ export class EngineSound {
   private birdTimer = 0;
   private gearShift = 0;
   private lastGear = 0;
+  private tyres!: { gain: GainNode; filter: BiquadFilterNode };
+  private roof!: GainNode;
+  private roofTimer = 0;
+  private lastThrottle = 0;
+  private popCool = 0;
+  /** What the tyres are rolling on. */
+  surface: 'road' | 'gravel' | 'grass' = 'road';
+  wet = 0;
+  /** Rain on the roof (0..1), heard from inside. */
+  roofRain = 0;
 
   setProfile(engine: Engine) {
     this.profile = PROFILES[engine] ?? PROFILES.i4;
@@ -186,6 +196,35 @@ export class EngineSound {
       crickets: ctx.createGain(),
       rain: bed('highpass', 1200, 0.5),
     };
+    // Tyres on the road surface
+    {
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuffer(ctx, 3, false);
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 300;
+      f.Q.value = 0.8;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      src.connect(f).connect(g).connect(this.cabin);
+      src.start();
+      this.tyres = { gain: g, filter: f };
+    }
+    // Rain drumming on the roof: heard inside, so it skips the cabin filter
+    {
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuffer(ctx, 3, false);
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 2400;
+      f.Q.value = 0.5;
+      this.roof = ctx.createGain();
+      this.roof.gain.value = 0;
+      src.connect(f).connect(this.roof).connect(this.out);
+      src.start();
+    }
     this.amb.birds.gain.value = 0;
     this.amb.crickets.gain.value = 0;
     this.amb.birds.connect(this.cabin);
@@ -212,6 +251,90 @@ export class EngineSound {
     g.gain.exponentialRampToValueAtTime(0.001, t + 4);
     src.connect(lp).connect(g).connect(this.cabin);
     src.start();
+  }
+
+  /** A short shaped burst of filtered noise (thunks, pops, clicks, whooshes). */
+  private burst(t: number, dur: number, type: BiquadFilterType, f0: number, f1: number, peak: number, dest: AudioNode = this.out, q = 1) {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(ctx, Math.max(0.2, dur + 0.1));
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t);
+    f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + Math.min(0.01, dur * 0.2));
+    g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    src.connect(f).connect(g).connect(dest);
+    src.start(t);
+    src.stop(t + dur + 0.05);
+  }
+
+  private thump(t: number, freq: number, dur: number, peak: number) {
+    const ctx = this.ctx!;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.6, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(peak, t);
+    g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    o.connect(g).connect(this.out);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  }
+
+  /** A car door opening or shutting. */
+  door(open: boolean) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const v = Math.max(this.volume, 0.3);
+    if (open) {
+      this.burst(t, 0.05, 'highpass', 3000, 2500, 0.15 * v);
+      this.burst(t + 0.05, 0.25, 'lowpass', 900, 300, 0.05 * v);
+    } else {
+      this.thump(t, 85, 0.22, 0.5 * v);
+      this.burst(t, 0.12, 'lowpass', 700, 200, 0.25 * v);
+      this.burst(t + 0.01, 0.04, 'highpass', 2500, 2000, 0.06 * v);
+    }
+  }
+
+  /** Turning the key: the starter cranks and the engine catches (or an EV chimes). */
+  startUp() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const v = Math.max(this.volume, 0.3);
+    if (this.profile.electric) {
+      const ctx = this.ctx;
+      for (const [f, dt] of [[880, 0], [1320, 0.14]] as const) {
+        const o = ctx.createOscillator();
+        o.frequency.value = f;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t + dt);
+        g.gain.linearRampToValueAtTime(0.06 * v, t + dt + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0005, t + dt + 0.5);
+        o.connect(g).connect(this.out);
+        o.start(t + dt);
+        o.stop(t + dt + 0.6);
+      }
+      return;
+    }
+    for (let i = 0; i < 6; i++) this.burst(t + i * 0.11, 0.09, 'lowpass', 380, 160, 0.22 * v);
+    this.thump(t + 0.68, 60, 0.4, 0.35 * v);
+    this.burst(t + 0.68, 0.5, 'lowpass', 600, 120, 0.25 * v);
+    this.revBlip = 0.9;
+  }
+  private revBlip = 0;
+
+  /** A whoosh as another vehicle goes past. */
+  whoosh(level: number) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const v = Math.max(this.volume, 0.25) * this.duck * Math.min(1, level);
+    this.burst(t, 0.7, 'bandpass', 500, 1500, 0.22 * v, this.cabin, 1.2);
+    this.burst(t + 0.25, 0.6, 'bandpass', 1400, 350, 0.16 * v, this.cabin, 1.2);
   }
 
   /** A call from an animal out in the world: an owl's hoot, a gull, an eagle's cry. */
@@ -317,6 +440,33 @@ export class EngineSound {
       const load = this.gearShift > 0 ? 0.3 : 1;
       e.gain.gain.setTargetAtTime(v * (0.045 + throttle * 0.06 * load + rpm * 0.03) * p.loud, t, 0.1);
       e.noise.gain.setTargetAtTime(p.noise * (0.6 + throttle), t, 0.1);
+    }
+    // Exhaust pops and crackles when lifting off at high revs (sporty engines)
+    if (!p.electric) {
+      this.popCool -= dt;
+      if (running && this.lastThrottle > 0.55 && throttle < 0.1 && s > 12 && this.popCool <= 0 && p.bright >= 0.8 && p.loud >= 0.9) {
+        this.popCool = 1.2;
+        const n = 1 + Math.floor(Math.random() * 4);
+        for (let i = 0; i < n; i++) this.burst(t + 0.05 + i * (0.06 + Math.random() * 0.1), 0.06, 'bandpass', 420 + Math.random() * 300, 200, 0.35 * v * (this.sealed ? 0.6 : 1), this.out, 1.5);
+      }
+    }
+    this.lastThrottle = throttle;
+    if (this.revBlip > 0) {
+      this.revBlip = Math.max(0, this.revBlip - dt);
+      e.gain.gain.setTargetAtTime(v * 0.12 * p.loud * (this.revBlip / 0.9), t, 0.08);
+    }
+    // Tyres: a low hum on asphalt, a hiss in the wet, crunching on gravel
+    const crunch = this.surface === 'gravel' ? 1 : this.surface === 'grass' ? 0.6 : 0;
+    const roll = Math.min(1, s / 30);
+    this.tyres.filter.frequency.setTargetAtTime(crunch ? 900 + s * 20 : 180 + s * 6 + this.wet * 1600, t, 0.2);
+    this.tyres.filter.Q.value = crunch ? 0.6 : this.wet > 0.3 ? 0.4 : 1.2;
+    this.tyres.gain.gain.setTargetAtTime((running ? 1 : 0) * Math.max(this.volume, 0.25) * roll * (0.05 + crunch * 0.12 + this.wet * 0.08) * (this.sealed ? 0.6 : 1), t, 0.2);
+    // Rain on the roof: louder inside, with the odd heavier drop
+    this.roof.gain.setTargetAtTime(this.roofRain * (this.sealed ? 0.12 : 0.04) * Math.max(this.volume, 0.3), t, 0.4);
+    this.roofTimer -= dt;
+    if (this.roofRain > 0.1 && this.roofTimer <= 0) {
+      this.roofTimer = 0.03 + Math.random() * 0.2 / this.roofRain;
+      this.burst(t, 0.03, 'bandpass', 1800 + Math.random() * 2500, 1500, 0.04 * this.roofRain * Math.max(this.volume, 0.3) * (this.sealed ? 1 : 0.4), this.out, 3);
     }
     // Wind grows with speed, and much louder with the windows open
     const open = this.sealed ? 0.35 : 1;

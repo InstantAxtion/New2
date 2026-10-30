@@ -30,7 +30,7 @@ export class MusicVideos {
   onChange: () => void = () => {};
 
   constructor() {
-    this.screen.onEnded = () => this.next();
+    this.screen.onEnded = () => this.ended();
     this.screen.onError = (code) => this.failed(code);
     this.screen.onPlaying = () => {
       this.status = '';
@@ -169,9 +169,30 @@ export class MusicVideos {
     this.start();
   }
 
+  /** Play the songs in a random order. */
+  shuffle = false;
+  /** Repeat nothing, the whole list, or this song. */
+  repeat: 'off' | 'all' | 'one' = 'all';
+
+  /** A video finished: what plays next depends on shuffle and repeat. */
+  private ended() {
+    if (this.repeat === 'one' && this.songs.length && !this.ytList) return void this.playIndex(this.index);
+    if (!this.shuffle && this.repeat === 'off' && !this.ytList && this.index >= this.songs.length - 1) {
+      this.status = 'End of the playlist';
+      this.onChange();
+      return;
+    }
+    this.next();
+  }
+
   next() {
     if (this.ytList) return this.screen.next();
-    if (this.songs.length) void this.playIndex(this.index + 1);
+    if (!this.songs.length) return;
+    if (this.shuffle && this.songs.length > 1) {
+      let i = this.index;
+      while (i === this.index) i = Math.floor(Math.random() * this.songs.length);
+      void this.playIndex(i);
+    } else void this.playIndex(this.index + 1);
   }
 
   previous() {

@@ -265,3 +265,46 @@ body.zen .cabin-btns { opacity: 0; pointer-events: none; }
 #stats-reset { margin-top: 14px; }
 
 #fuel.low { color: #ffb84a; font-weight: 700; }
+
+/* Compass, trip meter, favourites */
+#compass-pill { pointer-events: auto; display: flex; align-items: center; gap: 6px; }
+.link-btn { background: none; border: 0; color: var(--text); font: inherit; font-size: 13px; padding: 2px 6px; border-radius: 8px; cursor: pointer; }
+.link-btn:active { background: rgba(255,255,255,.12); }
+#fav-btn { font-size: 16px; color: var(--accent); }
+body.no-compass #compass-pill { display: none; }
+.trip-card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(.96); background: var(--panel); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--line); border-radius: 22px; padding: 18px 28px; text-align: center; opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; }
+.trip-card.show { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
+.trip-card small { display: block; text-transform: uppercase; letter-spacing: .2em; color: var(--muted); font-size: 12px; }
+.trip-card b { display: block; font-size: 64px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -1px; line-height: 1.1; }
+.trip-card span { color: var(--muted); }
+.trip-card .row { justify-content: center; margin-top: 10px; gap: 8px; }
+.fav-row { display: flex; gap: 8px; align-items: stretch; }
+.fav-row .song { flex: 1; }
+
+/* Minimal HUD: just the speed and the essentials */
+body.minimal-hud .info-pill, body.minimal-hud #region, body.minimal-hud .nowbar,
+body.minimal-hud #cam-btn, body.minimal-hud #mode-btn, body.minimal-hud #tv-btn, body.minimal-hud .hud-tr [data-open="music"] { display: none !important; }
+body.minimal-hud .speedo b { font-size: 40px; }
+
+/* Synced lyrics */
+.lyrics { position: absolute; left: 50%; bottom: calc(112px + var(--safe-b)); transform: translate(-50%, 8px); width: min(88vw, 640px); text-align: center; pointer-events: none;
+  opacity: 0; transition: opacity .4s, transform .4s; text-shadow: 0 2px 12px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.9); }
+.lyrics.on { opacity: 1; transform: translate(-50%, 0); }
+.lyrics b { display: block; font-size: clamp(18px, 4.4vw, 26px); font-weight: 700; color: #fff; line-height: 1.25; }
+.lyrics span { display: block; font-size: clamp(13px, 3vw, 16px); color: rgba(255,255,255,.6); margin-top: 3px; }
+
+/* Welcome-to-region title card */
+.region-card { position: absolute; left: 0; right: 0; top: 28%; text-align: center; pointer-events: none; opacity: 0; }
+.region-card small { display: block; text-transform: uppercase; letter-spacing: .45em; font-size: 12px; color: rgba(255,255,255,.75); }
+.region-card b { display: block; font-size: clamp(30px, 7vw, 54px); font-weight: 800; letter-spacing: .02em; margin: 4px 0 2px; color: #fff; }
+.region-card span { display: block; font-size: clamp(13px, 3vw, 17px); font-style: italic; color: rgba(255,255,255,.8); }
+.region-card small, .region-card b, .region-card span { text-shadow: 0 2px 18px rgba(0,0,0,.75); }
+.region-card::before, .region-card::after { content: ''; display: block; height: 1px; width: min(60vw, 360px); margin: 10px auto; background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent); }
+.region-card.show { animation: region-card 4.8s ease forwards; }
+@keyframes region-card {
+  0% { opacity: 0; transform: translateY(10px); letter-spacing: .3em; }
+  14% { opacity: 1; transform: translateY(0); }
+  78% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}

@@ -13,6 +13,9 @@ import { Weather } from './weather';
 import { Effects } from './effects';
 import { Life } from './life';
 import { Drift } from './drift';
+import { Windscreen } from './glass';
+import { Showroom } from './showroom';
+import { drawVisualizer } from './map';
 import { AtmosphereShader, makeLensflare } from './post';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import type { AmbientMix } from './audio';
@@ -51,6 +54,11 @@ export class Game {
   private pit: Stop | null = null;
   onRefuel: (state: 'start' | 'done') => void = () => {};
   readonly drift = new Drift();
+  readonly glass = new Windscreen();
+  readonly showroom: Showroom;
+  /** Doors, bonnet and boot open in the garage. */
+  openState = { door: false, bonnet: false, boot: false };
+  private renderPass: RenderPass | null = null;
   /** Desert sandstorms: how strong one is now (0..1), and when the next starts or ends. */
   sand = 0;
   private sandOn = false;
@@ -123,6 +131,7 @@ export class Game {
     this.renderer.toneMappingExposure = 1.0;
     this.tier = q.tier;
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.showroom = new Showroom(this.renderer, q.shadows > 0);
     this.seed = (Math.random() * 1e9) | 0;
     this.world = new World(this.seed, settings.themes);
     this.chunks = new ChunkManager(this.world, q);
@@ -157,6 +166,7 @@ export class Game {
     this.scene.add(this.effects.group);
     this.scene.add(this.drift.group);
     this.scene.add(this.flare);
+    this.scene.add(this.glass.mesh);
     this.life = new Life(this.world, this.effects);
     this.scene.add(this.life.group);
 
@@ -196,7 +206,8 @@ export class Game {
     this.atmos = null;
     if (!on) return;
     const c = new EffectComposer(this.renderer);
-    c.addPass(new RenderPass(this.scene, this.camera));
+    this.renderPass = new RenderPass(this.scene, this.camera);
+    c.addPass(this.renderPass);
     const w = window.innerWidth, h = window.innerHeight;
     c.addPass(new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.32, 0.5, 0.92));
     // Sun shafts and heat shimmer
@@ -208,6 +219,7 @@ export class Game {
   }
 
   private flareOn = false;
+  private passPrev = new Map<THREE.Vector3, number>();
   /** Where the sun is on screen: for the lens flare, the sun shafts and the heat haze. */
   private updateSunFx(v: { z: number; heading: number }) {
     const sunDir = (this.sky.mesh.material as THREE.ShaderMaterial).uniforms.sunDir.value as THREE.Vector3;
@@ -220,7 +232,7 @@ export class Game {
     const p = cam.position.clone().addScaledVector(sunDir, 900).project(cam);
     const onScreen = p.z < 1 ? 1 - THREE.MathUtils.smoothstep(Math.max(Math.abs(p.x), Math.abs(p.y)), 1.0, 1.8) : 0;
     a.uniforms.uSun.value.set((p.x + 1) / 2, (p.y + 1) / 2);
-    a.uniforms.uSunOn.value = up * onScreen * (1 - this.sky.night) * (this.car.interior.visible ? 0.7 : 1);
+    a.uniforms.uSunOn.value = (this.phase === 'garage' ? 0 : 1) * up * onScreen * (1 - this.sky.night) * (this.car.interior.visible ? 0.7 : 1);
     a.uniforms.uSunColor.value.copy(this.sky.sun.color);
     a.uniforms.uTime.value = this.elapsed;
     const dir = Math.cos(v.heading) >= 0 ? 1 : -1;
@@ -256,7 +268,7 @@ export class Game {
     const spec = CARS.find((c) => c.id === id) ?? CARS[0];
     const custom = this.settings.custom[spec.id] ?? {};
     if (this.car) {
-      this.scene.remove(this.car.group);
+      this.car.group.parent?.remove(this.car.group);
       this.car.dispose();
     }
     this.car = new CarModel(spec, custom, this.tier);
@@ -264,6 +276,7 @@ export class Game {
     this.scene.add(this.car.group);
     this.rig.car = this.car;
     this.car.setOpenings(this.windowsOpen, this.sunroofOpen, this.roofUp);
+    this.car.openings.set(this.openState.door, this.openState.bonnet, this.openState.boot);
     const old = this.vehicle;
     this.vehicle = new Vehicle(this.world, spec);
     if (old) {
@@ -290,6 +303,15 @@ export class Game {
     this.rebuildWorld(this.startZ());
   }
 
+  /** Go to a place: a saved drive or a favourite (its world seed, regions and spot on the road). */
+  travelTo(seed: number, themes: BiomeId[], z: number, hour?: number) {
+    this.seed = seed;
+    this.settings.themes = themes;
+    this.world = new World(seed, themes);
+    if (hour !== undefined && this.settings.time === 'cycle') this.hour = hour;
+    this.rebuildWorld(z);
+  }
+
   private rebuildWorld(z = this.vehicle.z) {
     this.chunks.setWorld(this.world);
     this.vehicle.world = this.world;
@@ -313,6 +335,7 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q.pixelRatio));
     this.renderer.shadowMap.enabled = Q.shadows > 0;
     this.setupShadows(Q.shadows);
+    this.showroom.setShadows(Q.shadows > 0);
     if (retier) {
       (this.water.material as THREE.Material).dispose();
       this.water.material = waterMaterial(this.tier);
@@ -342,6 +365,24 @@ export class Game {
     this.phase = 'drive';
     this.rig.reset();
     this.engine.start();
+  }
+
+  /** Open or close the doors, bonnet and boot (in the garage). */
+  setOpen(part: 'door' | 'bonnet' | 'boot', open: boolean) {
+    this.openState[part] = open;
+    this.car.openings.set(this.openState.door, this.openState.bonnet, this.openState.boot);
+    this.engine.start();
+    if (part === 'door') this.engine.door(open);
+    this.showroom.spinning = !this.openState.door && !this.openState.bonnet && !this.openState.boot;
+  }
+
+  /** Shut the door and start the engine (setting off from the garage). */
+  ignition() {
+    this.openState = { door: false, bonnet: false, boot: false };
+    this.car.openings.set(false, false, false);
+    this.showroom.spinning = true;
+    this.engine.door(false);
+    setTimeout(() => this.engine.startUp(), 450);
   }
 
   pause() {
@@ -394,7 +435,16 @@ export class Game {
 
     this.updateFuel(dt);
     this.placeCar();
-    const night = this.sky.night > 0.45;
+    // The garage is a studio: the car sits on a turntable there
+    const garage = this.phase === 'garage';
+    const home = garage ? this.showroom.scene : this.scene;
+    if (this.car.group.parent !== home) home.add(this.car.group);
+    if (garage) {
+      this.showroom.update(dt, new THREE.Vector3(v.x, v.y, v.z));
+      this.car.group.rotation.y = this.showroom.angle;
+    }
+    this.car.openings.update(dt);
+    const night = this.sky.night > 0.45 && this.phase !== 'garage';
     this.car.animate(v.dist, v.steer, v.braking, night);
     this.car.headlight.intensity = night ? 80 : 0;
     this.car.setInside(this.phase !== 'garage' && this.rig.mode === 'hood');
@@ -428,7 +478,7 @@ export class Game {
     }
     this.lastOdo = v.odometer;
 
-    if (this.phase === 'garage') this.rig.orbit(v, dt, this.elapsed);
+    if (this.phase === 'garage') this.rig.orbit(v, dt, this.elapsed, false);
     else {
       this.rig.clearOffset();
       this.rig.update(v, dt);
@@ -541,6 +591,20 @@ export class Game {
     if (wiping || Math.sin(this.wipePhase) > -0.99) this.wipePhase += dt * (wx.kind === 'storm' ? 5.5 : 3.5);
     if (!wiping && Math.sin(this.wipePhase) < -0.98) this.wipePhase = -Math.PI / 2;
     this.car.wipe(this.wipePhase);
+    // Raindrops, mist and dash reflections on the windscreen (driver's view)
+    {
+      let cold = 0;
+      for (const { biome, w } of this.world.weights(v.z)) if (biome.id === 'winter' || biome.id === 'alpine') cold += w;
+      const covered = this.world.tunnelAt(v.z) > 0.45;
+      this.glass.update(dt, this.elapsed, this.camera, this.car.interior.visible && this.rig.mode === 'hood' && this.phase !== 'garage', {
+        rain: covered ? 0 : Math.min(1, wx.look.rain + wx.look.snow * 0.5),
+        wiper: ((Math.sin(this.wipePhase) * 0.5 + 0.5) * Math.PI),
+        misty: wx.look.rain > 0.3 || wx.look.snow > 0.3 || wx.kind === 'fog' || (cold > 0.5 && this.sky.night > 0.5),
+        night: this.sky.night,
+        open: this.windowsOpen,
+        dash: this.car.custom.ambient || 0xffa050,
+      });
+    }
     for (const g of nightGlow) g.m.emissiveIntensity = g.day + (g.night - g.day) * this.sky.night;
     this.envTimer -= dt;
     if (this.envTimer <= 0 && Math.abs(shown - this.envHour) > 0.15) {
@@ -550,6 +614,21 @@ export class Game {
     }
 
     this.engine.sealed = this.car.interior.visible && !this.windowsOpen;
+    this.engine.surface = v.gravel ? 'gravel' : v.offroad ? 'grass' : 'road';
+    this.engine.wet = this.weather.look.wet;
+    this.engine.roofRain = this.weather.look.rain * (this.world.tunnelAt(v.z) > 0.45 ? 0 : 1);
+    // A whoosh when another vehicle goes by close
+    if (this.phase === 'drive') {
+      for (const o of this.traffic.moving()) {
+        const dz = o.pos.z - v.z;
+        const prev = this.passPrev.get(o.pos);
+        this.passPrev.set(o.pos, dz);
+        if (prev !== undefined && Math.sign(prev) !== Math.sign(dz) && Math.abs(o.pos.x - v.x) < 9) {
+          const rel = Math.abs(o.v * o.dir - v.v);
+          if (rel > 8) this.engine.whoosh((rel / 40) * (o.heavy ? 1.4 : 1) * (this.car.interior.visible && !this.windowsOpen ? 0.5 : 1));
+        }
+      }
+    }
     this.engine.update(v.v, this.applied.throttle, v.vmax, this.phase === 'drive', dt, this.ambientMix());
 
     // Drop quality automatically if the phone is struggling
@@ -558,10 +637,15 @@ export class Game {
 
     this.updateSunFx(v);
     this.flare.visible = false;
+    const gv = this.glass.mesh.visible;
+    this.glass.mesh.visible = false;
     this.renderMirrors();
+    this.glass.mesh.visible = gv;
     this.flare.visible = this.flareOn;
+    const stage = this.phase === 'garage' ? this.showroom.scene : this.scene;
+    if (this.renderPass) this.renderPass.scene = stage;
     if (this.composer) this.composer.render(dt);
-    else this.renderer.render(this.scene, this.camera);
+    else this.renderer.render(stage, this.camera);
     this.placeVideo();
     this.updateCarScreen(dt);
     requestAnimationFrame(this.frame);
@@ -814,7 +898,12 @@ export class Game {
     void sp;
     const r = this.region ? `${this.region.name}` : '';
     const music = this.videos?.active ? 'Loading video…' : 'Tap 📺 to watch music videos here';
-    if (this.videos?.active) this.car.drawScreen(`${sp} ${mph ? 'mph' : 'km/h'}`, `${r} · ${clock}`, music);
+    if (this.settings.dashScreen === 'visualizer' && this.nowPlaying && !this.videos?.active) {
+      this.screenTimer = 0.05;
+      const { ctx, tex } = this.car.screenCanvas;
+      drawVisualizer(ctx, this.elapsed, this.nowPlaying, clock);
+      tex.needsUpdate = true;
+    } else if (this.videos?.active) this.car.drawScreen(`${sp} ${mph ? 'mph' : 'km/h'}`, `${r} · ${clock}`, music);
     else {
       const { ctx, tex } = this.car.screenCanvas;
       drawNav(ctx, this.world, this.vehicle, mph, clock, this.nowPlaying || '🎵 Tap 📺 for music videos');

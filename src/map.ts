@@ -126,3 +126,41 @@ function fmt(m: number, mph: boolean) {
   }
   return m < 1000 ? `${Math.round(m / 50) * 50} m` : `${(m / 1000).toFixed(1)} km`;
 }
+
+/**
+ * A music visualizer for the dash screen: glowing bars that rise and fall with a beat.
+ * (The players are embedded, so their audio can't be analysed; this follows a steady groove.)
+ */
+export function drawVisualizer(g: CanvasRenderingContext2D, t: number, song: string, clock: string) {
+  const W = 512, H = 288;
+  const bg = g.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#090b18');
+  bg.addColorStop(1, '#170a22');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+  const N = 32;
+  const beat = Math.pow(Math.max(0, Math.sin(t * Math.PI * 2 * 1.02)), 8);
+  const bw = W / N;
+  for (let i = 0; i < N; i++) {
+    const x = i / N;
+    const low = Math.exp(-x * 2.4);
+    const v = 0.15 + 0.45 * (0.5 + 0.5 * Math.sin(t * (2.3 + i * 0.37) + i * 1.7)) * (0.5 + 0.5 * Math.sin(t * 0.9 + i * 0.5)) + beat * low * 0.5;
+    const h = Math.min(1, v) * (H - 90);
+    const grad = g.createLinearGradient(0, H - 40 - h, 0, H - 40);
+    grad.addColorStop(0, `hsl(${300 - x * 140}, 90%, 65%)`);
+    grad.addColorStop(1, `hsl(${260 - x * 140}, 90%, 40%)`);
+    g.fillStyle = grad;
+    g.fillRect(i * bw + 2, H - 40 - h, bw - 4, h);
+    // Mirror on the "floor"
+    g.globalAlpha = 0.18;
+    g.fillRect(i * bw + 2, H - 38, bw - 4, h * 0.25);
+    g.globalAlpha = 1;
+  }
+  g.fillStyle = '#fff';
+  g.font = '600 20px Inter, system-ui, sans-serif';
+  g.textAlign = 'left';
+  g.fillText(song.length > 42 ? song.slice(0, 41) + '…' : song, 16, 30);
+  g.textAlign = 'right';
+  g.fillStyle = 'rgba(255,255,255,0.7)';
+  g.fillText(clock, W - 16, 30);
+}

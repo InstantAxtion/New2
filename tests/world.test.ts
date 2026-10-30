@@ -179,3 +179,35 @@ describe('road features', () => {
     expect(worst).toBeLessThan(2.2);
   });
 });
+
+describe('stops, towns and tunnels', () => {
+  it('places stops beside the road, clear of towns, bridges and tunnels', () => {
+    const w = new World(7, []);
+    const stops = w.stops(0, 60000);
+    expect(stops.length).toBeGreaterThan(10);
+    for (const st of stops) {
+      expect(w.urban(st.z)).toBeLessThan(0.01);
+      expect(w.bridge(st.z)).toBeLessThan(0.01);
+      expect(w.tunnelAt(st.z)).toBeLessThan(0.01);
+      // The pad beside the road is level with it
+      const [tx, tz] = w.tangent(st.z);
+      const u = st.side * (w.roadHalf(st.z) + st.depth / 2);
+      const x = w.roadX(st.z) - tz * u;
+      expect(Math.abs(w.height(x, st.z + tx * u) - (w.roadY(st.z) - 0.12))).toBeLessThan(0.6);
+    }
+    const next = w.nextStop(0, 60000)!;
+    expect(next.z).toBe(stops[0].z);
+  });
+  it('names towns the same way every time', () => {
+    const w = new World(11, []);
+    const t = w.towns(0, 40000)[0];
+    expect(w.townName(t)).toMatch(/^[A-Z][a-z]+$/);
+    expect(new World(11, []).townName(t)).toBe(w.townName(t));
+  });
+  it('never digs a tunnel through a town', () => {
+    for (const seed of [1, 2, 3]) {
+      const w = new World(seed, ['hills', 'forest', 'alpine']);
+      for (let z = 0; z < 40000; z += 25) if (w.tunnelAt(z) > 0.3) expect(w.urban(z)).toBeLessThan(0.01);
+    }
+  });
+});

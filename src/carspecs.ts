@@ -60,6 +60,10 @@ export interface Custom {
   trim: Trim;
   /** Ambient lighting colour at night (0 = off). */
   ambient: number;
+  /** Number plate text ('' = the car's own made-up registration). */
+  plate: string;
+  /** Decal on the doors. */
+  decal: 'none' | 'number' | 'flames' | 'stripe' | 'stars' | 'endless';
 }
 
 const H = (roll: number, dive: number, steer: number, spring: number): Handling => ({ roll, dive, steer, spring });
@@ -177,5 +181,7 @@ export function defaultCustom(spec: CarSpec): Custom {
     leather: classic ? 0x6b3b22 : spec.cabin === 'luxury' ? 0xd9cfbf : 0x1c1c1e,
     trim: spec.cabin === 'luxury' || spec.cabin === 'classic' ? 'wood' : spec.cabin === 'sport' ? 'carbon' : spec.cabin === 'ev' ? 'alu' : 'black',
     ambient: spec.cabin === 'ev' || spec.cabin === 'luxury' ? 0x5ab4ff : 0,
+    plate: '',
+    decal: 'none',
   };
 }

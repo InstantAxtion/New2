@@ -14,6 +14,8 @@ interface YTPlayer {
   getVideoData(): { title: string; author: string; video_id: string };
   getPlaylist(): string[] | null;
   setVolume(v: number): void;
+  getCurrentTime(): number;
+  getDuration(): number;
   destroy(): void;
 }
 declare global {
@@ -123,6 +125,23 @@ export class VideoScreen {
         onError: (e: { data: number }) => this.onError(e.data),
       },
     });
+  }
+
+  /** Seconds into the video (for lyrics), or -1 when nothing is playing. */
+  time(): number {
+    try {
+      return this.player && this.ready && this.active ? this.player.getCurrentTime() : -1;
+    } catch {
+      return -1;
+    }
+  }
+
+  duration(): number {
+    try {
+      return this.player && this.ready ? this.player.getDuration() : 0;
+    } catch {
+      return 0;
+    }
   }
 
   play(id: string) {

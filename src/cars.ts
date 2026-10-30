@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addDecals, buildOpenings, type Openings } from './carextras';
 import type { Tier } from './materials';
 import { bodyGeometry, profile } from './carbody';
 import { CARS, COLORS, defaultCustom, type CarSpec, type Custom } from './carspecs';
@@ -53,6 +54,8 @@ export class CarModel {
   private softTop: THREE.Object3D | null = null;
   private sunroof: THREE.Object3D | null = null;
   private night = false;
+  /** Doors, bonnet and boot that open in the garage. */
+  readonly openings: Openings;
   /** Side mirror glass (left, right) for the working mirrors. */
   readonly mirrorGlass: THREE.Mesh[] = [];
 
@@ -89,6 +92,9 @@ export class CarModel {
     b.add(shell);
 
     const ext = buildExterior(b, s, c, M);
+    for (const d of addDecals(shell, s, c.decal ?? 'none', c.color2, pbr)) b.add(d);
+    this.openings = buildOpenings(s, this.paint, dark, c.leather, s.engine === 'ev');
+    b.add(this.openings.group);
     this.glows = ext.glows;
     this.wipers = ext.wipers;
 

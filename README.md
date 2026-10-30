@@ -3,19 +3,25 @@
 A relaxing driving game for Android. Pick a car and cruise an endless, generated world — or let it drive itself while you watch the scenery, listen to your Spotify playlist or the radio, or watch music videos on the car's dashboard screen. No goals, no scores: just driving.
 
 ## The world
-- An endless road through 12 regions that blend into each other: 🌊 Seaside · ⛰️ Rolling Hills · 🌾 Flatlands · 🏜️ Desert · 🌲 Forest · 🏔️ Alpine · 🍂 Autumn Valley · ❄️ Winter · 🌃 Neon City (always night: lit towers, neon billboards, street lamps) · 🌴 Rainforest (jungle, ferns, mist) · 🌉 Lakes & Bridges · 🪨 Canyon (red rock walls, hoodoos, arches, bridges over gorges).
+- An endless road through 13 regions that blend into each other: 🌊 Seaside · ⛰️ Rolling Hills · 🌾 Flatlands · 🏜️ Desert · 🌲 Forest · 🏔️ Alpine · 🍂 Autumn Valley · ❄️ Winter · 🌃 Neon City (always night: lit towers, neon billboards, street lamps) · 🌴 Rainforest (jungle, ferns, mist) · 🌉 Lakes & Bridges · 🪨 Canyon (red rock walls, hoodoos, arches, bridges over gorges) · 🌸 Spring Blossom (cherry trees, tulip fields, petals on the wind). A title card welcomes you to each one.
+- Roads: four-lane highways with a central barrier, tunnels through mountain ridges, alpine hairpins, and gravel roads that throw up dust.
+- Places to stop: ⛽ fuel and EV charging stations, 🍔 roadside diners, 📷 scenic viewpoints, 🏕️ campsites (with a campfire at night) and ⚓ harbours with a pier and boats. Road signs announce them, along with town names, speed limits, bends, deer and tunnels.
+- Life: cows, horses, sheep and deer grazing (and deer crossing the road — auto-drive stops for them), flocks of birds, geese in a V, gulls by the sea, eagles over the peaks, dolphins and whales offshore, fireflies, bats and owls at night, planes with contrails, hot-air balloons.
+- Sky: the Milky Way and shooting stars, northern lights over the snow, rainbows when a shower clears.
 - Small towns now and then in the countryside: houses and shops, street lamps, zebra crossings with people walking over, 30 mph (the city is 40 mph).
 - Pick one region, several, or all. 🎲 gives you a new road.
 - Time of day: a full day/night cycle or fixed dawn, day, sunset or night.
-- Weather: clear, rain (wet shiny roads, wipers), thunderstorms (lightning and thunder), snow (it settles on the ground) or fog.
+- Weather: clear, rain (wet shiny roads with puddles, street lights reflected at night, spray from traffic, wipers), thunderstorms (lightning and thunder), snow (it settles on the ground) or fog; desert sandstorms; wind in the trees with leaves and petals blowing; heat haze on hot afternoons.
 - Traffic: cars, campervans, lorries, coaches and motorbikes, oncoming and in your lane; density slider from empty to busy.
 
 ## Cars
 13 cars, each with its own speed, acceleration, grip, handling (body roll, dive, steering), engine sound and interior: Sprint GT, City Hatch, Trail SUV, Ranch Pickup, Breeze Roadster, Weekender Van, Thunder Muscle, Retro Bubble, Coastline '64, Volt Hatch (electric), Ridge Off-Roader, Tourer Estate, Apex V12.
 
-**🎨 Customise** (per car): paint colour and finish (metallic, gloss, matte, pearl), two-tone roof, racing stripes, rim style and colour, ride height, seat leather, trim (piano black, wood, carbon, aluminium), and ambient lighting at night.
+**🎨 Customise** (per car), in a lit showroom with a turntable: paint colour and finish (metallic, gloss, matte, pearl), two-tone roof, racing stripes, decals (race number, flames, stripe, stars), your own number plate, rim style and colour, ride height, seat leather, trim (piano black, wood, carbon, aluminium), and ambient lighting at night. Open the doors, bonnet (engine bay or front boot) and boot to have a look.
 
-**Driver's seat** (📺 or the camera button): a cockpit shaped to the car — sport, comfort, luxury, classic (round dials, thin wheel), EV (tablet screen, yoke, glass roof), utility or van. Gauges show your speed; the rear-view and side mirrors work; the dash screen shows a live map of the road ahead (next region, towns, speed limit) or your music video. Wind the 🪟 windows down, open the ☀️ sunroof, or put the roadster's roof up.
+**Fuel**: a tank (or battery) lasts about 75 miles. Stop at a fuel or charging station to fill up; on auto-drive the car pulls in by itself when it's low.
+
+**Driver's seat** (📺 or the camera button): a cockpit shaped to the car — sport, comfort, luxury, classic (round dials, thin wheel), EV (tablet screen, yoke, glass roof), utility or van. Gauges show your speed; the rear-view and side mirrors work; the dash screen shows a live map of the road ahead (next region, towns, speed limit) or your music video. Wind the 🪟 windows down, open the ☀️ sunroof, or put the roadster's roof up. Rain beads on the windscreen until the wipers sweep it away; in the cold and wet the glass mists up (🌬️ demister); the dash glows at night.
 
 ## Driving
 - 🕹️ **Drive yourself**: ◀ ▶ or tilt to steer, gas and brake (hold brake to reverse), lane assist.
@@ -27,17 +33,19 @@ A relaxing driving game for Android. Pick a car and cruise an endless, generated
 ## Music
 - 🎧 **Spotify**: paste a playlist/album/song link. **Log in to Spotify** in the music panel for full songs (email and password; Google/Facebook sign-in doesn't work inside apps), or open it in the Spotify app.
 - 📺 **Music videos**: paste a Spotify playlist and each song plays as its official music video (or best lyric video), full length, on the dashboard screen or as a small corner video. Uses the YouTube Data API: a key can be built in (`VITE_YOUTUBE_KEY` in a git-ignored `.env.local`, or the `YOUTUBE_API_KEY` GitHub secret for CI builds), or pasted in Settings. YouTube links and playlists work without a key.
-- 📻 **Radio**: free, listener-supported SomaFM stations.
+- 🔀 Shuffle, 🔁 repeat all or 🔂 one, and 🎤 synced lyrics on screen (from LRCLIB) with music videos.
+- 📻 **Radio**: 27 free, listener-supported SomaFM stations — chill, pop & rock, electronic, folk & country, jazz & lounge, ambient.
+- The dash screen can show a music visualizer instead of the map (Settings).
 - The engine and ambient sounds get quieter while music plays.
 
 ## Sound
-Each engine sounds different (V8, V12, flat-six, four- and six-cylinder, diesel, flat-four, electric) with gear changes; wind; and the place you're in — waves, birds, jungle insects, mountain wind, city hum, crickets at night, rain and thunder. Shut windows muffle the outside.
+Each engine sounds different (V8, V12, flat-six, four- and six-cylinder, diesel, flat-four, electric) with gear changes, a starter and door thunk when you set off, and pops and crackles from sporty exhausts; tyres hum on asphalt, hiss in the wet and crunch on gravel; rain drums on the roof; traffic whooshes past; and the place you're in — waves, birds, jungle insects, mountain wind, city hum, crickets at night, rain and thunder. Shut windows muffle the outside.
 
 ## 📊 Trips
-This trip, all-time distance and time, longest trip, top speed, and distance by region and by car.
+This trip, all-time distance and time, longest trip, top speed, and distance by region and by car. A resettable trip meter, compass and altitude on the HUD (or a minimal HUD). The game remembers where you stopped — **📍 Places → Continue** — and you can ☆ save favourite places to come back to.
 
 ## Graphics
-Photo-real ground and road textures (CC0, Poly Haven), trees made of leaf and needle cards that sway, physically based lighting with sky reflections, shadows, filmic tone mapping and bloom. High (default), Medium or Low; it steps down automatically if the phone can't keep up. Landscape or vertical (Settings → Screen).
+Photo-real ground and road textures (CC0, Poly Haven), trees made of leaf and needle cards that sway in the wind, physically based lighting with sky reflections, shadows, filmic tone mapping, bloom, sun shafts and a lens flare. Ultra, High (default), Medium or Low; it steps down automatically if the phone can't keep up. Landscape or vertical (Settings → Screen).
 
 ## Install on Android
 Every push builds a debug APK in GitHub Actions: open **Releases** ("Latest APK build") or **Actions** → **Build & test** → **endless-drive-apk**. Open the `.apk` on your phone (allow "install unknown apps").

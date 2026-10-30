@@ -33,6 +33,43 @@ export interface Settings {
   trafficDensity: number;
   driveStyle: 'relaxed' | 'normal' | 'sporty';
   weather: WeatherKind;
+  /** Music videos: shuffle and repeat, and synced lyrics on screen. */
+  shuffle: boolean;
+  repeat: 'off' | 'all' | 'one';
+  lyrics: boolean;
+  /** What the dash screen shows while music plays (when it isn't showing a video). */
+  dashScreen: 'map' | 'visualizer';
+  /** A clean screen: just the speed, no extra pills. */
+  minimalHud: boolean;
+  /** Compass and altitude on the HUD. */
+  compass: boolean;
+  /** Where you were when you last stopped (to carry on from there). */
+  saved: SavedDrive | null;
+  /** Places you've starred along the way. */
+  favourites: Favourite[];
+  /** Distance on the resettable trip meter (metres). */
+  tripMeter: number;
+}
+
+export interface SavedDrive {
+  seed: number;
+  themes: BiomeId[];
+  z: number;
+  hour: number;
+  odometer: number;
+  fuel: number;
+  car: string;
+  at: number;
+}
+
+export interface Favourite {
+  name: string;
+  seed: number;
+  themes: BiomeId[];
+  z: number;
+  hour: number;
+  region: string;
+  at: number;
 }
 
 const KEY = 'endless-drive.settings';
@@ -61,12 +98,21 @@ export const DEFAULTS: Settings = {
   trafficDensity: 0.45,
   driveStyle: 'normal',
   weather: 'clear',
+  shuffle: false,
+  repeat: 'all',
+  lyrics: true,
+  dashScreen: 'map',
+  minimalHud: false,
+  compass: true,
+  saved: null,
+  favourites: [],
+  tripMeter: 0,
 };
 
 export function loadSettings(): Settings {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || '{}');
-    const s: Settings = { ...DEFAULTS, ...raw, colors: { ...(raw.colors || {}) }, custom: { ...(raw.custom || {}) } };
+    const s: Settings = { ...DEFAULTS, ...raw, colors: { ...(raw.colors || {}) }, custom: { ...(raw.custom || {}) }, favourites: [...(raw.favourites || [])] };
     // Colours picked before customisation existed
     for (const [id, color] of Object.entries(s.colors)) s.custom[id] = { color, ...(s.custom[id] || {}) };
     // The game switched to mph; move older saves over once (they can switch back)
