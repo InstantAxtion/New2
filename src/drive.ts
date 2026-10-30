@@ -2,6 +2,34 @@ import type { World } from './world/world';
 import { LANE, ROAD_HALF } from './world/world';
 import type { CarSpec } from './cars';
 
+/** How auto-drive drives. */
+export interface DriveStyle {
+  /** Share of the car's grip used in bends. */
+  lat: number;
+  throttle: number;
+  brake: number;
+  /** Following distance in seconds. */
+  gap: number;
+  /** Overtake when the car ahead is at least this much slower (m/s). */
+  overtake: number;
+}
+
+export const STYLES: Record<'relaxed' | 'normal' | 'sporty', DriveStyle> = {
+  relaxed: { lat: 0.3, throttle: 0.45, brake: 0.5, gap: 2.6, overtake: Infinity },
+  normal: { lat: 0.42, throttle: 0.8, brake: 0.75, gap: 1.9, overtake: 12 / 3.6 },
+  sporty: { lat: 0.62, throttle: 1, brake: 1, gap: 1.2, overtake: 5 / 3.6 },
+};
+
+/** What auto-drive needs to know about the road around it. */
+export interface AutoEnv {
+  /** The vehicle ahead in our lane. */
+  leader: { gap: number; v: number } | null;
+  /** Speed limit here (towns), m/s. */
+  limit: number;
+  /** Something to stop for (a pedestrian on a crossing), metres ahead. */
+  stopIn: number | null;
+}
+
 export interface Controls {
   throttle: number; // 0..1
   brake: number; // 0..1
@@ -86,24 +114,34 @@ export class Vehicle {
   }
 
   /** The speed the autopilot is happy with given the bends ahead. */
-  safeSpeed(): number {
+  safeSpeed(latShare = 0.42): number {
     const w = this.world;
     let k = 0;
     const dir = Math.cos(this.heading) >= 0 ? 1 : -1;
     const span = 25 + Math.abs(this.v) * 2.5;
     for (let d = 0; d <= span; d += 8) k = Math.max(k, Math.abs(w.curvature(this.z + d * dir)));
-    const lat = this.spec.grip * 0.42;
+    const lat = this.spec.grip * latShare;
     return Math.sqrt(lat / Math.max(k, 1e-4));
   }
 
   /** Controls the autopilot would use right now. */
-  autopilot(): Controls {
-    const target = Math.min(this.cruise, this.vmax, this.safeSpeed());
+  autopilot(env: AutoEnv | null = null, style: DriveStyle = STYLES.normal): Controls {
+    let target = Math.min(this.cruise, this.vmax, this.safeSpeed(style.lat));
+    if (env) {
+      target = Math.min(target, env.limit);
+      if (env.leader) {
+        // Keep a time gap to the vehicle ahead
+        const want = 5 + Math.max(this.v, 0) * style.gap;
+        target = Math.min(target, Math.max(0, env.leader.v + (env.leader.gap - want) * 0.35));
+      }
+      if (env.stopIn !== null) target = Math.min(target, Math.sqrt(Math.max(0, 2 * 3.5 * (env.stopIn - 5))));
+    }
     const e = target - this.v;
+    const urgent = env?.leader && env.leader.gap < 8 + this.v * 0.6;
     return {
       steer: this.pursuit(this.lane),
-      throttle: e > 0 ? clamp(e * 0.35, 0, 1) : 0,
-      brake: e < -1.5 ? clamp(-e * 0.12, 0, 0.7) : 0,
+      throttle: e > 0 ? clamp(e * 0.35, 0, style.throttle) : 0,
+      brake: e < -1 || urgent ? clamp(-e * 0.15 + (urgent ? 0.4 : 0), 0, urgent ? 1 : style.brake) : 0,
     };
   }
 

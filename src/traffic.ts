@@ -2,86 +2,180 @@ import * as THREE from 'three';
 import { CARS, COLORS, CarModel } from './cars';
 import { LANE, type World } from './world/world';
 import type { Vehicle } from './drive';
+import { makeBike, makeBus, makeTruck, type RoadUser } from './vehicles';
+
+type Kind = 'car' | 'camper' | 'truck' | 'bus' | 'bike';
 
 interface Other {
-  model: CarModel;
+  kind: Kind;
+  user: RoadUser;
   z: number;
-  /** -1: oncoming (left lane), +1: same direction (right lane, ahead of you). */
+  /** Direction of travel along z (+1 or -1). */
   dir: number;
   v: number;
+  /** The speed it would like to go. */
+  want: number;
   active: boolean;
   dist: number;
 }
 
-/** A handful of other cars to share the road with. */
+function carUser(m: CarModel): RoadUser {
+  return {
+    group: m.group,
+    length: m.spec.length,
+    animate: (d, on) => {
+      m.animate(d, 0, false, on);
+      m.headlight.intensity = 0;
+    },
+    setColor: (h) => m.setColor(h),
+  };
+}
+
+/** Other road users: oncoming traffic, and slower vehicles ahead in your lane. */
 export class Traffic {
   readonly group = new THREE.Group();
-  private cars: Other[] = [];
-  enabled = true;
-  private timer = 0;
+  private pool: Other[] = [];
+  /** 0 = empty roads … 1 = busy. */
+  density = 0.5;
+  private timer = 1;
 
   constructor(public world: World) {
-    for (let i = 0; i < 5; i++) {
-      const spec = CARS[(i * 3 + 1) % CARS.length];
-      const model = new CarModel(spec, COLORS[(i * 5 + 2) % COLORS.length]);
-      model.group.visible = false;
-      this.group.add(model.group);
-      this.cars.push({ model, z: 0, dir: -1, v: 20, active: false, dist: 0 });
-    }
+    const add = (kind: Kind, user: RoadUser) => {
+      user.group.visible = false;
+      this.group.add(user.group);
+      this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0 });
+    };
+    const specs = CARS.filter((c) => c.id !== 'van');
+    for (let i = 0; i < 7; i++) add('car', carUser(new CarModel(specs[(i * 3 + 1) % specs.length], COLORS[(i * 5 + 2) % COLORS.length])));
+    add('camper', carUser(new CarModel(CARS.find((c) => c.id === 'van')!, 0xe9e4d8)));
+    add('truck', makeTruck(0x2c5d8a));
+    add('truck', makeTruck(0xb8341f));
+    add('bus', makeBus(0xe0b020));
+    add('bike', makeBike(0xc0202a));
+    add('bike', makeBike(0x20242c));
+  }
+
+  get enabled() {
+    return this.density > 0.01;
   }
 
   clear() {
-    for (const c of this.cars) {
+    for (const c of this.pool) {
       c.active = false;
-      c.model.group.visible = false;
+      c.user.group.visible = false;
     }
   }
 
-  update(dt: number, me: Vehicle, night: boolean) {
+  private pick(): Other | null {
+    const free = this.pool.filter((c) => !c.active);
+    if (!free.length) return null;
+    const r = Math.random();
+    const kind: Kind = r < 0.62 ? 'car' : r < 0.72 ? 'truck' : r < 0.79 ? 'bus' : r < 0.9 ? 'bike' : 'camper';
+    return free.find((c) => c.kind === kind) ?? free.find((c) => c.kind === 'car') ?? free[0];
+  }
+
+  /** Where a road user is: on its own right-hand lane. */
+  private place(c: Other) {
     const w = this.world;
-    const forward = Math.cos(me.heading) >= 0 ? 1 : -1;
+    const [tx, tz] = w.tangent(c.z);
+    const o = LANE * c.dir;
+    return { x: w.roadX(c.z) - tz * o, z: c.z + tx * o, y: w.roadY(c.z), tx, tz };
+  }
+
+  update(dt: number, me: Vehicle, night: boolean, limitAt: (z: number) => number) {
+    const fwd = Math.cos(me.heading) >= 0 ? 1 : -1;
+    const max = Math.round(2 + this.density * 9);
+    const active = this.pool.filter((c) => c.active);
     this.timer -= dt;
-    if (this.enabled && this.timer <= 0) {
-      this.timer = 4 + Math.random() * 9;
-      const free = this.cars.find((c) => !c.active);
-      if (free) {
-        free.active = true;
-        free.dir = -forward;
-        free.z = me.z + forward * (380 + Math.random() * 150);
-        free.v = (55 + Math.random() * 35) / 3.6;
-        free.model.group.visible = true;
-        free.model.setColor(COLORS[Math.floor(Math.random() * COLORS.length)]);
+    if (this.enabled && this.timer <= 0 && active.length < max) {
+      this.timer = 2 + (1 - this.density) * 11 * Math.random() + 1;
+      const c = this.pick();
+      if (c) {
+        // Two in five go your way (ahead, a bit slower); the rest come towards you
+        const sameWay = Math.random() < 0.4;
+        c.dir = sameWay ? fwd : -fwd;
+        c.z = me.z + fwd * (sameWay ? 260 + Math.random() * 200 : 380 + Math.random() * 160);
+        const base = c.kind === 'truck' || c.kind === 'bus' ? 62 : c.kind === 'camper' ? 68 : c.kind === 'bike' ? 78 : 75;
+        c.want = (base + (Math.random() - 0.5) * 18) / 3.6;
+        c.v = c.want;
+        c.active = true;
+        c.user.group.visible = true;
+        if (c.kind === 'car' || c.kind === 'bike') c.user.setColor(COLORS[Math.floor(Math.random() * COLORS.length)]);
       }
     }
-    for (const c of this.cars) {
+    const w = this.world;
+    for (const c of this.pool) {
       if (!c.active) continue;
+      // Slow for bends and towns, and don't run into whoever is ahead
+      const k = Math.abs(w.curvature(c.z + c.dir * 20));
+      let target = Math.min(c.want, Math.sqrt(3.5 / Math.max(k, 1e-4)), limitAt(c.z));
+      for (const o of this.pool) {
+        if (o === c || !o.active || o.dir !== c.dir) continue;
+        const gap = (o.z - c.z) * c.dir - (o.user.length + c.user.length) / 2;
+        if (gap > 0 && gap < 40) target = Math.min(target, o.v + (gap - 12) * 0.3);
+      }
+      c.v += Math.max(-4 * dt, Math.min(2 * dt, Math.max(0, target) - c.v));
       c.z += c.dir * c.v * dt;
       c.dist += c.v * dt;
-      if ((c.z - me.z) * forward < -120 || (c.z - me.z) * forward > 700 || !this.enabled) {
+      const rel = (c.z - me.z) * fwd;
+      if (rel < -150 || rel > 750 || !this.enabled) {
         c.active = false;
-        c.model.group.visible = false;
+        c.user.group.visible = false;
         continue;
       }
-      const [tx, tz] = w.tangent(c.z);
-      // Drive on the right of its own direction of travel
-      const o = LANE * c.dir;
-      const x = w.roadX(c.z) - tz * o;
-      const z = c.z + tx * o;
-      const y = w.roadY(c.z);
-      const g = c.model.group;
-      g.position.set(x, y, z);
-      g.rotation.set(0, Math.atan2(tx * c.dir, tz * c.dir), 0);
-      c.model.animate(c.dist, 0, false, night);
-      c.model.headlight.intensity = 0;
+      const p = this.place(c);
+      const g = c.user.group;
+      g.position.set(p.x, p.y, p.z);
+      g.rotation.set(0, Math.atan2(p.tx * c.dir, p.tz * c.dir), 0);
+      c.user.animate(c.dist, night);
 
       // Bump into the player?
-      const dx = x - me.x, dz = z - me.z;
-      if (dx * dx + dz * dz < 3.4 * 3.4 && Math.abs(y - me.y) < 2) {
-        me.v = -Math.sign(me.v || 1) * 2;
+      const dx = p.x - me.x, dz = p.z - me.z;
+      const reach = c.user.length / 2 + me.spec.length / 2 - 0.6;
+      const lateral = Math.abs(dx * p.tz - dz * p.tx);
+      const along = Math.abs(dx * p.tx + dz * p.tz);
+      if (lateral < 1.7 && along < reach && Math.abs(p.y - me.y) < 2) {
+        me.v = c.dir === fwd ? Math.min(me.v, c.v * 0.6) : -Math.sign(me.v || 1) * 2;
         me.bump = 1;
-        c.active = false;
-        g.visible = false;
+        if (c.dir !== fwd) {
+          c.active = false;
+          g.visible = false;
+        } else c.z += c.dir * 3;
       }
     }
+  }
+
+  /** The nearest vehicle ahead of the player going the same way, in a given lane (+1 right, -1 left). */
+  leader(me: Vehicle, lane: number): { gap: number; v: number } | null {
+    const fwd = Math.cos(me.heading) >= 0 ? 1 : -1;
+    let best: { gap: number; v: number } | null = null;
+    for (const c of this.pool) {
+      if (!c.active || c.dir !== fwd || lane !== 1) continue;
+      const gap = (c.z - me.z) * fwd - (c.user.length + me.spec.length) / 2;
+      if (gap > -2 && (!best || gap < best.gap)) best = { gap, v: c.v };
+    }
+    return best;
+  }
+
+  /** Is the oncoming lane free of traffic that would reach us within `seconds` while we cover `ahead` metres? */
+  oncomingClear(me: Vehicle, ahead: number, seconds: number): boolean {
+    const fwd = Math.cos(me.heading) >= 0 ? 1 : -1;
+    for (const c of this.pool) {
+      if (!c.active || c.dir === fwd) continue;
+      const rel = (c.z - me.z) * fwd;
+      if (rel > -10 && rel < ahead + (c.v + Math.abs(me.v)) * seconds) return false;
+    }
+    return true;
+  }
+
+  /** Same-way vehicle the player is currently passing (alongside or just ahead/behind). */
+  beside(me: Vehicle): boolean {
+    const fwd = Math.cos(me.heading) >= 0 ? 1 : -1;
+    for (const c of this.pool) {
+      if (!c.active || c.dir !== fwd) continue;
+      const rel = (c.z - me.z) * fwd;
+      if (rel > -(c.user.length / 2 + me.spec.length / 2 + 9) && rel < c.user.length / 2 + me.spec.length / 2 + 3) return true;
+    }
+    return false;
   }
 }

@@ -157,6 +157,14 @@ export class VideoScreen {
     this.place({ kind: 'hidden' });
   }
 
+  setVolume(v: number) {
+    try {
+      this.player?.setVolume(Math.round(v));
+    } catch {
+      /* not ready */
+    }
+  }
+
   info(): { title: string; author: string } | null {
     try {
       const d = this.player?.getVideoData();

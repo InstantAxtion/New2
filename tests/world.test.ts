@@ -92,3 +92,35 @@ describe('autopilot', () => {
     expect(v.v).toBeLessThan(0);
   });
 });
+
+describe('auto-drive with traffic', () => {
+  it('follows a slower car without hitting it', () => {
+    const w = new World(77, ['flatlands']);
+    const v = new Vehicle(w, CARS[0]);
+    v.place(100);
+    v.cruise = 110 / 3.6;
+    let leadZ = 180;
+    const leadV = 60 / 3.6;
+    let minGap = Infinity;
+    for (let i = 0; i < 60 * 60; i++) {
+      leadZ += leadV / 60;
+      const gap = leadZ - v.z - 4.5;
+      minGap = Math.min(minGap, gap);
+      v.step(1 / 60, v.autopilot({ leader: { gap, v: leadV }, limit: Infinity, stopIn: null }), false);
+    }
+    expect(minGap).toBeGreaterThan(4);
+    expect(Math.abs(v.v - leadV)).toBeLessThan(1.5);
+  });
+
+  it('stops for a crossing', () => {
+    const w = new World(78, ['hills']);
+    const v = new Vehicle(w, CARS[1]);
+    v.place(0);
+    v.cruise = 50 / 3.6;
+    v.v = 50 / 3.6;
+    const stopZ = 150;
+    for (let i = 0; i < 60 * 30; i++) v.step(1 / 60, v.autopilot({ leader: null, limit: Infinity, stopIn: stopZ - v.z }), false);
+    expect(v.z).toBeLessThan(stopZ);
+    expect(Math.abs(v.v)).toBeLessThan(0.5);
+  });
+});

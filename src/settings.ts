@@ -25,6 +25,9 @@ export interface Settings {
   /** Show the video in a corner in the outside cameras too. */
   pip: boolean;
   orientation: 'auto' | 'landscape' | 'portrait';
+  /** 0 = empty roads … 1 = busy. */
+  trafficDensity: number;
+  driveStyle: 'relaxed' | 'normal' | 'sporty';
 }
 
 const KEY = 'endless-drive.settings';
@@ -49,12 +52,17 @@ export const DEFAULTS: Settings = {
   prefer: 'video',
   pip: true,
   orientation: 'auto',
+  trafficDensity: 0.45,
+  driveStyle: 'normal',
 };
 
 export function loadSettings(): Settings {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || '{}');
-    return { ...DEFAULTS, ...raw, colors: { ...(raw.colors || {}) } };
+    const s: Settings = { ...DEFAULTS, ...raw, colors: { ...(raw.colors || {}) } };
+    // Older saves only had traffic on/off
+    if (raw.trafficDensity === undefined && raw.traffic === false) s.trafficDensity = 0;
+    return s;
   } catch {
     return { ...DEFAULTS };
   }

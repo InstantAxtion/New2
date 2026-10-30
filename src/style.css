@@ -216,3 +216,28 @@ body.zen .nowbar { opacity: 0; pointer-events: none; }
 
 /* In the driver's seat the car's own instruments show the speed */
 body.driver-view .speedo { opacity: 0; }
+
+/* Auto-drive */
+.go.alt { background: rgba(255,255,255,.12); color: var(--text); border: 1px solid var(--line); box-shadow: none; }
+.go-row .icon-btn { padding: 10px 14px; font-size: 20px; }
+.go-row { gap: 8px; }
+.go-row .go { flex: 1; padding-left: 12px; padding-right: 12px; }
+.manual .auto-pad { width: 70px; height: 70px; font-size: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  line-height: 1; align-self: flex-end; margin: 0 auto 0 0; background: rgba(240,180,76,.22); border-color: rgba(240,180,76,.6); }
+.manual .auto-pad span, .auto-left .pad span { font-size: 10px; letter-spacing: 1px; color: var(--text); margin-top: 3px; }
+.manual .steer { margin-right: 12px; }
+.auto-left { display: flex; gap: 8px; flex-wrap: wrap; max-width: 60vw; }
+.auto-left .pad b { font-size: 20px; font-weight: 400; }
+.pad.on { background: rgba(240,180,76,.35); }
+.range-row { display: flex; align-items: center; gap: 10px; }
+.range-row input { flex: 1; accent-color: var(--accent); touch-action: auto; }
+.range-row span { min-width: 104px; font-size: 13px; color: var(--muted); }
+.sleep-cover { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.55);
+  pointer-events: auto; z-index: 4; transition: opacity 2s; }
+.sleep-cover.on { display: flex; }
+.sleep-cover > div { display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; color: var(--muted); }
+.sleep-cover b { font-size: 26px; color: var(--text); }
+@media (orientation: portrait) {
+  .auto-left { max-width: 55vw; }
+  .manual .auto-pad { width: 60px; height: 60px; }
+}

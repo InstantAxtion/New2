@@ -30,6 +30,8 @@ const SpotifyLogin = registerPlugin<SpotifyLoginApi>('SpotifyLogin');
 /** YouTube API key built into the app at build time (from .env.local or a CI secret). */
 const BUILTIN_YT_KEY: string = import.meta.env.VITE_YOUTUBE_KEY ?? '';
 
+const STYLE_LABEL: Record<Settings['driveStyle'], string> = { relaxed: '🌿 Relaxed', normal: '🚗 Normal', sporty: '🏁 Sporty' };
+
 const TIMES: { id: TimeMode; label: string }[] = [
   { id: 'cycle', label: '🔄 Day cycle' },
   { id: 'dawn', label: '🌅 Dawn' },
@@ -113,15 +115,13 @@ export class UI {
       <h3>Time of day</h3>
       <div class="chips" id="times">${timeChips}</div>
       <h3>Traffic</h3>
-      <div class="chips" data-set="traffic"><button class="chip" data-v="true">🚙 On</button><button class="chip" data-v="false">Empty roads</button></div>
-      <h3>How to drive</h3>
-      <div class="chips" id="modes">
-        <button class="chip" data-mode="cruise">🕹️ I drive</button>
-        <button class="chip" data-mode="auto">🤖 Auto-drive</button>
-      </div>
+      <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
+      <h3>Auto-drive style</h3>
+      <div class="chips" data-set="driveStyle"><button class="chip" data-v="relaxed">🌿 Relaxed</button><button class="chip" data-v="normal">🚗 Normal</button><button class="chip" data-v="sporty">🏁 Sporty</button></div>
       </div>
       <div class="go-row">
-        <button class="ghost" id="new-world">🎲 New road</button>
+        <button class="ghost icon-btn" id="new-world" aria-label="New road">🎲</button>
+        <button class="go alt" id="go-auto">🤖 Auto-drive</button>
         <button class="go" id="go">Drive ▶</button>
       </div>
     </div>
@@ -151,13 +151,19 @@ export class UI {
       <button class="pad" data-hold="right" aria-label="Steer right">▶</button>
     </div>
     <div class="tilt-note" id="tilt-note">Tilt to steer<button class="ghost small" id="tilt-zero">Re-centre</button></div>
+    <button class="pad auto-pad" id="auto-on" aria-label="Turn on auto-drive">🤖<span>AUTO</span></button>
     <div class="pedals">
       <button class="pad brake" data-hold="brake" aria-label="Brake">BRAKE</button>
       <button class="pad gas" data-hold="gas" aria-label="Gas">GAS</button>
     </div>
   </div>
   <div class="auto">
-    <button class="pad small" id="lane-btn" aria-label="Change lane">⇆<span>Lane</span></button>
+    <div class="auto-left">
+      <button class="pad small" id="take-wheel" aria-label="Take the wheel">🕹️<span>Drive</span></button>
+      <button class="pad small" id="style-btn" aria-label="Driving style"><b id="style-ico">🚗</b><span id="style-lbl">Normal</span></button>
+      <button class="pad small" id="sleep-btn" aria-label="Sleep timer">🌙<span id="sleep-lbl">Sleep</span></button>
+      <button class="pad small" id="lane-btn" aria-label="Change lane">⇆<span>Lane</span></button>
+    </div>
     <div class="cruise">
       <button class="pad small" id="slower" aria-label="Slower">−</button>
       <div class="cruise-val"><b id="cruise">80</b><span>cruise</span></div>
@@ -165,6 +171,8 @@ export class UI {
     </div>
   </div>
   <div class="toast" id="toast"></div>
+  <div class="sleep-cover" id="sleep-cover"><div><b>Good night 🌙</b><span>Pulled over and stopped. The music has faded out.</span>
+    <button class="go small" id="wake">Keep driving</button></div></div>
 </section>
 
 <section id="pause" class="screen modal">
@@ -175,7 +183,10 @@ export class UI {
     <h3>Time of day</h3>
     <div class="chips center">${timeChips}</div>
     <h3>Traffic</h3>
-    <div class="chips center" data-set="traffic"><button class="chip" data-v="true">🚙 On</button><button class="chip" data-v="false">Empty roads</button></div>
+    <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
+    <h3>Auto-drive</h3>
+    <div class="chips center" data-set="driveStyle"><button class="chip" data-v="relaxed">🌿 Relaxed</button><button class="chip" data-v="normal">🚗 Normal</button><button class="chip" data-v="sporty">🏁 Sporty</button></div>
+    <div class="chips center" id="sleep-chips"><button class="chip" data-sleep="0">🌙 Sleep timer off</button><button class="chip" data-sleep="30">30 min</button><button class="chip" data-sleep="60">60 min</button><button class="chip" data-sleep="90">90 min</button></div>
     <div class="menu-row">
       <button class="ghost" data-open="music">🎵 Music</button>
       <button class="ghost" data-open="settings">⚙️ Settings</button>
@@ -245,7 +256,10 @@ export class UI {
     <h3>Time of day</h3>
     <div class="chips">${timeChips}</div>
     <h3>World</h3>
-    <div class="chips" data-set="traffic"><button class="chip" data-v="true">🚙 Traffic</button><button class="chip" data-v="false">Empty roads</button></div>
+    <h3>Traffic</h3>
+    <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
+    <h3>Auto-drive style</h3>
+    <div class="chips" data-set="driveStyle"><button class="chip" data-v="relaxed">🌿 Relaxed</button><button class="chip" data-v="normal">🚗 Normal</button><button class="chip" data-v="sporty">🏁 Sporty</button></div>
     <div class="chips" data-set="clouds"><button class="chip" data-v="true">☁️ Clouds</button><button class="chip" data-v="false">Clear skies</button></div>
     <h3>Engine sound</h3>
     <input type="range" id="volume" min="0" max="1" step="0.05" />
@@ -390,6 +404,12 @@ export class UI {
       this.game.newWorld();
       this.toast('A brand new road 🎲');
     };
+    $('#go-auto', r).onclick = () => {
+      this.s.auto = true;
+      this.save();
+      this.refreshHud();
+      $('#go', r).click();
+    };
     $('#go', r).onclick = () => {
       this.game.startDrive();
       this.show('hud');
@@ -438,18 +458,34 @@ export class UI {
       this.save();
       this.refreshHud();
     };
-    $('#mode-btn', r).onclick = () => {
-      this.s.auto = !this.s.auto;
-      const v = this.game.vehicle;
-      if (this.s.auto) {
-        v.lane = v.nearestLane();
-        if (v.v > 8) v.cruise = Math.round((v.v * 3.6) / 10) * 10 / 3.6 || v.cruise;
-        this.s.cruiseKmh = Math.round(v.cruise * 3.6);
-      }
-      this.toast(this.s.auto ? '🤖 Auto-drive on' : '🕹️ You have the wheel');
+    $('#mode-btn', r).onclick = () => this.setAuto(!this.s.auto);
+    $('#auto-on', r).onclick = () => this.setAuto(true);
+    $('#take-wheel', r).onclick = () => this.setAuto(false);
+    $('#style-btn', r).onclick = () => {
+      const order: Settings['driveStyle'][] = ['relaxed', 'normal', 'sporty'];
+      this.s.driveStyle = order[(order.indexOf(this.s.driveStyle) + 1) % 3];
       this.save();
       this.refreshHud();
+      this.refreshSettings();
+      this.toast(`Driving style<b>${STYLE_LABEL[this.s.driveStyle]}</b>`);
     };
+    $('#sleep-btn', r).onclick = () => {
+      const steps = [0, 30, 60, 90];
+      this.setSleep(steps[(steps.indexOf(this.sleepMin) + 1) % steps.length]);
+    };
+    for (const b of $$('[data-sleep]', r)) b.onclick = () => this.setSleep(Number(b.dataset.sleep));
+    $('#wake', r).onclick = () => this.wake();
+    this.game.onSleep = () => this.fallAsleep();
+    for (const el of $$<HTMLInputElement>('.traffic-range', r)) {
+      el.oninput = () => {
+        this.s.trafficDensity = Number(el.value);
+        this.game.traffic.density = this.s.trafficDensity;
+        if (!this.game.traffic.enabled) this.game.traffic.clear();
+        this.save();
+        this.refreshTraffic();
+      };
+    }
+    this.refreshTraffic();
     $('#zen-btn', r).onclick = (e) => {
       e.stopPropagation();
       this.setZen(true);
@@ -498,12 +534,90 @@ export class UI {
     this.refreshHud();
   }
 
+  private sleepMin = 0;
+  private sleepVol = 1;
+
+  private setAuto(on: boolean) {
+    this.s.auto = on;
+    const v = this.game.vehicle;
+    if (on) {
+      v.lane = v.nearestLane();
+      if (v.v > 8) v.cruise = (Math.round((v.v * 3.6) / 10) * 10) / 3.6 || v.cruise;
+      this.s.cruiseKmh = Math.round(v.cruise * 3.6);
+    }
+    this.toast(on ? `🤖 Auto-drive on<b>${STYLE_LABEL[this.s.driveStyle]}</b>` : '🕹️ You have the wheel');
+    this.save();
+    this.refreshHud();
+    this.refreshGarage();
+  }
+
+  /** Sleep timer: after this many minutes of driving, pull over and fade the music out. */
+  private setSleep(min: number) {
+    this.sleepMin = min;
+    const g = this.game;
+    g.sleepAt = min ? g.driveTime + min * 60 : null;
+    if (min && !this.s.auto) this.setAuto(true);
+    this.toast(min ? `🌙 Sleep timer<b>${min} minutes</b>` : '🌙 Sleep timer off');
+    this.refreshHud();
+  }
+
+  private fallAsleep() {
+    // Fade the music over ~20 seconds, then stop it
+    const step = () => {
+      this.sleepVol = Math.max(0, this.sleepVol - 0.05);
+      this.videos.screen.setVolume(this.sleepVol * 100);
+      this.radioVolume?.(this.sleepVol);
+      this.game.engine.volume = this.s.volume * this.sleepVol;
+      if (this.sleepVol > 0) window.setTimeout(step, 1000);
+      else {
+        this.videos.stop();
+        this.radioStop?.();
+        if (this.s.musicMode === 'spotify') $('#sp-player').innerHTML = '<p class="hint">Stopped by the sleep timer.</p>';
+        document.body.classList.add('asleep');
+      }
+    };
+    step();
+    $('#sleep-cover').classList.add('on');
+  }
+
+  private wake() {
+    const g = this.game;
+    g.sleeping = false;
+    g.sleepAt = null;
+    this.sleepMin = 0;
+    this.sleepVol = 1;
+    this.videos.screen.setVolume(100);
+    this.radioVolume?.(1);
+    g.engine.volume = this.s.volume;
+    g.vehicle.lane = 1;
+    document.body.classList.remove('asleep');
+    $('#sleep-cover').classList.remove('on');
+    if (this.s.musicMode === 'spotify' && this.current) this.embed(this.current);
+    this.refreshHud();
+  }
+
+  /** Hooks for the radio (set up with the radio). */
+  private radioVolume?: (v: number) => void;
+  private radioStop?: () => void;
+
+  private refreshTraffic() {
+    const d = this.s.trafficDensity;
+    const label = d < 0.02 ? 'Empty roads' : d < 0.3 ? 'Light traffic' : d < 0.65 ? 'Normal traffic' : 'Busy roads';
+    for (const el of $$<HTMLInputElement>('.traffic-range')) el.value = String(d);
+    for (const el of $$('.traffic-label')) el.textContent = label;
+  }
+
   private refreshHud() {
     $('#cam-label').textContent = CAM_LABEL[this.s.cam];
     $('#tv-btn').classList.toggle('on', this.s.cam === 'hood');
     document.body.classList.toggle('driver-view', this.s.cam === 'hood');
     $('#mode-ico').textContent = this.s.auto ? '🤖' : '🕹️';
     $('#mode-label').textContent = this.s.auto ? 'Auto' : 'Manual';
+    $('#style-ico').textContent = STYLE_LABEL[this.s.driveStyle].split(' ')[0];
+    $('#style-lbl').textContent = STYLE_LABEL[this.s.driveStyle].split(' ')[1];
+    $('#sleep-lbl').textContent = this.sleepMin ? `${this.sleepMin}m` : 'Sleep';
+    $('#sleep-btn').classList.toggle('on', this.sleepMin > 0);
+    for (const b of $$('[data-sleep]')) b.classList.toggle('on', Number(b.dataset.sleep) === this.sleepMin);
     document.body.classList.toggle('auto-mode', this.s.auto);
     document.body.classList.toggle('tilt-mode', this.s.steering === 'tilt');
     $('#unit').textContent = this.s.units === 'mph' ? 'mph' : 'km/h';
@@ -942,10 +1056,7 @@ export class UI {
   private applySetting(key: keyof Settings) {
     const g = this.game;
     if (key === 'quality') g.setQuality(this.s.quality);
-    if (key === 'traffic') {
-      g.traffic.enabled = this.s.traffic;
-      if (!this.s.traffic) g.traffic.clear();
-    }
+
     if (key === 'clouds') g.sky.setClouds(this.s.clouds);
     if (key === 'steering') this.recentreTilt();
     if (key === 'orientation') this.applyOrientation();

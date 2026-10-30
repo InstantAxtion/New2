@@ -4,7 +4,7 @@ import { BIOMES, type Biome, type BiomeId } from './world/biomes';
 import { ChunkManager, QUALITY } from './chunks';
 import { Sky, TIME_PRESETS } from './sky';
 import { CARS, CarModel, type CarSpec } from './cars';
-import { Vehicle, type Controls } from './drive';
+import { STYLES, Vehicle, type AutoEnv, type Controls } from './drive';
 import { CameraRig } from './camera';
 import { Traffic } from './traffic';
 import { EngineSound } from './audio';
@@ -49,6 +49,15 @@ export class Game {
   private lastPlace = '';
   /** Where the corner video goes (below the top-left HUD), set by the UI. */
   pipY = 124;
+  /** Auto-drive overtaking: cruising in lane, or out passing someone. */
+  private passing = false;
+  private passedBeside = false;
+  private passTime = 0;
+  /** Sleep timer: when (in seconds of driving) to pull over, and whether we have. */
+  sleepAt: number | null = null;
+  sleeping = false;
+  driveTime = 0;
+  onSleep: () => void = () => {};
   private last = performance.now();
   private regionTimer = 0;
   private lowFpsTime = 0;
@@ -93,7 +102,7 @@ export class Game {
     this.scene.add(this.water);
 
     this.traffic = new Traffic(this.world);
-    this.traffic.enabled = settings.traffic;
+    this.traffic.density = settings.trafficDensity;
     this.scene.add(this.traffic.group);
 
     this.rig = new CameraRig(this.camera, this.world);
@@ -280,7 +289,12 @@ export class Game {
     } else this.hour = TIME_PRESETS[s.time];
 
     if (this.phase === 'drive') {
-      const c = s.auto ? v.autopilot() : this.input;
+      this.driveTime += dt;
+      if (this.sleepAt !== null && this.driveTime >= this.sleepAt && !this.sleeping) {
+        this.sleeping = true;
+        this.onSleep();
+      }
+      const c = s.auto || this.sleeping ? this.autoDrive(dt) : this.input;
       this.applied = c;
       v.step(dt, c, s.assist);
     } else {
@@ -294,7 +308,7 @@ export class Game {
     this.car.headlight.intensity = night ? 80 : 0;
     this.car.setInside(this.phase !== 'garage' && this.rig.mode === 'hood');
 
-    if (this.phase === 'drive') this.traffic.update(dt, v, night);
+    if (this.phase === 'drive') this.traffic.update(dt, v, night, (z) => this.speedLimit(z));
 
     if (this.phase === 'garage') this.rig.orbit(v, dt, this.elapsed);
     else {
@@ -348,6 +362,66 @@ export class Game {
     this.updateCarScreen(dt);
     requestAnimationFrame(this.frame);
   };
+
+  /** Speed limit at z (towns), m/s. */
+  speedLimit(z: number): number {
+    const w = this.world as unknown as { speedLimit?: (z: number) => number };
+    return w.speedLimit ? w.speedLimit(z) : Infinity;
+  }
+
+  /** Is the road ahead straight enough to overtake? */
+  private straightAhead(dist: number) {
+    const v = this.vehicle;
+    const dir = Math.cos(v.heading) >= 0 ? 1 : -1;
+    for (let d = 0; d <= dist; d += 15) if (Math.abs(this.world.curvature(v.z + d * dir)) > 0.0045) return false;
+    return true;
+  }
+
+  /** Auto-drive: keep the lane, follow traffic, overtake slow vehicles when it's safe. */
+  private autoDrive(dt: number): Controls {
+    const v = this.vehicle;
+    const t = this.traffic;
+    const style = STYLES[this.settings.driveStyle] ?? STYLES.normal;
+    const limit = this.speedLimit(v.z);
+    if (this.sleeping) {
+      // Pull over onto the right edge and stop
+      v.lane = 1.6;
+      return v.autopilot({ leader: t.leader(v, 1), limit: 0, stopIn: null }, STYLES.relaxed);
+    }
+    const env: AutoEnv = { leader: null, limit, stopIn: this.stopFor() };
+    if (!this.passing) {
+      v.lane = 1;
+      const lead = t.leader(v, 1);
+      env.leader = lead;
+      const free = Math.min(v.cruise, v.safeSpeed(style.lat), limit);
+      if (lead && lead.gap < 55 && lead.v < free - style.overtake && limit === Infinity &&
+          this.straightAhead(200) && t.oncomingClear(v, 230, 9)) {
+        this.passing = true;
+        this.passedBeside = false;
+        this.passTime = 0;
+        v.lane = -1;
+      }
+    } else {
+      this.passTime += dt;
+      const beside = t.beside(v);
+      if (beside) this.passedBeside = true;
+      const danger = !t.oncomingClear(v, 90, 3.5);
+      if ((this.passedBeside && !beside) || this.passTime > 30 || (danger && !beside)) {
+        this.passing = false;
+        v.lane = 1;
+        env.leader = t.leader(v, 1);
+      }
+      if (danger && beside) env.limit = Math.min(limit, v.v + 3); // get past quickly
+    }
+    return v.autopilot(env, style);
+  }
+
+  /** Distance to something auto-drive must stop for (people on a crossing), if any. */
+  stopFor(): number | null {
+    const w = this.world as unknown as { stopFor?: (z: number, dir: number, t: number) => number | null };
+    const v = this.vehicle;
+    return w.stopFor ? w.stopFor(v.z, Math.cos(v.heading) >= 0 ? 1 : -1, this.elapsed) : null;
+  }
 
   /** Lay the YouTube player over the dashboard screen (or in a corner). */
   private placeVideo() {
