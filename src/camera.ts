@@ -32,6 +32,9 @@ export class CameraRig {
   private shotIdx = 0;
 
   car: CarModel | null = null;
+  /** In the driver's seat: turn to look at the dashboard screen. */
+  screenFocus = false;
+  private focusT = 0;
 
   constructor(public cam: THREE.PerspectiveCamera, public world: World) {}
 
@@ -82,7 +85,9 @@ export class CameraRig {
   baseFov = 58;
 
   update(v: Vehicle, dt: number) {
-    const fov = this.mode === 'hood' ? this.baseFov + (this.cam.aspect < 1 ? 4 : 14) : this.baseFov;
+    this.focusT += ((this.mode === 'hood' && this.screenFocus ? 1 : 0) - this.focusT) * (1 - Math.exp(-dt * 4));
+    const hoodFov = this.baseFov + (this.cam.aspect < 1 ? 2 : 8);
+    const fov = this.mode === 'hood' ? hoodFov + (34 - hoodFov) * this.focusT : this.baseFov;
     // In the cabin things are a hand's width away, so let the camera see that close
     const near = this.mode === 'hood' ? 0.03 : 0.1;
     if (this.cam.fov !== fov || this.cam.near !== near) {
@@ -126,7 +131,13 @@ export class CameraRig {
         const tall = this.cam.aspect < 1;
         const eye = this.car.eye.localToWorld(new THREE.Vector3(tall ? -0.2 : 0, tall ? -0.04 : 0, tall ? -0.05 : 0));
         const yaw = this.yaw + (tall ? -0.08 : 0);
-        const dir = new THREE.Vector3(Math.sin(yaw), (tall ? -0.1 : -0.06) + this.pitch * 0.6, Math.cos(yaw)).applyQuaternion(q);
+        const dir = new THREE.Vector3(Math.sin(yaw), (tall ? -0.1 : -0.06) + this.pitch * 0.6, Math.cos(yaw)).applyQuaternion(q).normalize();
+        if (this.focusT > 0.001) {
+          // Glance at the screen (and lean a little towards it)
+          const scr = this.car.screen.getWorldPosition(new THREE.Vector3());
+          eye.lerp(scr, 0.25 * this.focusT);
+          dir.lerp(scr.sub(eye).normalize(), this.focusT).normalize();
+        }
         this.cam.position.copy(eye);
         this.cam.up.set(0, 1, 0).applyQuaternion(q);
         this.cam.lookAt(eye.add(dir));

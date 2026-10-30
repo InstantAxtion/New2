@@ -292,7 +292,7 @@ export class Game {
     const night = this.sky.night > 0.45;
     this.car.animate(v.dist, v.steer, v.braking, night);
     this.car.headlight.intensity = night ? 80 : 0;
-    this.car.interior.visible = this.phase !== 'garage' && this.rig.mode === 'hood';
+    this.car.setInside(this.phase !== 'garage' && this.rig.mode === 'hood');
 
     if (this.phase === 'drive') this.traffic.update(dt, v, night);
 
@@ -385,7 +385,7 @@ export class Game {
     if (!this.car.interior.visible) return;
     this.screenTimer -= dt;
     if (this.screenTimer > 0) return;
-    this.screenTimer = 0.4;
+    this.screenTimer = 0.2;
     const mph = this.settings.units === 'mph';
     const sp = Math.round(Math.abs(this.vehicle.v) * 3.6 * (mph ? 0.621371 : 1));
     const h = this.hour;
@@ -393,6 +393,9 @@ export class Game {
     const r = this.region ? `${this.region.name}` : '';
     const music = this.videos?.active ? 'Loading video…' : 'Tap 📺 to watch music videos here';
     this.car.drawScreen(`${sp} ${mph ? 'mph' : 'km/h'}`, `${r} · ${clock}`, music);
+    const v = this.vehicle;
+    const within = (Math.abs(v.v) % (v.vmax / 5)) / (v.vmax / 5);
+    this.car.drawCluster(sp, mph ? 'mph' : 'km/h', Math.abs(v.v) < 0.5 ? 0.12 : 0.25 + within * 0.65);
   }
 
   /** True once if the frame rate has been poor for a while. */

@@ -213,3 +213,6 @@ body.zen .nowbar { opacity: 0; pointer-events: none; }
 .login-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: rgba(30,215,96,.08); border: 1px solid rgba(30,215,96,.3);
   border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; font-size: 13px; color: var(--muted); }
 .login-row span { flex: 1 1 160px; }
+
+/* In the driver's seat the car's own instruments show the speed */
+body.driver-view .speedo { opacity: 0; }

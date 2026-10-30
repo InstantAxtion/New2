@@ -21,7 +21,7 @@ A relaxing driving game for Android. Pick a car and cruise an endless, generated
 - Graphics: **High** (default), Medium or Low; it steps down automatically if the phone can't keep up.
 
 **Cars**
-8 cars, each with its own top speed, acceleration and grip, and 13 paint colours: Sprint GT, City Hatch, Trail SUV, Ranch Pickup, Breeze Roadster (open top), Weekender Van, Thunder Muscle, Retro Bubble. Each has a cockpit with a steering wheel and a dashboard screen in the Driver view.
+8 cars, each with its own top speed, acceleration and grip, and 13 paint colours: Sprint GT, City Hatch, Trail SUV, Ranch Pickup, Breeze Roadster (open top), Weekender Van, Thunder Muscle, Retro Bubble. Each has a full cockpit in the Driver view, shaped to that car: dashboard meeting the windscreen, gauge cluster behind the steering wheel (live speed and revs), the infotainment screen set into the centre of the dash between the air vents, climate knobs, centre console and gear lever, seats, door panels with armrests, headliner, A-pillars along the windscreen edges and a rear-view mirror.
 
 **Driving**
 - 🕹️ *I drive*: ◀ ▶ buttons or tilt-to-steer, gas and brake (hold brake when stopped to reverse). Lane assist keeps you in lane when you let go of the steering.
@@ -32,7 +32,7 @@ A relaxing driving game for Android. Pick a car and cruise an endless, generated
 
 **Music videos on the dashboard**
 - Tap 🎵 → **📺 Music videos**, then paste a Spotify playlist, album or song link. The game reads the songs and, for each one, finds the official music video (or the best lyric video, if you prefer that in Settings) and plays it with sound, full length, one after another.
-- Tap 📺 to jump into the driver's seat: the video plays on the car's dashboard screen. In the other cameras it shows as a small picture in the corner (can be turned off).
+- Tap 📺 to jump into the driver's seat: the video plays on the car's dashboard screen. Tap 📺 again to glance at the screen (the view turns and zooms to it); a third tap goes back to your camera. In the other cameras the video shows as a small picture in the corner (can be turned off).
 - ⏮ ⏯ ⏭, **🔁 Other video** if it picked the wrong one, or paste your own YouTube link for a song — your choices are remembered.
 - You can also paste a YouTube playlist or video link directly.
 - Finding videos automatically uses the official YouTube Data API. The app can have a key built in at build time (`VITE_YOUTUBE_KEY` in a git-ignored `.env.local`, or the `YOUTUBE_API_KEY` repository secret for GitHub Actions builds), or you can paste a **free API key** of your own: go to console.cloud.google.com → create a project → enable *YouTube Data API v3* → Credentials → Create API key, then paste it in ⚙️ Settings → Music videos. That gives about 100 new songs a day; songs you've played before are remembered and don't count. Without a key, YouTube links still work.

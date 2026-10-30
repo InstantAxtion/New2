@@ -74,6 +74,8 @@ export class CarModel {
   readonly headlight: THREE.SpotLight;
   /** Cockpit (dashboard, wheel, screen): only shown in the driver's view. */
   readonly interior = new THREE.Group();
+  /** Stand-in cabin bits seen from outside (roadster seats); hidden from the driver's seat. */
+  private outsideOnly = new THREE.Group();
   /** Where the driver's eyes are. */
   readonly eye = new THREE.Object3D();
   /** The dashboard screen: a 16:9 plane, 1 unit wide before scaling. */
@@ -83,6 +85,8 @@ export class CarModel {
   private glows: THREE.Sprite[] = [];
   private screenTex: THREE.CanvasTexture;
   private screenCtx: CanvasRenderingContext2D;
+  private clusterTex: THREE.CanvasTexture | null = null;
+  private clusterCtx: CanvasRenderingContext2D | null = null;
   private pbr: boolean;
 
   constructor(public spec: CarSpec, color = spec.defaultColor, tier: Tier = 'pbr') {
@@ -136,11 +140,11 @@ export class CarModel {
       b.add(tl);
       // Side mirror on a stalk at the base of the windscreen
       if (!s.open || true) {
-        const mirror = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 8).scale(0.7, 0.75, 1.1), this.paint);
+        const mirror = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10).scale(0.55, 0.62, 0.85), this.paint);
         const mx = s.open ? s.A - 0.1 : s.A - 0.15;
         mirror.position.set(side * (P.half(mx) + 0.1), P.belt(mx) + 0.1, mx);
-        const glassM = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.09), chrome);
-        glassM.position.set(0, 0, -0.1);
+        const glassM = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16).scale(0.95, 1.05, 1), chrome);
+        glassM.position.set(0, 0, -0.072);
         glassM.rotation.y = Math.PI;
         mirror.add(glassM);
         b.add(mirror);
@@ -192,18 +196,18 @@ export class CarModel {
       case 'roadster': {
         const cockpit = new THREE.Mesh(new THREE.BoxGeometry(W * 0.78, 0.04, 1.55), cabinMat);
         cockpit.position.set(0, s.belt + 0.04, -0.4);
-        b.add(cockpit);
+        this.outsideOnly.add(cockpit);
         for (const side of [-1, 1]) {
           const seat = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.55, 0.14), new THREE.MeshStandardMaterial({ color: 0x5a2c18, roughness: 0.6 }));
           seat.position.set(side * 0.38, s.belt + 0.25, -0.85);
           seat.rotation.x = -0.15;
-          b.add(seat);
+          this.outsideOnly.add(seat);
         }
+        b.add(this.outsideOnly);
         // Windscreen in a thin frame
         const ws = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.86, 0.42), glass);
         ws.position.set(0, s.belt + 0.22, s.A - 0.08);
-        ws.rotation.x = -0.6;
-        ws.rotation.y = Math.PI;
+        ws.rotation.x = -0.6; // faces forward and up: tinted from outside, clear from the seat
         const frame = new THREE.Mesh(new THREE.BoxGeometry(W * 0.88, 0.03, 0.03), dark);
         frame.position.set(0, s.belt + 0.4, s.A - 0.22);
         b.add(ws, frame);
@@ -303,66 +307,12 @@ export class CarModel {
       this.glows.push(hg, tg);
     }
 
-    // Cockpit
-    const dz = s.open ? s.A : s.A;
-    const belt = P.belt(dz) + 0.02;
-    const roofY = s.open ? 1.35 : s.roof;
-    const bodyTop = belt;
-    const dash = new THREE.Mesh(new THREE.BoxGeometry(W * 0.86, 0.34, 0.7), cabinMat);
-    dash.position.set(0, belt - 0.09, dz - 0.33);
-    const cabLen = 2.6;
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(W * 0.9, 0.04, cabLen), cabinMat);
-    floor.position.set(0, bodyTop + 0.06, dz - 0.6 - cabLen / 2);
-    this.interior.add(dash, floor);
-    for (const side of [-1, 1]) {
-      const door = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, cabLen + 0.6), cabinMat);
-      door.position.set(side * (P.half(dz - 1) - 0.12), bodyTop + 0.1, dz - 0.3 - cabLen / 2);
-      this.interior.add(door);
-    }
-    const sw = new THREE.Mesh(new THREE.TorusGeometry(0.165, 0.022, 8, 28), dark);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 12).rotateX(Math.PI / 2), dark);
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.04, 0.02), dark);
-    this.steeringWheel.add(sw, hub, bar);
-    const swTilt = new THREE.Group();
-    swTilt.position.set(0.36, belt + 0.1, dz - 0.78);
-    swTilt.rotation.x = -0.45;
-    swTilt.add(this.steeringWheel);
-    this.interior.add(swTilt);
-    // Screen in the middle of the dash, turned a little towards the driver
-    this.screenSize = [0.5, 0.28];
-    const cv = document.createElement('canvas');
-    cv.width = 512; cv.height = 288;
-    this.screenCtx = cv.getContext('2d')!;
-    this.screenTex = new THREE.CanvasTexture(cv);
-    this.screenTex.colorSpace = THREE.SRGBColorSpace;
-    this.screen = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.5625), new THREE.MeshBasicMaterial({ map: this.screenTex, toneMapped: false }));
-    this.screen.scale.setScalar(this.screenSize[0]);
-    const bezel = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.62, 0.04), dark);
-    bezel.position.z = -0.025;
-    this.screen.add(bezel);
-    this.screen.position.set(-0.06, belt + 0.24, dz - 0.56);
-    this.screen.rotation.set(-0.3, Math.PI - 0.22, 0, 'YXZ');
-    this.interior.add(this.screen);
-    // Pillars and roof lining seen from inside
-    if (!s.open) {
-      for (const side of [-1, 1]) {
-        const p0 = new THREE.Vector3(side * P.half(dz) * 0.86, belt, dz - 0.02);
-        const p1 = new THREE.Vector3(side * P.half(s.B) * (s.tumble ?? 0.78) * 0.95, s.roof - 0.03, s.B);
-        const len = p0.distanceTo(p1);
-        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.04, len, 0.06), cabinMat);
-        pillar.position.copy(p0).add(p1).multiplyScalar(0.5);
-        pillar.lookAt(p1);
-        pillar.rotateX(Math.PI / 2);
-        this.interior.add(pillar);
-      }
-      const header = new THREE.Mesh(new THREE.BoxGeometry(W * 0.8, 0.03, s.B - s.C + 0.3), cabinMat);
-      header.position.set(0, s.roof - 0.04, (s.B + s.C) / 2);
-      const rvm = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.07, 0.03), dark);
-      rvm.position.set(0, s.roof - 0.16, s.B - 0.1);
-      this.interior.add(header, rvm);
-    }
-    this.eye.position.set(0.36, Math.min(belt + 0.42, roofY - 0.14), dz - 1.38);
-    this.interior.add(this.eye);
+    // Cockpit, built from this car's own shape (only shown in the driver's view)
+    const cab = this.buildCockpit(pbr, dark, chrome);
+    this.screen = cab.screen;
+    this.screenSize = [cab.screenWidth, cab.screenWidth * 0.5625];
+    this.screenCtx = cab.screenCtx;
+    this.screenTex = cab.screenTex;
     this.interior.visible = false;
     b.add(this.interior);
     this.drawScreen('', '', '');
@@ -378,6 +328,247 @@ export class CarModel {
     this.headlight.position.set(0, lampY + 0.1, front);
     this.headlight.target.position.set(0, 0, front + 20);
     b.add(this.headlight, this.headlight.target);
+  }
+
+  /**
+   * The cabin as the driver sees it. Positions come from the body profile: the dashboard
+   * meets the windscreen at its base (A), the dash face sits ~0.6 m behind it, the wheel in
+   * front of the driver (left seat), and the centre screen set into the middle of the dash
+   * face, angled a little towards the driver — where it is in a real car.
+   */
+  private buildCockpit(pbr: boolean, dark: THREE.Material, chrome: THREE.Material) {
+    const s = this.spec;
+    const P = profile(s);
+    const I = this.interior;
+    const std = (color: number, roughness: number, metalness = 0) =>
+      pbr
+        ? new THREE.MeshStandardMaterial({ color, roughness, metalness, side: THREE.DoubleSide })
+        : new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
+    const dashM = std(0x2a2b2f, 0.8);
+    const softM = std(0x3b3c41, 0.9);
+    const trimM = std(0x18191c, 0.5);
+    const seatM = std(s.extras === 'roadster' ? 0x5a2c18 : 0x2e2f33, 0.85);
+    const lining = std(0x4e4c49, 0.95);
+
+    const A = s.A;
+    const belt = P.belt(A);
+    const yT = belt + 0.04; // dash top
+    const zF = A - 0.6; // dash face
+    const inner = (z: number) => P.half(z) * 0.9; // inside half-width
+    const floorY = Math.max(s.sill + 0.12, belt - 0.5);
+    const driverX = Math.min(0.37, inner(zF) * 0.42);
+
+    // Dashboard: a side profile extruded across the cabin
+    const prof = new THREE.Shape();
+    const pts: [number, number][] = [
+      [A + 0.03, belt - 0.02], [A - 0.18, yT + 0.01], [zF + 0.14, yT + 0.025], [zF + 0.02, yT - 0.005],
+      [zF - 0.015, yT - 0.06], [zF, belt - 0.3], [zF + 0.1, floorY + 0.05], [A + 0.03, floorY + 0.05],
+    ];
+    pts.forEach(([z, y], i) => (i ? prof.lineTo(z, y) : prof.moveTo(z, y)));
+    const dw = inner(zF) * 2;
+    const dashG = new THREE.ExtrudeGeometry(prof, { depth: dw, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 2, steps: 1 });
+    dashG.translate(0, 0, -dw / 2);
+    dashG.rotateY(-Math.PI / 2);
+    I.add(new THREE.Mesh(dashG, dashM));
+
+    // Instrument cluster under a hood, behind the wheel
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.025, 0.16), dashM);
+    visor.position.set(driverX, yT + 0.045, zF - 0.02);
+    visor.rotation.x = 0.12;
+    const surround = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.13, 0.06), trimM);
+    surround.position.set(driverX, yT - 0.02, zF - 0.02);
+    I.add(visor, surround);
+    const cc = document.createElement('canvas');
+    cc.width = 512; cc.height = 160;
+    this.clusterCtx = cc.getContext('2d');
+    this.clusterTex = new THREE.CanvasTexture(cc);
+    this.clusterTex.colorSpace = THREE.SRGBColorSpace;
+    const cluster = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.1), new THREE.MeshBasicMaterial({ map: this.clusterTex, toneMapped: false }));
+    cluster.position.set(driverX, yT - 0.02, zF - 0.055);
+    cluster.rotation.set(-0.12, Math.PI, 0, 'YXZ');
+    I.add(cluster);
+    this.drawCluster(0, 'km/h', 0);
+
+    // Centre screen set into the middle of the dash face, turned towards the driver
+    const screenWidth = Math.min(0.3, inner(zF) * 0.38);
+    const cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 288;
+    const screenCtx = cv.getContext('2d')!;
+    const screenTex = new THREE.CanvasTexture(cv);
+    screenTex.colorSpace = THREE.SRGBColorSpace;
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.5625), new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false }));
+    screen.scale.setScalar(screenWidth);
+    const bezel = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.66, 0.08), trimM);
+    bezel.position.z = -0.045;
+    screen.add(bezel);
+    const screenY = yT - 0.03 - (screenWidth * 0.5625) / 2;
+    screen.position.set(-0.04, screenY, zF - 0.06);
+    screen.rotation.set(-0.14, Math.PI - 0.16, 0, 'YXZ');
+    I.add(screen);
+    // Air vents either side of the screen, and under it the climate controls
+    for (const x of [-1, 1]) {
+      const vent = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.045, 0.03), trimM);
+      vent.position.set(-0.04 + x * (screenWidth / 2 + 0.11), screenY, zF - 0.035);
+      const ring = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.055, 0.02), chrome);
+      ring.position.copy(vent.position).add(new THREE.Vector3(0, 0, 0.005));
+      I.add(ring, vent);
+    }
+    for (let k = 0; k < 3; k++) {
+      const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 16).rotateX(Math.PI / 2), chrome);
+      knob.position.set(-0.04 + (k - 1) * 0.08, screenY - screenWidth * 0.29 - 0.06, zF - 0.03);
+      I.add(knob);
+    }
+
+    // Centre console with the gear lever
+    const conLen = 0.95;
+    const con = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.16, conLen), softM);
+    con.position.set(0, floorY + 0.1, zF - conLen / 2);
+    const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, 0.1, 8), trimM);
+    lever.position.set(0, floorY + 0.23, zF - 0.42);
+    const knobG = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), trimM);
+    knobG.position.set(0, floorY + 0.29, zF - 0.42);
+    I.add(con, lever, knobG);
+
+    // Steering wheel on its column
+    const wheelC = new THREE.Vector3(driverX, yT - 0.17, zF - 0.36);
+    const tilt = new THREE.Group();
+    tilt.position.copy(wheelC);
+    tilt.rotation.x = 0.42; // top of the wheel leans towards the dash, column runs down into it
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.024, 10, 36), trimM);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.07, 0.06, 20).rotateX(Math.PI / 2), trimM);
+    const badge = new THREE.Mesh(new THREE.CircleGeometry(0.02, 16), chrome);
+    badge.position.z = -0.032;
+    badge.rotation.y = Math.PI;
+    this.steeringWheel.add(rim, hub, badge);
+    for (const ang of [0, Math.PI, -Math.PI / 2]) {
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.03, 0.02), trimM);
+      spoke.position.set(Math.cos(ang) * 0.1, Math.sin(ang) * 0.1, 0);
+      spoke.rotation.z = ang;
+      this.steeringWheel.add(spoke);
+    }
+    tilt.add(this.steeringWheel);
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.3, 12), dashM);
+    col.position.set(0, 0, 0.16);
+    col.rotation.x = Math.PI / 2;
+    tilt.add(col);
+    I.add(tilt);
+
+    // Seats (mostly seen when looking around)
+    const eyeZ = zF - 1.0;
+    for (const x of [driverX, -driverX]) {
+      const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.5), seatM);
+      cushion.position.set(x, floorY + 0.12, eyeZ + 0.05);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.12), seatM);
+      back.position.set(x, floorY + 0.5, eyeZ - 0.25);
+      back.rotation.x = 0.18;
+      const rest = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.1), seatM);
+      rest.position.set(x, floorY + 0.95, eyeZ - 0.32);
+      I.add(cushion, back, rest);
+    }
+
+    // Floor
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(inner(zF) * 2, 0.03, 2.4), softM);
+    floor.position.set(0, floorY, zF - 1.1);
+    I.add(floor);
+
+    // Door panels following the inside of the body, with window sills and armrests
+    const zBack = s.open ? zF - 1.6 : Math.max(s.C - 0.2, zF - 2.4);
+    const ribbon = (side: number, yLo: (z: number) => number, yHi: (z: number) => number, inset: number, m: THREE.Material) => {
+      const n = 10, pos: number[] = [], idx: number[] = [];
+      for (let i = 0; i <= n; i++) {
+        const z = A - 0.05 + (zBack - A + 0.05) * (i / n);
+        const x = side * (P.half(z) * 0.94 - inset);
+        pos.push(x, yLo(z), z, x, yHi(z), z);
+        if (i) idx.push(i * 2 - 2, i * 2 - 1, i * 2, i * 2 - 1, i * 2 + 1, i * 2);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      I.add(new THREE.Mesh(g, m));
+    };
+    for (const side of [-1, 1]) {
+      ribbon(side, () => floorY, (z) => P.belt(z) - 0.03, 0.05, softM);
+      ribbon(side, (z) => P.belt(z) - 0.03, (z) => P.belt(z) + 0.02, 0.02, trimM);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 0.45), trimM);
+      arm.position.set(side * (P.half(eyeZ) * 0.94 - 0.09), belt - 0.18, eyeZ + 0.15);
+      I.add(arm);
+    }
+
+    // A-pillars along the real edges of the windscreen
+    const glassTopZ = s.open ? A - 0.28 : s.B;
+    const glassTopY = s.open ? belt + 0.42 : P.top(s.B) - 0.02;
+    for (const side of [-1, 1]) {
+      const p0 = new THREE.Vector3(side * P.half(A) * 0.9, belt + 0.02, A);
+      const p1 = new THREE.Vector3(side * (s.open ? P.half(A) * 0.86 : P.half(s.B) * (s.tumble ?? 0.78) * 0.94), glassTopY, glassTopZ);
+      const len = p0.distanceTo(p1);
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.06, len, 0.09), lining);
+      pillar.position.copy(p0).add(p1).multiplyScalar(0.5);
+      pillar.lookAt(p1);
+      pillar.rotateX(Math.PI / 2);
+      I.add(pillar);
+    }
+
+    if (!s.open) {
+      // Headliner: follows the roof from the top of the windscreen back
+      const n = 8, pos: number[] = [], idx: number[] = [];
+      const z0 = s.B + 0.02, z1 = Math.max(s.C - 0.15, s.D + 0.1);
+      for (let i = 0; i <= n; i++) {
+        const z = z0 + (z1 - z0) * (i / n);
+        const hw = P.half(z) * (s.tumble ?? 0.78) * 0.95;
+        const y = P.top(z) - 0.035;
+        pos.push(-hw, y, z, hw, y, z);
+        if (i) idx.push(i * 2 - 2, i * 2, i * 2 - 1, i * 2 - 1, i * 2, i * 2 + 1);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      I.add(new THREE.Mesh(g, lining));
+      // Rear-view mirror on a stem from the roof
+      const my = P.top(s.B) - 0.16;
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.1, 6), trimM);
+      stem.position.set(0, my + 0.07, s.B - 0.05);
+      const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.03), trimM);
+      mirror.position.set(0, my, s.B - 0.08);
+      const glassM = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.055), chrome);
+      glassM.position.set(0, my, s.B - 0.096);
+      glassM.rotation.y = Math.PI;
+      I.add(stem, mirror, glassM);
+    }
+
+    const eyeY = Math.min(yT + 0.2, (s.open ? 1.4 : P.top(eyeZ)) - 0.12);
+    this.eye.position.set(driverX, eyeY, eyeZ);
+    I.add(this.eye);
+    return { screen, screenWidth, screenCtx, screenTex };
+  }
+
+  /** Switch between the outside look and the driver's-seat cockpit. */
+  setInside(inside: boolean) {
+    this.interior.visible = inside;
+    this.outsideOnly.visible = !inside;
+  }
+
+  /** The instrument cluster: speed and a rev bar. */
+  drawCluster(speed: number, unit: string, rpm: number) {
+    const g = this.clusterCtx;
+    if (!g || !this.clusterTex) return;
+    g.fillStyle = '#05070b';
+    g.fillRect(0, 0, 512, 160);
+    // Rev bar
+    for (let i = 0; i < 24; i++) {
+      g.fillStyle = i / 24 < rpm ? (i > 19 ? '#ff4a3a' : '#4fc3ff') : '#1a2230';
+      g.fillRect(24 + i * 19, 18, 14, 10);
+    }
+    g.fillStyle = '#f2f4f8';
+    g.font = '700 84px Inter, system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.fillText(String(speed), 256, 122);
+    g.fillStyle = '#8994a8';
+    g.font = '500 22px Inter, system-ui, sans-serif';
+    g.fillText(unit, 256, 150);
+    g.textAlign = 'left';
+    this.clusterTex.needsUpdate = true;
   }
 
   setColor(hex: number) {

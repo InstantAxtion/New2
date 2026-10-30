@@ -432,6 +432,7 @@ export class UI {
     $('#cam-btn', r).onclick = () => {
       const i = CAM_MODES.indexOf(this.s.cam);
       this.s.cam = CAM_MODES[(i + 1) % CAM_MODES.length];
+      this.game.rig.screenFocus = false;
       this.game.rig.mode = this.s.cam;
       this.game.rig.reset();
       this.save();
@@ -464,13 +465,25 @@ export class UI {
     $('#faster', r).onclick = () => cruise(10);
     $('#lane-btn', r).onclick = () => (this.game.vehicle.lane *= -1);
     $('#tilt-zero', r).onclick = () => this.recentreTilt();
-    $('#tv-btn', r).onclick = () => this.watchOnScreen(this.s.cam !== 'hood');
+    $('#tv-btn', r).onclick = () => this.tvButton();
     $('#nb-toggle', r).onclick = () => this.videos.toggle();
     $('#nb-next', r).onclick = () => this.videos.next();
   }
 
+  /** 📺: into the driver's seat, then look at the dashboard screen, then back out. */
+  private tvButton() {
+    const rig = this.game.rig;
+    if (this.s.cam !== 'hood') this.watchOnScreen(true);
+    else if (!rig.screenFocus) {
+      rig.screenFocus = true;
+      this.refreshHud();
+    } else this.watchOnScreen(false);
+  }
+
   /** Jump into the driver's seat to watch the video on the dashboard (or back out). */
   private watchOnScreen(on: boolean) {
+    const rig = this.game.rig;
+    rig.screenFocus = false;
     if (on) {
       if (this.s.cam !== 'hood') this.prevCam = this.s.cam;
       this.s.cam = 'hood';
@@ -479,16 +492,16 @@ export class UI {
         if (!this.videos.songs.length && !this.videos.ytList) this.open('music');
       }
     } else this.s.cam = this.prevCam === 'hood' ? 'chase' : this.prevCam;
-    this.game.rig.mode = this.s.cam;
-    this.game.rig.reset();
+    rig.mode = this.s.cam;
+    rig.reset();
     this.save();
     this.refreshHud();
-    if (on && this.game.phase === 'garage') return;
   }
 
   private refreshHud() {
     $('#cam-label').textContent = CAM_LABEL[this.s.cam];
     $('#tv-btn').classList.toggle('on', this.s.cam === 'hood');
+    document.body.classList.toggle('driver-view', this.s.cam === 'hood');
     $('#mode-ico').textContent = this.s.auto ? '🤖' : '🕹️';
     $('#mode-label').textContent = this.s.auto ? 'Auto' : 'Manual';
     document.body.classList.toggle('auto-mode', this.s.auto);
@@ -782,6 +795,7 @@ export class UI {
     $('#mv-watch').onclick = () => {
       this.close('music');
       this.watchOnScreen(true);
+      this.game.rig.screenFocus = true;
       if (this.game.phase === 'garage') $('#go').click();
     };
     $('#mv-use').onclick = () => {

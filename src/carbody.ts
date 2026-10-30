@@ -35,6 +35,11 @@ export interface BodyShape {
   tumble?: number;
 }
 
+const smooth = (t: number) => {
+  const c = Math.min(1, Math.max(0, t));
+  return c * c * (3 - 2 * c);
+};
+
 /** Catmull-Rom through (x, y) points sorted by x. */
 function spline(pts: [number, number][]) {
   return (x: number) => {
@@ -99,6 +104,7 @@ export function bodyGeometry(s: BodyShape): THREE.BufferGeometry {
   const HALF = 11; // points on one side, bottom centre to top centre
   const pos: number[] = [];
   const zone: number[] = []; // per station: 0 none, 1 side glass, 2 windscreen/rear glass
+  const tubs: number[] = []; // per station: how deep the open cockpit is (0..1)
   for (const x of xs) {
     const hw = P.half(x);
     const top = P.top(x);
@@ -115,9 +121,17 @@ export function bodyGeometry(s: BodyShape): THREE.BufferGeometry {
       [hw * 0.99, belt - 0.06],
       [hw * 0.95, belt],
     ];
+    // Open cars: the top dips into a cockpit tub between the windscreen and the rear deck
+    const tub = s.open ? Math.min(smooth((s.A - x) / 0.18), smooth((x - (s.A - 1.75)) / 0.25)) : 0;
+    tubs.push(tub);
     if (cabin) {
       const rw = hw * tumble;
       ring.push([hw * 0.9, belt + 0.02], [rw + (hw * 0.9 - rw) * 0.15, top - 0.06], [rw * 0.92, top - 0.01], [rw * 0.5, top + 0.015], [0, top + 0.02]);
+    } else if (tub > 0) {
+      const c = Math.min(0.045, (top - belt) + 0.04);
+      const floor = Math.max(s.sill + 0.16, belt - 0.42);
+      const dip = (y: number) => y + (floor - y) * tub;
+      ring.push([hw * 0.88, belt + c * 0.6], [hw * 0.8, belt + c * 0.4 - 0.03 * tub], [hw * 0.78, dip(belt)], [hw * 0.5, dip(belt + c)], [0, dip(belt + c)]);
     } else {
       const c = Math.min(0.045, (top - belt) + 0.04);
       ring.push([hw * 0.86, belt + c * 0.5], [hw * 0.7, belt + c * 0.8], [hw * 0.5, belt + c * 0.95], [hw * 0.25, belt + c], [0, belt + c]);
@@ -137,6 +151,8 @@ export function bodyGeometry(s: BodyShape): THREE.BufferGeometry {
       const kk = k < HALF ? k : R - k - 1;
       let g = 0;
       if (kk === 0) g = 2;
+      // Inside of an open cockpit is trim, not paint
+      if (kk >= 7 && tubs[i] > 0.3 && tubs[i + 1] > 0.3) g = 2;
       if (za && zb) {
         if (kk === 6 || kk === 7) g = 1;
         if (kk >= 8 && za === 2 && zb === 2) g = 1;
