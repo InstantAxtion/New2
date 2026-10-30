@@ -8,6 +8,10 @@ import type { TimeMode } from './sky';
 import { CAM_LABEL, CAM_MODES } from './camera';
 import { saveSettings, type Settings } from './settings';
 import { appUri, embedUrl, fetchTitle, loadSaved, parseSpotify, saveList, webUrl, type SpotifyRef } from './spotify';
+import { ScreenOrientation } from '@capacitor/screen-orientation';
+import { MusicVideos } from './music';
+import { fetchSongs } from './tracks';
+import { parseYouTube } from './youtube';
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const $$ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => [...root.querySelectorAll(sel)] as T[];
@@ -32,6 +36,10 @@ export class UI {
   private tilt = 0;
   private keys = new Set<string>();
   private held = { left: false, right: false, gas: false, brake: false };
+  readonly videos = new MusicVideos();
+  /** Camera to go back to when leaving the driver's seat view. */
+  private prevCam: Settings['cam'] = 'chase';
+  private songsFor = '';
 
   constructor(private game: Game) {
     this.s = game.settings;
@@ -39,7 +47,10 @@ export class UI {
     this.bindGarage();
     this.bindHud();
     this.bindMusic();
+    this.bindVideos();
     this.bindSettings();
+    this.applyOrientation();
+    game.videos = this.videos;
     this.bindInput();
     this.refreshGarage();
     this.refreshHud();
@@ -84,14 +95,18 @@ export class UI {
       <div class="swatches">${swatches}</div>
     </div>
     <div class="card world-card">
+      <div class="wc-scroll">
       <h3>World <small>pick one or more · none = all</small></h3>
       <div class="chips" id="themes"><button class="chip" data-theme="all">🌍 All</button>${themeChips}</div>
       <h3>Time of day</h3>
       <div class="chips" id="times">${timeChips}</div>
+      <h3>Traffic</h3>
+      <div class="chips" data-set="traffic"><button class="chip" data-v="true">🚙 On</button><button class="chip" data-v="false">Empty roads</button></div>
       <h3>How to drive</h3>
       <div class="chips" id="modes">
         <button class="chip" data-mode="cruise">🕹️ I drive</button>
         <button class="chip" data-mode="auto">🤖 Auto-drive</button>
+      </div>
       </div>
       <div class="go-row">
         <button class="ghost" id="new-world">🎲 New road</button>
@@ -105,11 +120,15 @@ export class UI {
   <div class="hud-tl">
     <div class="pill" id="region"></div>
     <div class="pill small"><span id="odo">0.0 km</span> · <span id="clock">09:00</span></div>
+    <div class="nowbar" id="nowbar"><span id="nowbar-text"></span>
+      <button class="icon tiny" id="nb-toggle" aria-label="Play or pause">⏯</button>
+      <button class="icon tiny" id="nb-next" aria-label="Next song">⏭</button></div>
   </div>
   <div class="hud-tr">
     <button class="icon" data-open="music" aria-label="Music">🎵</button>
-    <button class="icon wide" id="cam-btn">🎥 <span id="cam-label"></span></button>
-    <button class="icon wide" id="mode-btn"></button>
+    <button class="icon" id="tv-btn" aria-label="Watch the music video on the dashboard">📺</button>
+    <button class="icon wide" id="cam-btn">🎥 <span class="lbl" id="cam-label"></span></button>
+    <button class="icon wide" id="mode-btn"><span id="mode-ico"></span> <span class="lbl" id="mode-label"></span></button>
     <button class="icon" id="zen-btn" aria-label="Hide controls">👁️</button>
     <button class="icon" id="pause-btn" aria-label="Pause">⏸</button>
   </div>
@@ -137,26 +156,60 @@ export class UI {
 </section>
 
 <section id="pause" class="screen modal">
-  <div class="card menu">
+  <div class="card menu scroll">
     <h2>Paused</h2>
     <button class="go" id="resume">Keep driving ▶</button>
     <button class="ghost" id="to-garage">🚗 Garage &amp; world</button>
-    <button class="ghost" data-open="music">🎵 Music</button>
-    <button class="ghost" data-open="settings">⚙️ Settings</button>
+    <h3>Time of day</h3>
+    <div class="chips center">${timeChips}</div>
+    <h3>Traffic</h3>
+    <div class="chips center" data-set="traffic"><button class="chip" data-v="true">🚙 On</button><button class="chip" data-v="false">Empty roads</button></div>
+    <div class="menu-row">
+      <button class="ghost" data-open="music">🎵 Music</button>
+      <button class="ghost" data-open="settings">⚙️ Settings</button>
+    </div>
   </div>
 </section>
 
 <aside id="music" class="sheet hidden">
   <div class="sheet-head"><h2>🎵 Music</h2><button class="icon" data-close="music" aria-label="Close">✕</button></div>
+  <div class="tabs">
+    <button class="tab" data-mtab="spotify">🎧 Spotify player</button>
+    <button class="tab" data-mtab="videos">📺 Music videos</button>
+  </div>
   <div class="sheet-body">
-    <div class="row"><input id="sp-input" type="url" inputmode="url" placeholder="Paste a Spotify playlist link" autocomplete="off" />
+    <div class="row"><input id="sp-input" type="url" inputmode="url" placeholder="Paste a Spotify or YouTube link" autocomplete="off" />
       <button class="go small" id="sp-load">Play</button></div>
-    <div class="row"><button class="ghost small" id="sp-paste">📋 Paste</button>
-      <button class="ghost small" id="sp-app" disabled>Open in Spotify app ↗</button></div>
     <p class="error" id="sp-error"></p>
-    <div id="sp-player"><p class="hint">In Spotify, open a playlist → ⋯ → Share → <b>Copy link</b>, then paste it here.</p></div>
+    <div class="mpane" data-pane="spotify">
+      <div class="row"><button class="ghost small" id="sp-paste">📋 Paste</button>
+        <button class="ghost small" id="sp-app" disabled>Open in Spotify app ↗</button></div>
+      <div id="sp-player"><p class="hint">In Spotify, open a playlist → ⋯ → Share → <b>Copy link</b>, then paste it here.</p></div>
+      <p class="hint">The built-in player plays previews unless you're logged in to Spotify in it. For full songs tap <b>Open in Spotify app</b> and come back — the music keeps playing while you drive. Or switch to <b>📺 Music videos</b> to play full songs as videos.</p>
+    </div>
+    <div class="mpane" data-pane="videos">
+      <div class="now-card">
+        <div class="now-song" id="mv-song">Nothing playing yet</div>
+        <div class="now-video" id="mv-video"></div>
+        <div class="now-status" id="mv-status"></div>
+        <div class="row controls">
+          <button class="icon" id="mv-prev" aria-label="Previous">⏮</button>
+          <button class="icon" id="mv-toggle" aria-label="Play or pause">⏯</button>
+          <button class="icon" id="mv-next" aria-label="Next">⏭</button>
+          <button class="ghost small" id="mv-other">🔁 Other video</button>
+        </div>
+        <button class="ghost small wide-btn" id="mv-watch">📺 Watch on the car's screen</button>
+      </div>
+      <details class="fix">
+        <summary>Wrong video?</summary>
+        <div class="row"><input id="mv-link" type="url" inputmode="url" placeholder="Paste a YouTube link for this song" autocomplete="off" />
+          <button class="go small" id="mv-use">Use</button></div>
+        <button class="ghost small" id="mv-search">🔎 Look it up on YouTube</button>
+      </details>
+      <p class="hint" id="mv-keyhint">To find each song's video automatically, add a free <b>YouTube API key</b> in ⚙️ Settings. Without one you can paste a YouTube playlist or video link above.</p>
+      <div id="mv-list"></div>
+    </div>
     <div id="sp-saved"></div>
-    <p class="hint">The built-in player plays previews unless you're logged in to Spotify in it. For full songs tap <b>Open in Spotify app</b> and come back — the music keeps playing while you drive.</p>
   </div>
 </aside>
 
@@ -170,11 +223,22 @@ export class UI {
     <h3>Steering</h3>
     <div class="chips" data-set="steering"><button class="chip" data-v="buttons">◀ ▶ Buttons</button><button class="chip" data-v="tilt">📱 Tilt phone</button></div>
     <div class="chips" data-set="assist"><button class="chip" data-v="true">Lane assist on</button><button class="chip" data-v="false">Off</button></div>
+    <h3>Screen</h3>
+    <div class="chips" data-set="orientation"><button class="chip" data-v="auto">🔄 Auto-rotate</button><button class="chip" data-v="landscape">▭ Landscape</button><button class="chip" data-v="portrait">▯ Vertical</button></div>
+    <h3>Time of day</h3>
+    <div class="chips">${timeChips}</div>
     <h3>World</h3>
     <div class="chips" data-set="traffic"><button class="chip" data-v="true">🚙 Traffic</button><button class="chip" data-v="false">Empty roads</button></div>
     <div class="chips" data-set="clouds"><button class="chip" data-v="true">☁️ Clouds</button><button class="chip" data-v="false">Clear skies</button></div>
     <h3>Engine sound</h3>
     <input type="range" id="volume" min="0" max="1" step="0.05" />
+    <h3>Music videos</h3>
+    <div class="chips" data-set="prefer"><button class="chip" data-v="video">🎬 Prefer music videos</button><button class="chip" data-v="lyrics">📝 Prefer lyric videos</button></div>
+    <div class="chips" data-set="pip"><button class="chip" data-v="true">Small video in other cameras</button><button class="chip" data-v="false">Only on the car screen</button></div>
+    <label class="field">YouTube API key
+      <input id="yt-key" type="text" autocomplete="off" spellcheck="false" placeholder="AIza…" /></label>
+    <p class="hint">Used to search YouTube for each song's official video (or the best lyric video). It's free:
+      <a href="#" id="yt-help">console.cloud.google.com</a> → create a project → enable <b>YouTube Data API v3</b> → Credentials → Create API key. The key stays on this phone. About 100 new songs a day are free; songs you've played before are remembered.</p>
   </div>
 </aside>`;
   }
@@ -383,11 +447,33 @@ export class UI {
     $('#faster', r).onclick = () => cruise(10);
     $('#lane-btn', r).onclick = () => (this.game.vehicle.lane *= -1);
     $('#tilt-zero', r).onclick = () => this.recentreTilt();
+    $('#tv-btn', r).onclick = () => this.watchOnScreen(this.s.cam !== 'hood');
+    $('#nb-toggle', r).onclick = () => this.videos.toggle();
+    $('#nb-next', r).onclick = () => this.videos.next();
+  }
+
+  /** Jump into the driver's seat to watch the video on the dashboard (or back out). */
+  private watchOnScreen(on: boolean) {
+    if (on) {
+      if (this.s.cam !== 'hood') this.prevCam = this.s.cam;
+      this.s.cam = 'hood';
+      if (!this.videos.active) {
+        this.setMusicMode('videos');
+        if (!this.videos.songs.length && !this.videos.ytList) this.open('music');
+      }
+    } else this.s.cam = this.prevCam === 'hood' ? 'chase' : this.prevCam;
+    this.game.rig.mode = this.s.cam;
+    this.game.rig.reset();
+    this.save();
+    this.refreshHud();
+    if (on && this.game.phase === 'garage') return;
   }
 
   private refreshHud() {
     $('#cam-label').textContent = CAM_LABEL[this.s.cam];
-    $('#mode-btn').textContent = this.s.auto ? '🤖 Auto' : '🕹️ Manual';
+    $('#tv-btn').classList.toggle('on', this.s.cam === 'hood');
+    $('#mode-ico').textContent = this.s.auto ? '🤖' : '🕹️';
+    $('#mode-label').textContent = this.s.auto ? 'Auto' : 'Manual';
     document.body.classList.toggle('auto-mode', this.s.auto);
     document.body.classList.toggle('tilt-mode', this.s.steering === 'tilt');
     $('#unit').textContent = this.s.units === 'mph' ? 'mph' : 'km/h';
@@ -404,6 +490,14 @@ export class UI {
     $('#odo').textContent = `${((v.odometer / 1000) * k).toFixed(1)} ${this.s.units === 'mph' ? 'mi' : 'km'}`;
     const h = g.hour;
     $('#clock').textContent = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+    const tl = $('.hud-tl').getBoundingClientRect();
+    g.pipY = Math.round(tl.bottom + 8);
+    const np = this.videos.now();
+    const bar = $('#nowbar');
+    bar.classList.toggle('on', this.videos.active);
+    if (this.videos.active) {
+      $('#nowbar-text').textContent = np.song ? `📺 ${np.song.title} · ${np.song.artist}` : np.video ? `📺 ${np.video.title}` : '📺 Music videos';
+    }
     if (g.struggling() && this.s.quality !== 'low') {
       this.s.quality = this.s.quality === 'high' ? 'medium' : 'low';
       g.setQuality(this.s.quality);
@@ -514,9 +608,18 @@ export class UI {
   private bindMusic() {
     const input = $<HTMLInputElement>('#sp-input');
     const load = () => {
+      const yt = parseYouTube(input.value);
+      if (yt && !/spotify/i.test(input.value)) {
+        $('#sp-error').textContent = '';
+        input.value = '';
+        input.blur();
+        this.setMusicMode('videos', false);
+        this.videos.playYouTube(yt);
+        return;
+      }
       const r = parseSpotify(input.value);
       if (!r.ok) {
-        $('#sp-error').textContent = r.error;
+        $('#sp-error').textContent = r.error.replace('Spotify link', 'Spotify or YouTube link');
         return;
       }
       $('#sp-error').textContent = '';
@@ -541,17 +644,47 @@ export class UI {
       $('#sp-error').textContent = 'Long-press the box and choose Paste.';
     };
     $('#sp-app').onclick = () => this.current && void this.openInApp(this.current);
+    for (const b of $$('[data-mtab]')) b.onclick = () => this.setMusicMode(b.dataset.mtab as Settings['musicMode']);
     this.renderSaved();
+    this.refreshMusicTabs();
     const last = loadSaved()[0];
-    if (last) this.play(last.ref, false);
+    if (last) this.play(last.ref, false, false);
   }
 
-  private play(ref: SpotifyRef, remember = true) {
-    this.current = ref;
+  /** Switch between the Spotify player and music videos (only one plays at a time). */
+  private setMusicMode(mode: Settings['musicMode'], autoplay = true) {
+    const changed = mode !== this.s.musicMode;
+    this.s.musicMode = mode;
+    this.save();
+    this.refreshMusicTabs();
+    if (!changed) return;
+    if (mode === 'videos') {
+      $('#sp-player').innerHTML = '<p class="hint">Spotify is paused while music videos play.</p>';
+      if (autoplay && this.videos.songs.length && !this.videos.active) void this.videos.playIndex(Math.max(0, this.videos.index));
+    } else {
+      this.videos.stop();
+      if (this.current) this.embed(this.current);
+    }
+  }
+
+  private refreshMusicTabs() {
+    for (const b of $$('[data-mtab]')) b.classList.toggle('on', b.dataset.mtab === this.s.musicMode);
+    for (const p of $$('[data-pane]')) p.style.display = p.dataset.pane === this.s.musicMode ? '' : 'none';
+    $('#mv-keyhint').style.display = this.s.youtubeKey ? 'none' : '';
+  }
+
+  private embed(ref: SpotifyRef) {
     const tall = window.innerHeight > 560;
     $('#sp-player').innerHTML = `<iframe title="Spotify player" src="${embedUrl(ref)}" width="100%" height="${tall ? 352 : 152}" frameborder="0"
       allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
+  }
+
+  private play(ref: SpotifyRef, remember = true, start = true) {
+    this.current = ref;
     $<HTMLButtonElement>('#sp-app').disabled = false;
+    if (this.s.musicMode === 'spotify') this.embed(ref);
+    else $('#sp-player').innerHTML = '<p class="hint">Spotify is paused while music videos play.</p>';
+    void this.loadSongs(ref, start && this.s.musicMode === 'videos');
     if (!remember) return;
     const list = loadSaved().filter((x) => x.ref.id !== ref.id);
     list.unshift({ ref, name: `Spotify ${ref.kind}` });
@@ -567,6 +700,107 @@ export class UI {
         this.renderSaved();
       }
     });
+  }
+
+  /** Get the playlist's songs so they can be played as videos. */
+  private async loadSongs(ref: SpotifyRef, start: boolean) {
+    const key = ref.kind + ref.id;
+    if (this.songsFor === key) {
+      if (start) void this.videos.playIndex(0);
+      return;
+    }
+    this.songsFor = key;
+    try {
+      const { name, songs } = await fetchSongs(ref);
+      if (this.songsFor !== key) return;
+      this.videos.setSongs(name, songs);
+      this.renderSongs();
+      if (start) void this.videos.playIndex(0);
+    } catch (e) {
+      if (this.songsFor === key) this.songsFor = '';
+      if (this.s.musicMode === 'videos') {
+        this.videos.status = `Couldn't read the songs from Spotify (${(e as Error).message}).`;
+        this.refreshVideos();
+      }
+    }
+  }
+
+  // ---------- Music videos ----------
+
+  private bindVideos() {
+    const v = this.videos;
+    v.apiKey = this.s.youtubeKey;
+    v.prefer = this.s.prefer;
+    v.onChange = () => this.refreshVideos();
+    $('#mv-prev').onclick = () => v.previous();
+    $('#mv-next').onclick = () => v.next();
+    $('#mv-toggle').onclick = () => {
+      if (!v.active && v.songs.length) void v.playIndex(Math.max(0, v.index));
+      else v.toggle();
+    };
+    $('#mv-other').onclick = () => v.otherVideo();
+    $('#mv-watch').onclick = () => {
+      this.close('music');
+      this.watchOnScreen(true);
+      if (this.game.phase === 'garage') $('#go').click();
+    };
+    $('#mv-use').onclick = () => {
+      const link = parseYouTube($<HTMLInputElement>('#mv-link').value);
+      if (!link?.videoId) {
+        $('#sp-error').textContent = 'Paste a link to a single YouTube video.';
+        return;
+      }
+      $('#sp-error').textContent = '';
+      $<HTMLInputElement>('#mv-link').value = '';
+      if (v.song) v.useLink(link.videoId);
+      else v.playYouTube(link);
+    };
+    $('#mv-search').onclick = () => {
+      const s = v.song;
+      const q = s ? `${s.artist.split(',')[0]} ${s.title} ${this.s.prefer === 'lyrics' ? 'lyrics' : 'official video'}` : '';
+      void this.openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`);
+    };
+    this.refreshVideos();
+  }
+
+  private refreshVideos() {
+    const np = this.videos.now();
+    $('#mv-song').textContent = np.song ? `${np.song.title} — ${np.song.artist}` : this.videos.ytList ? 'YouTube playlist' : this.videos.active ? 'YouTube video' : 'Nothing playing yet';
+    $('#mv-video').textContent = np.video ? `▶ ${np.video.title} · ${np.video.channel}` : '';
+    $('#mv-status').textContent = np.status;
+    $<HTMLButtonElement>('#mv-other').disabled = !this.videos.current;
+    for (const el of $$('[data-song]')) el.classList.toggle('on', Number(el.dataset.song) === this.videos.index);
+  }
+
+  private renderSongs() {
+    const v = this.videos;
+    const el = $('#mv-list');
+    if (!v.songs.length) {
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML =
+      `<h3>${esc(v.listName)} · ${v.songs.length} songs</h3>` +
+      v.songs.map((s, i) => `<button class="song" data-song="${i}"><b>${esc(s.title)}</b><span>${esc(s.artist)}</span></button>`).join('');
+    for (const b of $$('[data-song]', el)) {
+      b.onclick = () => {
+        this.setMusicMode('videos', false);
+        void v.playIndex(Number(b.dataset.song));
+      };
+    }
+    this.refreshVideos();
+  }
+
+  private async openExternal(url: string) {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await AppLauncher.openUrl({ url });
+        return;
+      } catch {
+        /* fall through */
+      }
+    }
+    window.open(url, '_blank');
   }
 
   private renderSaved() {
@@ -635,6 +869,18 @@ export class UI {
       this.save();
     };
     this.game.engine.volume = this.s.volume;
+    const key = $<HTMLInputElement>('#yt-key');
+    key.value = this.s.youtubeKey;
+    key.onchange = () => {
+      this.s.youtubeKey = key.value.trim();
+      this.videos.apiKey = this.s.youtubeKey;
+      this.save();
+      this.refreshMusicTabs();
+    };
+    $('#yt-help').onclick = (e) => {
+      e.preventDefault();
+      void this.openExternal('https://console.cloud.google.com/apis/library/youtube.googleapis.com');
+    };
     this.refreshSettings();
   }
 
@@ -647,6 +893,15 @@ export class UI {
     }
     if (key === 'clouds') g.sky.setClouds(this.s.clouds);
     if (key === 'steering') this.recentreTilt();
+    if (key === 'orientation') this.applyOrientation();
+    if (key === 'prefer') this.videos.prefer = this.s.prefer;
+  }
+
+  private applyOrientation() {
+    if (!Capacitor.isNativePlatform()) return;
+    const o = this.s.orientation;
+    if (o === 'auto') void ScreenOrientation.unlock().catch(() => {});
+    else void ScreenOrientation.lock({ orientation: o }).catch(() => {});
   }
 
   private refreshSettings() {

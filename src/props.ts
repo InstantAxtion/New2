@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { PropType } from './world/biomes';
 
 // Low-poly scenery, built from primitives with baked vertex colours so every type is
@@ -7,15 +7,29 @@ import type { PropType } from './world/biomes';
 
 type Part = THREE.BufferGeometry;
 
-function paint(g: Part, hex: number): Part {
+/**
+ * Bake a colour (and how much the part sways in the wind) into a part. With `ao`, the
+ * underside gets darker so foliage looks lit from above.
+ */
+function paint(g: Part, hex: number, sway = 0, ao = 0): Part {
   const geo = g.index ? g.toNonIndexed() : g;
   const c = new THREE.Color(hex);
   const n = geo.attributes.position.count;
   const arr = new Float32Array(n * 3);
+  const sw = new Float32Array(n).fill(sway);
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox!;
+  const pos = geo.attributes.position;
   for (let i = 0; i < n; i++) {
-    arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
+    let k = 1;
+    if (ao > 0) {
+      const t = (pos.getY(i) - bb.min.y) / Math.max(bb.max.y - bb.min.y, 1e-3);
+      k = 1 - ao + ao * Math.min(1, t * 1.2);
+    }
+    arr[i * 3] = c.r * k; arr[i * 3 + 1] = c.g * k; arr[i * 3 + 2] = c.b * k;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  geo.setAttribute('sway', new THREE.BufferAttribute(sw, 1));
   geo.deleteAttribute('uv');
   if (!geo.attributes.normal) geo.computeVertexNormals();
   return geo;
@@ -28,12 +42,55 @@ const cyl = (rt: number, rb: number, h: number, hex: number, seg = 6, x = 0, y =
   at(paint(new THREE.CylinderGeometry(rt, rb, h, seg), hex), x, y, z);
 const cone = (r: number, h: number, hex: number, seg = 6, x = 0, y = 0, z = 0) =>
   at(paint(new THREE.ConeGeometry(r, h, seg), hex), x, y, z);
-const ball = (r: number, hex: number, x = 0, y = 0, z = 0, detail = 0) =>
+const ball = (r: number, hex: number, x = 0, y = 0, z = 0, detail = 1) =>
   at(paint(new THREE.IcosahedronGeometry(r, detail), hex), x, y, z);
+
+let blobSeed = 1;
+/** A lumpy, smooth-shaded ball of leaves. */
+function blob(r: number, hex: number, x: number, y: number, z: number, sway = 0.5, squash = 1): Part {
+  const g = mergeVertices(new THREE.IcosahedronGeometry(r, 2).deleteAttribute('normal').deleteAttribute('uv'));
+  const p = g.attributes.position;
+  const s = blobSeed++ * 17.13;
+  for (let i = 0; i < p.count; i++) {
+    const vx = p.getX(i), vy = p.getY(i), vz = p.getZ(i);
+    const k = 1 + 0.16 * Math.sin(vx * 3.1 + s) * Math.cos(vz * 2.7 + s) + 0.1 * Math.sin(vy * 4.3 + s * 2);
+    p.setXYZ(i, vx * k, vy * k * squash, vz * k);
+  }
+  g.computeVertexNormals();
+  return at(paint(g, hex, sway, 0.45), x, y, z);
+}
+
+/** A cone of pine needles with a ragged rim. */
+function needles(r: number, h: number, hex: number, y: number, sway: number): Part {
+  const g = new THREE.ConeGeometry(r, h, 9, 2, true);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    if (p.getY(i) < -h / 2 + 0.01) {
+      const a = Math.atan2(p.getZ(i), p.getX(i));
+      const k = 1 + 0.12 * Math.sin(a * 9);
+      p.setXYZ(i, p.getX(i) * k, p.getY(i) - 0.25 * Math.abs(Math.sin(a * 4.5)), p.getZ(i) * k);
+    }
+  }
+  g.computeVertexNormals();
+  return at(paint(g, hex, sway, 0.5), 0, y, 0);
+}
+
+/** Faceted rock: a jittered, flat-shaded lump. */
+function rockBlob(r: number, hex: number, x: number, y: number, z: number): Part {
+  const g = mergeVertices(new THREE.IcosahedronGeometry(r, 1).deleteAttribute('normal').deleteAttribute('uv'));
+  const p = g.attributes.position;
+  const s = blobSeed++ * 7.7;
+  for (let i = 0; i < p.count; i++) {
+    const k = 0.8 + 0.4 * Math.abs(Math.sin(i * 12.9898 + s));
+    p.setXYZ(i, p.getX(i) * k, p.getY(i) * k, p.getZ(i) * k);
+  }
+  const flat = g.toNonIndexed();
+  flat.computeVertexNormals();
+  return at(paint(flat, hex, 0, 0.3), x, y, z);
+}
 
 function merge(parts: Part[]): THREE.BufferGeometry {
   const g = mergeGeometries(parts, false)!;
-  g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
 }
@@ -54,34 +111,39 @@ function build(type: PropType): THREE.BufferGeometry {
   switch (type) {
     case 'pine':
       return merge([
-        cyl(0.25, 0.35, 2, 0x6b4a2f, 5, 0, 1, 0),
-        cone(2.4, 3.6, 0x2f6b3a, 7, 0, 3.2, 0),
-        cone(1.9, 3, 0x357a41, 7, 0, 4.8, 0),
-        cone(1.2, 2.4, 0x3d8a48, 7, 0, 6.3, 0),
+        cyl(0.22, 0.38, 2.4, 0x5b3e28, 7, 0, 1.2, 0),
+        needles(2.6, 3.4, 0x24563a, 3.0, 0.3),
+        needles(2.2, 3.0, 0x2a6342, 4.5, 0.45),
+        needles(1.7, 2.6, 0x2f6e48, 5.9, 0.6),
+        needles(1.1, 2.2, 0x37794f, 7.2, 0.8),
       ]);
     case 'pineSnow':
       return merge([
-        cyl(0.25, 0.35, 2, 0x5b3e28, 5, 0, 1, 0),
-        cone(2.4, 3.6, 0x2d5a3e, 7, 0, 3.2, 0),
-        cone(1.9, 3, 0xe8eef5, 7, 0, 4.8, 0),
-        cone(1.2, 2.4, 0xf6f9fc, 7, 0, 6.3, 0),
+        cyl(0.22, 0.38, 2.4, 0x4f3624, 7, 0, 1.2, 0),
+        needles(2.6, 3.4, 0x234a38, 3.0, 0.3),
+        needles(2.25, 2.9, 0xe9eef4, 4.6, 0.4),
+        needles(1.7, 2.6, 0x2a5440, 5.9, 0.5),
+        needles(1.15, 2.2, 0xf4f7fb, 7.2, 0.6),
       ]);
     case 'tree':
       return merge([
-        cyl(0.3, 0.42, 3, 0x7a5232, 5, 0, 1.5, 0),
-        ball(2.2, 0x4f9a3a, 0, 4.4, 0),
-        ball(1.6, 0x5fae45, 0.9, 5.4, 0.4),
-        ball(1.4, 0x468a34, -1, 4.9, -0.5),
+        cyl(0.24, 0.42, 3.4, 0x6e4b30, 7, 0, 1.7, 0),
+        cyl(0.1, 0.16, 1.6, 0x6e4b30, 5, 0, 0, 0).rotateZ(0.7).translate(0.55, 3.3, 0),
+        blob(2.1, 0x4a8f35, 0, 4.6, 0, 0.5),
+        blob(1.6, 0x5aa040, 1.2, 5.3, 0.5, 0.6),
+        blob(1.5, 0x427f30, -1.1, 5.0, -0.6, 0.6),
+        blob(1.3, 0x66ab48, 0.1, 6.3, -0.2, 0.7),
       ]);
     case 'treeAutumn':
       return merge([
-        cyl(0.3, 0.42, 3, 0x6e4a2d, 5, 0, 1.5, 0),
-        ball(2.2, 0xd9772b, 0, 4.4, 0),
-        ball(1.6, 0xe9a23b, 0.9, 5.4, 0.4),
-        ball(1.4, 0xc4462a, -1, 4.9, -0.5),
+        cyl(0.24, 0.42, 3.4, 0x5e4029, 7, 0, 1.7, 0),
+        blob(2.1, 0xd0702a, 0, 4.6, 0, 0.5),
+        blob(1.6, 0xe6a038, 1.2, 5.3, 0.5, 0.6),
+        blob(1.5, 0xb9442a, -1.1, 5.0, -0.6, 0.6),
+        blob(1.3, 0xf0b545, 0.1, 6.3, -0.2, 0.7),
       ]);
     case 'bush':
-      return merge([ball(0.9, 0x4c8c37, 0, 0.5, 0), ball(0.7, 0x5ea043, 0.7, 0.45, 0.2)]);
+      return merge([blob(0.9, 0x4c8c37, 0, 0.55, 0, 0.3, 0.8), blob(0.7, 0x5ea043, 0.7, 0.45, 0.2, 0.3, 0.8)]);
     case 'palm': {
       const parts: Part[] = [];
       for (let i = 0; i < 6; i++) {
@@ -90,7 +152,8 @@ function build(type: PropType): THREE.BufferGeometry {
         parts.push(seg);
       }
       for (let i = 0; i < 7; i++) {
-        const leaf = paint(new THREE.BoxGeometry(3.4, 0.08, 0.7), i % 2 ? 0x3f8f3a : 0x4fa543);
+        const leaf = paint(new THREE.BoxGeometry(3.4, 0.08, 0.7, 4, 1, 1), i % 2 ? 0x3f8f3a : 0x4fa543, 0.35);
+        bendLeaf(leaf);
         leaf.translate(1.7, 0, 0);
         leaf.rotateZ(-0.45);
         leaf.rotateY((i / 7) * Math.PI * 2);
@@ -110,9 +173,9 @@ function build(type: PropType): THREE.BufferGeometry {
         box(0.9, 0.45, 0.45, 0x4f8a3b, -0.45, 2.2, 0),
       ]);
     case 'rock':
-      return merge([ball(1.2, 0x8a8682, 0, 0.5, 0), ball(0.7, 0x9b9792, 0.9, 0.3, 0.3)]).scale(1, 0.75, 1);
+      return merge([rockBlob(1.2, 0x8a8682, 0, 0.4, 0), rockBlob(0.7, 0x9b9792, 0.9, 0.25, 0.3)]).scale(1, 0.75, 1);
     case 'rockSnow':
-      return merge([ball(1.2, 0x7d8088, 0, 0.5, 0), ball(0.9, 0xf2f6fb, 0, 0.95, 0), ball(0.7, 0x8a8d94, 0.9, 0.3, 0.3)]).scale(1, 0.75, 1);
+      return merge([rockBlob(1.2, 0x7d8088, 0, 0.4, 0), ball(0.85, 0xf2f6fb, 0, 0.9, 0), rockBlob(0.7, 0x8a8d94, 0.9, 0.25, 0.3)]).scale(1, 0.75, 1);
     case 'mesaRock':
       return merge([
         cyl(5, 6.5, 14, 0xb35f3a, 7, 0, 7, 0),
@@ -125,28 +188,46 @@ function build(type: PropType): THREE.BufferGeometry {
         cyl(0.1, 0.14, 1.3, 0x7d6a55, 4, 0, 0, 0).rotateZ(-0.9).translate(-0.5, 2.4, 0),
       ]);
     case 'house': {
-      const walls = [0xf2e6d0, 0xe8d3b5, 0xdfe8f0, 0xf5d6c6][0];
-      return merge([
-        box(6, 3.6, 5, walls, 0, 1.8, 0),
-        roof(6.8, 2.6, 5.6, 0xb5473a, 3.6),
-        box(1.1, 2, 0.1, 0x6b4a2f, 0, 1, 2.52),
-        box(1.1, 1, 0.1, 0x8fb8d8, -1.9, 2, 2.52),
-        box(1.1, 1, 0.1, 0x8fb8d8, 1.9, 2, 2.52),
-        box(0.7, 1.6, 0.7, 0x9a9a9a, 1.8, 5.2, -1),
-      ]);
+      // Two storeys, roof with overhanging eaves, framed windows, chimney
+      const wall = 0xe9e3d6, trim = 0xf7f5f0, glassC = 0x2c3a46, roofC = 0x5a5f66;
+      const parts = [
+        box(6.4, 0.5, 5.4, 0x8d8a84, 0, 0.25, 0),
+        box(6, 5, 5, wall, 0, 2.95, 0),
+        roof(7.2, 2.6, 6.2, roofC, 5.45),
+        box(7.25, 0.12, 6.25, 0x3e4247, 0, 5.45, 0),
+        box(1.2, 2.2, 0.12, 0x5b3a26, 0, 1.6, 2.53),
+        box(1.5, 0.12, 0.3, trim, 0, 2.78, 2.6),
+        box(0.7, 1.6, 0.7, 0x8a6e5a, 1.9, 7.2, -1),
+      ];
+      for (const [x, y] of [[-1.9, 1.9], [1.9, 1.9], [-1.9, 4.0], [1.9, 4.0], [0, 4.0]]) {
+        parts.push(box(1.2, 1.25, 0.08, trim, x, y, 2.52), box(0.95, 1.0, 0.1, glassC, x, y, 2.55));
+      }
+      for (const z of [-1.2, 1.2]) for (const y of [1.9, 4.0]) {
+        parts.push(box(0.08, 1.25, 1.1, trim, 3.02, y, z), box(0.1, 1.0, 0.85, glassC, 3.04, y, z));
+        parts.push(box(0.08, 1.25, 1.1, trim, -3.02, y, z), box(0.1, 1.0, 0.85, glassC, -3.04, y, z));
+      }
+      return merge(parts);
     }
-    case 'cabin':
-      return merge([
-        box(5, 3, 4.4, 0x8a5a36, 0, 1.5, 0),
-        roof(5.8, 2.4, 5, 0x4a3a30, 3),
-        box(1, 1.9, 0.1, 0x4f3420, 0, 0.95, 2.22),
-        box(0.9, 0.8, 0.1, 0xffd88a, 1.6, 1.8, 2.22),
-        box(0.6, 2, 0.6, 0x7a7470, -1.6, 4.4, 0),
-      ]);
+    case 'cabin': {
+      const log = 0x6e4a2e, glassC = 0x2a2e30;
+      const parts = [
+        box(5.4, 0.4, 4.8, 0x7d7a74, 0, 0.2, 0),
+        box(5, 3, 4.4, log, 0, 1.9, 0),
+        roof(6.2, 2.5, 5.6, 0x3b3633, 3.4),
+        box(1, 1.9, 0.1, 0x3d2818, 0, 1.35, 2.22),
+        box(0.9, 0.8, 0.1, 0xffd38a, 1.6, 2.1, 2.22),
+        box(0.9, 0.8, 0.1, glassC, -1.6, 2.1, 2.22),
+        box(0.6, 2.2, 0.6, 0x77736e, -1.6, 4.6, 0),
+      ];
+      // Log lines
+      for (let y = 0.7; y < 3.3; y += 0.38) parts.push(box(5.06, 0.05, 4.46, 0x553823, 0, y, 0));
+      return merge(parts);
+    }
     case 'barn':
       return merge([
-        box(9, 6, 7, 0xb03a2e, 0, 3, 0),
-        roof(9.6, 3.6, 7.6, 0x5a5a5a, 6),
+        box(9.4, 0.4, 7.4, 0x85827c, 0, 0.2, 0),
+        box(9, 6, 7, 0x8e2f26, 0, 3.2, 0),
+        roof(9.8, 3.6, 7.8, 0x4b4e52, 6.2),
         box(3, 4, 0.1, 0xf2ece0, 0, 2, 3.52),
         box(2.4, 3.4, 0.12, 0x8a2a20, 0, 2, 3.56),
         cyl(1.5, 1.5, 9, 0xd8d8d0, 10, 6.2, 4.5, 0),
@@ -228,6 +309,16 @@ function build(type: PropType): THREE.BufferGeometry {
         cyl(0.3, 0.3, 0.45, 0x222222, 8, 0, 2.95, 0),
       ]);
   }
+}
+
+/** Droop a palm leaf towards its tip. */
+function bendLeaf(g: Part) {
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i) + 1.7;
+    p.setY(i, p.getY(i) - x * x * 0.06);
+  }
+  g.computeVertexNormals();
 }
 
 const cache = new Map<PropType, THREE.BufferGeometry>();

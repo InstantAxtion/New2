@@ -17,6 +17,14 @@ export interface Settings {
   clouds: boolean;
   traffic: boolean;
   cruiseKmh: number;
+  /** What the music panel plays. */
+  musicMode: 'spotify' | 'videos';
+  /** The player's own YouTube Data API key (for finding music videos). */
+  youtubeKey: string;
+  prefer: 'video' | 'lyrics';
+  /** Show the video in a corner in the outside cameras too. */
+  pip: boolean;
+  orientation: 'auto' | 'landscape' | 'portrait';
 }
 
 const KEY = 'endless-drive.settings';
@@ -28,7 +36,7 @@ export const DEFAULTS: Settings = {
   time: 'cycle',
   auto: false,
   cam: 'chase',
-  quality: 'medium',
+  quality: 'high',
   units: 'kmh',
   steering: 'buttons',
   assist: true,
@@ -36,6 +44,11 @@ export const DEFAULTS: Settings = {
   clouds: true,
   traffic: true,
   cruiseKmh: 80,
+  musicMode: 'spotify',
+  youtubeKey: '',
+  prefer: 'video',
+  pip: true,
+  orientation: 'auto',
 };
 
 export function loadSettings(): Settings {

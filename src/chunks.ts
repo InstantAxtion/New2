@@ -1,8 +1,13 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { World, ROAD_HALF, FLAT } from './world/world';
 import type { PropSpec, PropType } from './world/biomes';
 import { rng } from './world/noise';
 import { propGeometry } from './props';
+import { foliageMaterial, grassMaterial, propMaterial, terrainMaterial, type Tier } from './materials';
+import { foliageParts, type FoliageMat } from './foliage';
+import { roadTexture } from './textures';
+import { assets } from './assets';
 
 export const CHUNK = 64;
 
@@ -16,13 +21,18 @@ export interface Quality {
   behind: number;
   fogFar: number;
   pixelRatio: number;
-  shadows: boolean;
+  /** Shadow map size, 0 = off. */
+  shadows: number;
+  tier: Tier;
+  /** Grass tufts per chunk and how far from the road they grow. */
+  grass: number;
+  grassReach: number;
 }
 
 export const QUALITY: Record<'low' | 'medium' | 'high', Quality> = {
-  low: { reach: 380, props: 0.45, ahead: 6, behind: 3, fogFar: 330, pixelRatio: 1, shadows: false },
-  medium: { reach: 520, props: 1, ahead: 8, behind: 4, fogFar: 450, pixelRatio: 1.5, shadows: false },
-  high: { reach: 700, props: 1.6, ahead: 11, behind: 4, fogFar: 620, pixelRatio: 2, shadows: true },
+  low: { reach: 380, props: 0.45, ahead: 6, behind: 3, fogFar: 330, pixelRatio: 1, shadows: 0, tier: 'basic', grass: 0, grassReach: 0 },
+  medium: { reach: 520, props: 1, ahead: 8, behind: 4, fogFar: 480, pixelRatio: 1.5, shadows: 1024, tier: 'pbr', grass: 260, grassReach: 30 },
+  high: { reach: 700, props: 1.5, ahead: 11, behind: 4, fogFar: 650, pixelRatio: 2, shadows: 2048, tier: 'pbr', grass: 520, grassReach: 50 },
 };
 
 /** Column offsets (x) from the road centre: fine near the road, coarse far away. */
@@ -33,33 +43,23 @@ function columns(reach: number): number[] {
   return [...out.slice(1).reverse().map((v) => -v), ...out];
 }
 
-function roadTexture(): THREE.Texture {
-  const W = 128, H = 256;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#4a4c52';
-  g.fillRect(0, 0, W, H);
-  const r = rng(7);
-  for (let i = 0; i < 2600; i++) {
-    const v = 60 + r() * 40;
-    g.fillStyle = `rgba(${v},${v},${v + 4},0.5)`;
-    g.fillRect(r() * W, r() * H, 1.5, 1.5);
+/** Three crossed cards of grass blades; normals point up so the tufts light like the ground. */
+function grassGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (let k = 0; k < 3; k++) {
+    const p = new THREE.PlaneGeometry(1.1, 0.75);
+    p.translate(0, 0.37, 0);
+    p.rotateY((k / 3) * Math.PI);
+    parts.push(p);
   }
-  // Edge lines
-  g.fillStyle = '#eeeeea';
-  g.fillRect(5, 0, 4, H);
-  g.fillRect(W - 9, 0, 4, H);
-  // Dashed centre line
-  g.fillStyle = '#f2d65a';
-  g.fillRect(W / 2 - 2, 0, 4, H * 0.4);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = THREE.ClampToEdgeWrapping;
-  t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
+  const g = mergeGeometries(parts)!;
+  const n = g.attributes.normal;
+  for (let i = 0; i < n.count; i++) n.setXYZ(i, 0, 1, 0);
+  return g;
 }
+
+/** The biome colours are written in sRGB; the GPU wants linear. */
+const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 
 export class Chunk {
   group = new THREE.Group();
@@ -80,19 +80,41 @@ export class ChunkManager {
   private chunks = new Map<number, Chunk>();
   /** Chunks still waiting for their scenery (built a frame later to spread the work). */
   private pendingProps: Chunk[] = [];
-  private terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  private roadMat: THREE.MeshLambertMaterial;
-  private propMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  private terrainMat!: THREE.Material;
+  private roadMat!: THREE.Material;
+  private propMat!: THREE.Material;
+  private grassMat!: THREE.Material;
+  private grassGeo = grassGeometry();
+  private foliageMats = new Map<FoliageMat, THREE.Material>();
+  private roadTex = roadTexture();
   private cols: number[];
 
   constructor(public world: World, public quality: Quality) {
-    this.roadMat = new THREE.MeshLambertMaterial({
-      map: roadTexture(),
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-    });
     this.cols = columns(quality.reach);
+    this.makeMaterials();
+  }
+
+  private makeMaterials() {
+    const tier = this.quality.tier;
+    for (const m of [this.terrainMat, this.roadMat, this.propMat, this.grassMat]) m?.dispose();
+    for (const m of this.foliageMats.values()) m.dispose();
+    this.foliageMats.clear();
+    this.terrainMat = terrainMaterial(tier);
+    this.propMat = propMaterial(tier);
+    this.grassMat = grassMaterial(tier);
+    const ro = { map: this.roadTex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+    if (tier === 'pbr') {
+      const rm = new THREE.MeshStandardMaterial({ ...ro, roughness: 0.78, metalness: 0 });
+      if (assets.asphaltNormal) {
+        // The asphalt photo repeats every ~2.8 m; the road texture spans 8.4 m × 9 m
+        const n = assets.asphaltNormal.clone();
+        n.repeat.set(3, 3.2);
+        n.needsUpdate = true;
+        rm.normalMap = n;
+        rm.normalScale.set(0.6, 0.6);
+      }
+      this.roadMat = rm;
+    } else this.roadMat = new THREE.MeshLambertMaterial(ro);
   }
 
   setWorld(world: World) {
@@ -101,9 +123,11 @@ export class ChunkManager {
   }
 
   setQuality(q: Quality) {
+    const retier = q.tier !== this.quality.tier;
     this.quality = q;
     this.cols = columns(q.reach);
     this.clear();
+    if (retier) this.makeMaterials();
   }
 
   clear() {
@@ -157,6 +181,8 @@ export class ChunkManager {
     c.group.position.set(this.originX(i), 0, i * CHUNK);
     c.group.add(this.terrain(i));
     c.group.add(this.road(i));
+    const gr = this.grass(i);
+    if (gr) c.group.add(gr);
     this.pendingProps.push(c);
     this.chunks.set(i, c);
     this.root.add(c.group);
@@ -174,38 +200,110 @@ export class ChunkManager {
     const rows = CHUNK / step + 1;
     const cols = this.cols;
     const nc = cols.length;
-    const pos = new Float32Array(rows * nc * 3);
-    const col = new Float32Array(rows * nc * 3);
-    const rgb = [0, 0, 0];
-    let p = 0;
-    for (let r = 0; r < rows; r++) {
+    // Heights include one extra row each side so normals match the neighbouring chunks
+    const P = new Float32Array((rows + 2) * nc * 3);
+    for (let r = -1; r <= rows; r++) {
       const z = z0 + r * step;
       const rx = w.roadX(z);
       for (let k = 0; k < nc; k++) {
         const x = rx + cols[k];
-        const h = w.height(x, z);
-        w.color(x, z, h, rgb);
-        pos[p] = x - ox; pos[p + 1] = h; pos[p + 2] = z - z0;
-        col[p] = rgb[0]; col[p + 1] = rgb[1]; col[p + 2] = rgb[2];
-        p += 3;
+        const j = ((r + 1) * nc + k) * 3;
+        P[j] = x - ox; P[j + 1] = w.height(x, z); P[j + 2] = z - z0;
+      }
+    }
+    const pos = new Float32Array(rows * nc * 3);
+    const nor = new Float32Array(rows * nc * 3);
+    const col = new Float32Array(rows * nc * 3);
+    const wA = new Float32Array(rows * nc * 3);
+    const wB = new Float32Array(rows * nc * 3);
+    const rgb = [0, 0, 0];
+    const lw = [0, 0, 0, 0, 0, 0];
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), n = new THREE.Vector3();
+    const at = (r: number, k: number, v: THREE.Vector3) => {
+      const j = ((r + 1) * nc + k) * 3;
+      return v.set(P[j], P[j + 1], P[j + 2]);
+    };
+    const t1 = new THREE.Vector3(), t2 = new THREE.Vector3();
+    for (let r = 0; r < rows; r++) {
+      for (let k = 0; k < nc; k++) {
+        const j = (r * nc + k) * 3;
+        const src = ((r + 1) * nc + k) * 3;
+        pos[j] = P[src]; pos[j + 1] = P[src + 1]; pos[j + 2] = P[src + 2];
+        at(r, Math.min(k + 1, nc - 1), t1).sub(at(r, Math.max(k - 1, 0), t2));
+        a.copy(t1);
+        at(r + 1, k, t1).sub(at(r - 1, k, t2));
+        b.copy(t1);
+        n.crossVectors(b, a).normalize();
+        nor[j] = n.x; nor[j + 1] = n.y; nor[j + 2] = n.z;
+        w.color(P[src] + ox, P[src + 2] + z0, P[src + 1], rgb);
+        col[j] = lin(rgb[0]); col[j + 1] = lin(rgb[1]); col[j + 2] = lin(rgb[2]);
+        w.layers(P[src] + ox, P[src + 2] + z0, P[src + 1], rgb, lw);
+        wA[j] = lw[0]; wA[j + 1] = lw[1]; wA[j + 2] = lw[2];
+        wB[j] = lw[3]; wB[j + 1] = lw[4]; wB[j + 2] = lw[5];
       }
     }
     const idx: number[] = [];
     for (let r = 0; r < rows - 1; r++) {
       for (let k = 0; k < nc - 1; k++) {
-        const a = r * nc + k, b = a + 1, c2 = a + nc, d = c2 + 1;
-        idx.push(a, c2, b, b, c2, d);
+        const a2 = r * nc + k, b2 = a2 + 1, c2 = a2 + nc, d = c2 + 1;
+        idx.push(a2, c2, b2, b2, c2, d);
       }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('wA', new THREE.BufferAttribute(wA, 3));
+    g.setAttribute('wB', new THREE.BufferAttribute(wB, 3));
     g.setIndex(idx);
-    g.computeVertexNormals();
     g.computeBoundingSphere();
     const m = new THREE.Mesh(g, this.terrainMat);
     m.receiveShadow = true;
     return m;
+  }
+
+  /** Tufts of grass along the verges, where the ground is green. */
+  private grass(i: number): THREE.InstancedMesh | null {
+    const q = this.quality;
+    if (!q.grass) return null;
+    const w = this.world;
+    const z0 = i * CHUNK;
+    const ox = this.originX(i);
+    const r = rng((w.seed * 31 + i * 7919) | 0);
+    const mats: THREE.Matrix4[] = [];
+    const tints: THREE.Color[] = [];
+    const m4 = new THREE.Matrix4(), qt = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+    const rgb = [0, 0, 0];
+    for (let n = 0; n < q.grass; n++) {
+      const z = z0 + r() * CHUNK;
+      const side = r() < 0.5 ? -1 : 1;
+      const u = side * (FLAT - 1.5 + Math.pow(r(), 1.6) * q.grassReach);
+      const [, tz] = w.tangent(z);
+      const x = w.roadX(z) - u / tz;
+      const h = w.height(x, z);
+      if (h < 0.5) continue;
+      w.color(x, z, h, rgb);
+      // Only on green-ish ground (not sand, snow or rock)
+      const green = rgb[1] - (rgb[0] + rgb[2]) * 0.5;
+      const dry = rgb[0] > 0.55 && rgb[1] > 0.45 && rgb[2] < 0.4 && rgb[0] - rgb[2] > 0.3;
+      if (green < 0.08 && !dry) continue;
+      if (rgb[0] > 0.8 && rgb[1] > 0.8) continue;
+      const s = 0.7 + r() * 0.7;
+      qt.setFromAxisAngle(up, r() * Math.PI);
+      m4.compose(new THREE.Vector3(x - ox, h - 0.05, z - z0), qt, new THREE.Vector3(s, s * (0.8 + r() * 0.5), s));
+      mats.push(m4.clone());
+      const k = 1.05 + r() * 0.25;
+      tints.push(new THREE.Color(lin(rgb[0] * k), lin(rgb[1] * k * 1.05), lin(rgb[2] * k)));
+    }
+    if (!mats.length) return null;
+    const im = new THREE.InstancedMesh(this.grassGeo, this.grassMat, mats.length);
+    mats.forEach((m, j) => {
+      im.setMatrixAt(j, m);
+      im.setColorAt(j, tints[j]);
+    });
+    im.computeBoundingSphere();
+    im.receiveShadow = true;
+    return im;
   }
 
   private road(i: number): THREE.Mesh {
@@ -319,6 +417,28 @@ export class ChunkManager {
 
     const out: THREE.InstancedMesh[] = [];
     for (const [type, mats] of items) {
+      // Good graphics: real trees made of bark and leaf cards
+      const parts = this.quality.tier === 'pbr' ? foliageParts(type) : null;
+      if (parts) {
+        const ts = tints.get(type)!;
+        for (const part of parts) {
+          let mat = this.foliageMats.get(part.mat);
+          if (!mat) {
+            mat = foliageMaterial(part.mat);
+            this.foliageMats.set(part.mat, mat);
+          }
+          const im = new THREE.InstancedMesh(part.geo, mat, mats.length);
+          mats.forEach((m, j) => {
+            im.setMatrixAt(j, m);
+            im.setColorAt(j, ts[j]);
+          });
+          im.computeBoundingSphere();
+          im.castShadow = true;
+          im.receiveShadow = true;
+          out.push(im);
+        }
+        continue;
+      }
       const im = new THREE.InstancedMesh(propGeometry(type), this.propMat, mats.length);
       const ts = tints.get(type)!;
       mats.forEach((m, j) => {

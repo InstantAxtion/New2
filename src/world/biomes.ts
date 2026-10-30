@@ -123,7 +123,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'rock', n: 2, u: [10, 200], scale: [0.6, 1.6] },
     ],
     haze: [0.8, 0.9, 1.0, 0.1],
-    verge: [0.45, 0.6, 0.3],
+    verge: [0.55, 0.53, 0.47],
   },
   flatlands: {
     id: 'flatlands', name: 'Flatlands', emoji: '🌾', roadBase: 5, roadAmp: 1.5,
@@ -152,7 +152,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'turbine', n: 0.5, u: [120, 400], scale: [1, 1.3], cluster: 4 },
     ],
     haze: [1.0, 0.95, 0.85, 0.12],
-    verge: [0.55, 0.68, 0.34],
+    verge: [0.6, 0.57, 0.48],
   },
   desert: {
     id: 'desert', name: 'Desert', emoji: '🏜️', roadBase: 7, roadAmp: 5,
@@ -193,14 +193,14 @@ export const BIOMES: Record<BiomeId, Biome> = {
       if (h < 0.6) set(out, 0.5, 0.48, 0.38);
     },
     props: [
-      { type: 'pine', n: 55, u: [8.5, 300], scale: [0.7, 1.6], cluster: 8 },
+      { type: 'pine', n: 42, u: [8.5, 300], scale: [0.7, 1.6], cluster: 8 },
       { type: 'tree', n: 8, u: [9, 160], scale: [0.8, 1.4], cluster: 4 },
       { type: 'bush', n: 10, u: [8, 60], scale: [0.6, 1.2] },
       { type: 'rock', n: 3, u: [8, 120], scale: [0.5, 1.4] },
       { type: 'cabin', n: 0.4, u: [16, 70], scale: [1, 1.1] },
     ],
     haze: [0.75, 0.85, 0.82, 0.18],
-    verge: [0.32, 0.46, 0.22],
+    verge: [0.45, 0.42, 0.36],
   },
   alpine: {
     id: 'alpine', name: 'Alpine', emoji: '🏔️', roadBase: 26, roadAmp: 18,
@@ -225,7 +225,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'sheep', n: 2, u: [14, 70], scale: [0.9, 1.1], cluster: 5 },
     ],
     haze: [0.85, 0.92, 1.0, 0.1],
-    verge: [0.42, 0.55, 0.3],
+    verge: [0.52, 0.5, 0.46],
   },
   autumn: {
     id: 'autumn', name: 'Autumn Valley', emoji: '🍂', roadBase: 9, roadAmp: 10,
@@ -246,7 +246,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'bush', n: 6, u: [8, 80], scale: [0.6, 1.2] },
     ],
     haze: [1.0, 0.86, 0.7, 0.15],
-    verge: [0.6, 0.55, 0.3],
+    verge: [0.58, 0.52, 0.42],
   },
   winter: {
     id: 'winter', name: 'Winter', emoji: '❄️', roadBase: 14, roadAmp: 10,

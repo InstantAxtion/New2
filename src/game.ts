@@ -8,6 +8,13 @@ import { Vehicle, type Controls } from './drive';
 import { CameraRig } from './camera';
 import { Traffic } from './traffic';
 import { EngineSound } from './audio';
+import { shared, waterMaterial, type Tier } from './materials';
+import type { MusicVideos } from './music';
+import type { Placement } from './video';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { Settings } from './settings';
 
 export type Phase = 'garage' | 'drive' | 'paused';
@@ -37,16 +44,33 @@ export class Game {
   /** Controls actually applied last frame (for HUD and sound). */
   applied: Controls = { throttle: 0, brake: 0, steer: 0 };
   fps = 60;
+  videos: MusicVideos | null = null;
+  private screenTimer = 0;
+  private lastPlace = '';
+  /** Where the corner video goes (below the top-left HUD), set by the UI. */
+  pipY = 124;
   private last = performance.now();
   private regionTimer = 0;
   private lowFpsTime = 0;
+  private pmrem: THREE.PMREMGenerator;
+  private envScene = new THREE.Scene();
+  private envRT: THREE.WebGLRenderTarget | null = null;
+  private envTimer = 0;
+  private envHour = -99;
+  private tier: Tier;
+  /** Post-processing (bloom) on high graphics. */
+  private composer: EffectComposer | null = null;
 
   constructor(canvas: HTMLCanvasElement, public settings: Settings) {
     const q = QUALITY[settings.quality];
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !== 'low', powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
-    this.renderer.shadowMap.enabled = q.shadows;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.enabled = q.shadows > 0;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
+    this.tier = q.tier;
+    this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.seed = (Math.random() * 1e9) | 0;
     this.world = new World(this.seed, settings.themes);
     this.chunks = new ChunkManager(this.world, q);
@@ -55,15 +79,17 @@ export class Game {
     this.sky = new Sky(q.fogFar);
     this.scene.fog = this.sky.fog;
     this.scene.add(this.sky.mesh, this.sky.sun, this.sky.sun.target, this.sky.hemi);
+    // A copy of the sky, rendered into an environment map for reflections
+    const envSky = new THREE.Mesh(this.sky.mesh.geometry, this.sky.mesh.material);
+    envSky.scale.setScalar(0.05);
+    this.envScene.add(envSky);
     this.setupShadows(q.shadows);
     this.sky.setClouds(settings.clouds);
 
     const waterG = new THREE.PlaneGeometry(5000, 5000, 1, 1);
     waterG.rotateX(-Math.PI / 2);
-    this.water = new THREE.Mesh(
-      waterG,
-      new THREE.MeshPhongMaterial({ color: 0x2b7fae, shininess: 90, specular: 0x8fb4cc, transparent: true, opacity: 0.86 }),
-    );
+    this.water = new THREE.Mesh(waterG, waterMaterial(this.tier));
+    this.water.receiveShadow = true;
     this.scene.add(this.water);
 
     this.traffic = new Traffic(this.world);
@@ -72,24 +98,57 @@ export class Game {
 
     this.rig = new CameraRig(this.camera, this.world);
     this.rig.mode = settings.cam;
+    this.camera.layers.enableAll();
     this.hour = settings.time === 'cycle' ? 9 : TIME_PRESETS[settings.time];
     this.setCar(settings.car);
     this.vehicle.place(this.startZ());
     this.vehicle.cruise = settings.cruiseKmh / 3.6;
     this.chunks.fill(this.vehicle.z);
+    this.setupBloom(settings.quality === 'high');
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
 
-  private setupShadows(on: boolean) {
+  private setupShadows(size: number) {
     const sun = this.sky.sun;
-    sun.castShadow = on;
-    if (on) {
-      sun.shadow.mapSize.set(1024, 1024);
+    sun.castShadow = size > 0;
+    if (size > 0) {
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null as unknown as THREE.WebGLRenderTarget;
+      sun.shadow.mapSize.set(size, size);
+      const e = size > 1024 ? 60 : 40;
       const c = sun.shadow.camera;
-      c.left = -45; c.right = 45; c.top = 45; c.bottom = -45; c.near = 1; c.far = 300;
-      sun.shadow.bias = -0.0008;
+      c.left = -e; c.right = e; c.top = e; c.bottom = -e; c.near = 1; c.far = 400;
+      c.updateProjectionMatrix();
+      sun.shadow.bias = -0.0005;
+      sun.shadow.normalBias = 0.04;
     }
+  }
+
+  /** A soft glow around bright things: the sun, headlights, brake lights. */
+  private setupBloom(on: boolean) {
+    this.composer?.dispose();
+    this.composer = null;
+    if (!on) return;
+    const c = new EffectComposer(this.renderer);
+    c.addPass(new RenderPass(this.scene, this.camera));
+    const w = window.innerWidth, h = window.innerHeight;
+    c.addPass(new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.32, 0.5, 0.92));
+    c.addPass(new OutputPass());
+    this.composer = c;
+  }
+
+  /** Re-render the sky into the reflection map (cheap enough every few seconds). */
+  private updateEnvironment() {
+    if (this.tier !== 'pbr') {
+      this.scene.environment = null;
+      return;
+    }
+    const rt = this.pmrem.fromScene(this.envScene, 0.02, 0.01, 200);
+    this.scene.environment = rt.texture;
+    this.scene.environmentIntensity = 0.55;
+    this.envRT?.dispose();
+    this.envRT = rt;
   }
 
   /** A z in the middle of the first region, so you start in the theme you picked. */
@@ -108,8 +167,9 @@ export class Game {
       this.scene.remove(this.car.group);
       this.car.dispose();
     }
-    this.car = new CarModel(spec, color);
+    this.car = new CarModel(spec, color, this.tier);
     this.scene.add(this.car.group);
+    this.rig.car = this.car;
     const old = this.vehicle;
     this.vehicle = new Vehicle(this.world, spec);
     if (old) {
@@ -150,11 +210,20 @@ export class Game {
 
   setQuality(q: Settings['quality']) {
     const Q = QUALITY[q];
+    const retier = Q.tier !== this.tier;
+    this.tier = Q.tier;
     this.chunks.setQuality(Q);
     this.sky.setFogFar(Q.fogFar);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q.pixelRatio));
-    this.renderer.shadowMap.enabled = Q.shadows;
+    this.renderer.shadowMap.enabled = Q.shadows > 0;
     this.setupShadows(Q.shadows);
+    if (retier) {
+      (this.water.material as THREE.Material).dispose();
+      this.water.material = waterMaterial(this.tier);
+      this.setCar(this.vehicle.spec.id);
+    }
+    this.envHour = -99;
+    this.setupBloom(q === 'high');
     this.scene.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (m) m.needsUpdate = true;
@@ -166,8 +235,10 @@ export class Game {
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
+    this.composer?.setPixelRatio(this.renderer.getPixelRatio());
+    this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
-    this.camera.fov = w < h ? 72 : 58;
+    this.camera.fov = this.rig.baseFov = w < h ? 72 : 58;
     this.camera.updateProjectionMatrix();
   }
 
@@ -200,6 +271,7 @@ export class Game {
     this.last = now;
     this.fps += (1 / Math.max(dt, 1e-3) - this.fps) * 0.05;
     this.elapsed += dt;
+    shared.time.value = this.elapsed;
     const s = this.settings;
     const v = this.vehicle;
 
@@ -219,7 +291,8 @@ export class Game {
     this.placeCar();
     const night = this.sky.night > 0.45;
     this.car.animate(v.dist, v.steer, v.braking, night);
-    this.car.headlight.intensity = night ? 60 : 0;
+    this.car.headlight.intensity = night ? 80 : 0;
+    this.car.interior.visible = this.phase !== 'garage' && this.rig.mode === 'hood';
 
     if (this.phase === 'drive') this.traffic.update(dt, v, night);
 
@@ -233,6 +306,8 @@ export class Game {
     const cp = this.camera.position;
     this.sky.follow(cp);
     this.water.position.set(Math.round(cp.x), 0, Math.round(cp.z));
+    const wn = (this.water.material as THREE.MeshStandardMaterial).normalMap;
+    if (wn) wn.offset.set((this.water.position.x / 22 + this.elapsed * 0.004) % 1, (-this.water.position.z / 22 + this.elapsed * 0.006) % 1);
 
     // Region changes: haze and the "now entering" toast
     this.regionTimer -= dt;
@@ -249,9 +324,17 @@ export class Game {
       }
       this.sky.setHaze(r, g, bl, a);
       const winter = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'winter' ? x.w : 0), 0);
-      (this.water.material as THREE.MeshPhongMaterial).color.setRGB(0.17 + winter * 0.55, 0.5 + winter * 0.32, 0.68 + winter * 0.22);
+      const wc = (this.water.material as THREE.MeshPhongMaterial).color;
+      if (this.tier === 'pbr') wc.setRGB(0.02 + winter * 0.6, 0.18 + winter * 0.5, 0.26 + winter * 0.55);
+      else wc.setRGB(0.17 + winter * 0.55, 0.5 + winter * 0.32, 0.68 + winter * 0.22);
     }
-    this.sky.update(this.hour, this.elapsed, new THREE.Vector3(v.x, v.y, v.z));
+    this.sky.update(this.hour, this.elapsed, new THREE.Vector3(v.x, v.y, v.z), this.tier === 'pbr');
+    this.envTimer -= dt;
+    if (this.envTimer <= 0 && Math.abs(this.hour - this.envHour) > 0.15) {
+      this.envTimer = 4;
+      this.envHour = this.hour;
+      this.updateEnvironment();
+    }
 
     this.engine.update(v.v, this.applied.throttle, v.vmax, this.phase === 'drive');
 
@@ -259,9 +342,58 @@ export class Game {
     if (this.phase === 'drive' && this.fps < 24) this.lowFpsTime += dt;
     else this.lowFpsTime = 0;
 
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) this.composer.render(dt);
+    else this.renderer.render(this.scene, this.camera);
+    this.placeVideo();
+    this.updateCarScreen(dt);
     requestAnimationFrame(this.frame);
   };
+
+  /** Lay the YouTube player over the dashboard screen (or in a corner). */
+  private placeVideo() {
+    const scr = this.videos?.screen;
+    if (!scr) return;
+    let p: Placement = { kind: 'hidden' };
+    const W = window.innerWidth, H = window.innerHeight;
+    if (scr.active && this.phase !== 'garage') {
+      if (this.car.interior.visible) {
+        const m = this.car.screen;
+        m.updateWorldMatrix(true, false);
+        const v = new THREE.Vector3();
+        const pts: [number, number][] = [];
+        let ok = true;
+        for (const [x, y] of [[-0.5, 0.28125], [0.5, 0.28125], [0.5, -0.28125], [-0.5, -0.28125]]) {
+          v.set(x, y, 0.001).applyMatrix4(m.matrixWorld).project(this.camera);
+          if (v.z > 1 || v.z < -1) ok = false;
+          pts.push([((v.x + 1) / 2) * W, ((1 - v.y) / 2) * H]);
+        }
+        if (ok) p = { kind: 'quad', corners: pts };
+      } else if (this.settings.pip) {
+        const width = Math.min(240, W * (W > H ? 0.26 : 0.42));
+        p = { kind: 'pip', x: 12, y: this.pipY, width };
+      }
+    }
+    const key = JSON.stringify(p);
+    if (key !== this.lastPlace) {
+      this.lastPlace = key;
+      scr.place(p);
+    }
+  }
+
+  /** The dashboard screen's own page: speed, time and region when no video is on. */
+  private updateCarScreen(dt: number) {
+    if (!this.car.interior.visible) return;
+    this.screenTimer -= dt;
+    if (this.screenTimer > 0) return;
+    this.screenTimer = 0.4;
+    const mph = this.settings.units === 'mph';
+    const sp = Math.round(Math.abs(this.vehicle.v) * 3.6 * (mph ? 0.621371 : 1));
+    const h = this.hour;
+    const clock = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+    const r = this.region ? `${this.region.name}` : '';
+    const music = this.videos?.active ? 'Loading video…' : 'Tap 📺 to watch music videos here';
+    this.car.drawScreen(`${sp} ${mph ? 'mph' : 'km/h'}`, `${r} · ${clock}`, music);
+  }
 
   /** True once if the frame rate has been poor for a while. */
   struggling(): boolean {

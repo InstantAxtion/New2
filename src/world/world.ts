@@ -162,6 +162,63 @@ export class World {
 
   private tmp = [0, 0, 0];
 
+  /**
+   * How much of each ground texture shows at a point: grass, dry grass, leaves, sand,
+   * rock, snow (writes 6 weights summing to 1). `rgb` is the ground colour there.
+   */
+  layers(x: number, z: number, h: number, rgb: number[], out: number[]): void {
+    out.fill(0);
+    const u = this.lateral(x, z);
+    const ry = this.roadY(z);
+    const rel = h - ry;
+    for (const { biome, w, k } of this.weights(z)) {
+      const add = (i: number, v: number) => (out[i] += v * w);
+      switch (biome.id) {
+        case 'seaside':
+          if (u * this.seaSide(k) > 0 && h < 1.7) add(3, 1);
+          else { add(0, 0.8); add(1, 0.2); }
+          break;
+        case 'hills': add(0, 0.85); add(1, 0.15); break;
+        case 'flatlands': {
+          // Golden fields use the dry texture, green ones grass
+          const gold = smoothstep(0.02, 0.12, rgb[0] - rgb[1] * 0.85);
+          add(1, gold); add(0, 1 - gold);
+          break;
+        }
+        case 'desert': {
+          const r = smoothstep(14, 20, rel);
+          add(3, 1 - r); add(4, r);
+          break;
+        }
+        case 'forest': add(2, 0.55); add(0, 0.45); break;
+        case 'alpine': {
+          const snow = smoothstep(68, 86, rel);
+          const rock = smoothstep(18, 40, rel) * (1 - snow);
+          add(5, snow); add(4, rock); add(0, 1 - snow - rock);
+          break;
+        }
+        case 'autumn': add(1, 0.45); add(2, 0.55); break;
+        case 'winter': add(5, 1); break;
+      }
+    }
+    // Lake shores
+    if (h < 0.7) {
+      const t = smoothstep(0.7, 0.2, h);
+      for (let i = 0; i < 6; i++) out[i] *= 1 - t;
+      out[3] += t;
+    }
+    // Gravel shoulder next to the road
+    const a = Math.abs(u);
+    if (a < FLAT + 1.5) {
+      const t = 1 - smoothstep(FLAT - 1, FLAT + 1.5, a);
+      const snowy = out[5];
+      for (let i = 0; i < 6; i++) out[i] *= 1 - t;
+      out[5] += snowy * t;
+      out[4] += (1 - snowy) * t * 0.5;
+      out[3] += (1 - snowy) * t * 0.5;
+    }
+  }
+
   /** Ground colour at a point (writes rgb into out). */
   color(x: number, z: number, h: number, out: number[]): void {
     const u = this.lateral(x, z);

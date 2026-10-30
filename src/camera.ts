@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Vehicle } from './drive';
 import type { World } from './world/world';
+import type { CarModel } from './cars';
 
 export type CamMode = 'chase' | 'far' | 'hood' | 'side' | 'cinematic';
 export const CAM_MODES: CamMode[] = ['chase', 'far', 'hood', 'side', 'cinematic'];
@@ -30,6 +31,8 @@ export class CameraRig {
   private shotSide = 1;
   private shotIdx = 0;
 
+  car: CarModel | null = null;
+
   constructor(public cam: THREE.PerspectiveCamera, public world: World) {}
 
   reset() {
@@ -48,6 +51,11 @@ export class CameraRig {
 
   /** Garage/menu view: slow orbit around the parked car. */
   orbit(v: Vehicle, dt: number, t: number) {
+    if (this.cam.fov !== this.baseFov || this.cam.near !== 0.1) {
+      this.cam.fov = this.baseFov;
+      this.cam.near = 0.1;
+      this.cam.updateProjectionMatrix();
+    }
     const a = t * 0.18 + this.yaw;
     // Back off so the car fits the free space on screen
     const h = window.innerHeight;
@@ -70,7 +78,18 @@ export class CameraRig {
     if (this.cam.view?.enabled) this.cam.clearViewOffset();
   }
 
+  /** Field of view outside the driver's seat (set on resize). */
+  baseFov = 58;
+
   update(v: Vehicle, dt: number) {
+    const fov = this.mode === 'hood' ? this.baseFov + (this.cam.aspect < 1 ? 4 : 14) : this.baseFov;
+    // In the cabin things are a hand's width away, so let the camera see that close
+    const near = this.mode === 'hood' ? 0.03 : 0.1;
+    if (this.cam.fov !== fov || this.cam.near !== near) {
+      this.cam.fov = fov;
+      this.cam.near = near;
+      this.cam.updateProjectionMatrix();
+    }
     if (!this.dragging) {
       this.idle += dt;
       if (this.idle > 1.5) {
@@ -98,17 +117,22 @@ export class CameraRig {
         break;
       }
       case 'hood': {
-        // Just under the roof, a little behind the windscreen
-        const cab = v.spec.cabin ?? [[0.8, 0.9], [0, 1.25]];
-        const roofY = cab.reduce((m, p) => Math.max(m, p[1]), 0);
-        const cabinY = v.spec.extras === 'roadster' ? 1.3 : roofY - 0.1;
-        const back = v.spec.extras === 'van' ? 1.3 : cab[0][0] - 0.5;
-        const cp = Math.cos(v.pitch);
-        desired.set(v.x + fx * back, v.y + cabinY + Math.sin(v.pitch) * back, v.z + fz * back);
-        const a = v.heading + this.yaw;
-        target.set(desired.x + Math.sin(a) * 20 * cp, desired.y + Math.sin(v.pitch) * 20 - 0.6 + this.pitch * 12, desired.z + Math.cos(a) * 20 * cp);
-        snap = true;
-        break;
+        // Sit in the driver's seat and look where the car points
+        if (!this.car) break;
+        this.car.body.updateWorldMatrix(true, false);
+        this.car.eye.updateWorldMatrix(true, false);
+        const q = this.car.body.getWorldQuaternion(new THREE.Quaternion());
+        // On a tall screen sit nearer the middle and look a touch towards the dashboard screen
+        const tall = this.cam.aspect < 1;
+        const eye = this.car.eye.localToWorld(new THREE.Vector3(tall ? -0.2 : 0, tall ? -0.04 : 0, tall ? -0.05 : 0));
+        const yaw = this.yaw + (tall ? -0.08 : 0);
+        const dir = new THREE.Vector3(Math.sin(yaw), (tall ? -0.1 : -0.06) + this.pitch * 0.6, Math.cos(yaw)).applyQuaternion(q);
+        this.cam.position.copy(eye);
+        this.cam.up.set(0, 1, 0).applyQuaternion(q);
+        this.cam.lookAt(eye.add(dir));
+        this.cam.up.set(0, 1, 0);
+        this.first = true;
+        return;
       }
       case 'side': {
         const a = v.heading - Math.PI / 2 + this.yaw;

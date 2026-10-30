@@ -2,3 +2,4 @@ node_modules/
 dist/
 *.apk
 .DS_Store
+screenshots-preview.png

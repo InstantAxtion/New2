@@ -70,10 +70,12 @@ void main() {
   float y = max(d.y, 0.0);
   vec3 col = mix(horizon, top, pow(y, 0.55));
   if (d.y < 0.0) col = horizon;
+  // Brighter, hazier band at the horizon
+  col = mix(col, horizon * 1.06 + vec3(0.02), exp(-y * 14.0) * 0.45 * (1.0 - night));
   float sd = max(dot(d, normalize(sunDir)), 0.0);
-  float up = step(-0.05, sunDir.y);
-  col += sunColor * pow(sd, 10.0) * 0.35 * up;
-  col += sunColor * smoothstep(0.9993, 0.9996, sd) * 2.0 * up;
+  float up = smoothstep(-0.12, 0.02, sunDir.y);
+  col += sunColor * (pow(sd, 6.0) * 0.22 + pow(sd, 64.0) * 0.5) * up;
+  col += sunColor * smoothstep(0.99935, 0.9997, sd) * 6.0 * up;
   // Moon (opposite the sun)
   float md = max(dot(d, normalize(-sunDir)), 0.0);
   col += vec3(0.9, 0.92, 1.0) * smoothstep(0.9994, 0.9996, md) * night;
@@ -86,11 +88,22 @@ void main() {
   // Clouds
   if (d.y > 0.02 && clouds > 0.0) {
     vec2 cp = d.xz / (d.y + 0.08) * 1.6 + vec2(time * 0.006, time * 0.002);
-    float c = smoothstep(0.52, 0.78, fbm(cp));
-    vec3 cc = mix(horizon * 1.05 + vec3(0.12), sunColor * 0.6 + horizon * 0.5, 0.35) * (1.0 - night * 0.75);
+    float f = fbm(cp);
+    float c = smoothstep(0.5, 0.8, f);
+    // Thicker parts are darker underneath; edges near the sun glow
+    float thick = smoothstep(0.6, 0.95, fbm(cp * 1.7 + 3.0) * 0.5 + f * 0.6);
+    vec3 lit = mix(vec3(1.0), sunColor, 0.35) * (0.85 + 0.25 * (1.0 - night));
+    vec3 shade = mix(horizon, top, 0.4) * 0.9 + vec3(0.06);
+    vec3 cc = mix(lit, shade, thick * 0.75);
+    cc += sunColor * pow(sd, 12.0) * (1.0 - thick) * 0.8 * up;
+    cc *= (1.0 - night * 0.85);
     col = mix(col, cc, c * clouds * smoothstep(0.02, 0.2, d.y));
+    // Thin wispy high layer
+    float wisp = smoothstep(0.55, 0.85, fbm(vec2(cp.x * 0.4, cp.y * 2.4) + 9.0));
+    col = mix(col, lit * (1.0 - night * 0.85), wisp * 0.25 * clouds * smoothstep(0.05, 0.3, d.y));
   }
   gl_FragColor = vec4(col, 1.0);
+  #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
 
@@ -143,7 +156,7 @@ export class Sky {
     this.hazeAmt = amt;
   }
 
-  update(hour: number, elapsed: number, target: THREE.Vector3) {
+  update(hour: number, elapsed: number, target: THREE.Vector3, pbr = false) {
     this.hour = ((hour % 24) + 24) % 24;
     let i = 0;
     while (i < KEYS.length - 2 && KEYS[i + 1].t <= this.hour) i++;
@@ -172,7 +185,9 @@ export class Sky {
     this.sun.intensity = THREE.MathUtils.lerp(a.sunI, b.sunI, t);
     lerpHex(a.hemiSky, b.hemiSky, t, this.hemi.color);
     lerpHex(a.hemiGround, b.hemiGround, t, this.hemi.groundColor);
-    this.hemi.intensity = THREE.MathUtils.lerp(a.hemiI, b.hemiI, t);
+    // With sky reflections lighting the scene, the hemisphere light only fills in
+    this.hemi.intensity = THREE.MathUtils.lerp(a.hemiI, b.hemiI, t) * (pbr ? 0.3 : 1);
+    this.sun.intensity *= pbr ? 0.9 : 1;
 
     this.fog.color.copy(u.horizon.value);
   }
