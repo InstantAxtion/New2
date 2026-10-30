@@ -4,3 +4,7 @@ dist/
 .DS_Store
 screenshots-preview.png
 .env.local
+
+# Local preview images
+*-preview.png
+cockpit-before-after.png
