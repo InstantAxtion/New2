@@ -410,6 +410,10 @@ function build(type: PropType): THREE.BufferGeometry {
       parts.push(cone(3.2, 2.2, thatch, 4, 0, 4.6, 0));
       return merge(parts);
     }
+    case 'tree2':
+      return build('tree');
+    case 'pine2':
+      return build('pine');
     case 'post':
       return merge([box(0.14, 1.1, 0.14, 0xf2f2f2, 0, 0.55, 0), box(0.16, 0.12, 0.16, 0xff8a1e, 0, 0.95, 0)]);
     case 'snowman':
@@ -435,6 +439,8 @@ function bendLeaf(g: Part) {
 
 const cache = new Map<PropType, THREE.BufferGeometry>();
 export function propGeometry(type: PropType): THREE.BufferGeometry {
+  if (type === 'tree2') type = 'tree';
+  if (type === 'pine2') type = 'pine';
   let g = cache.get(type);
   if (!g) {
     g = build(type);

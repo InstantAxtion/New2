@@ -37,9 +37,9 @@ export interface Quality {
 
 export const QUALITY: Record<'low' | 'medium' | 'high' | 'ultra', Quality> = {
   low: { reach: 380, props: 0.45, ahead: 6, behind: 3, fogFar: 330, pixelRatio: 1, shadows: 0, tier: 'basic', grass: 0, grassReach: 0 },
-  medium: { reach: 520, props: 1, ahead: 8, behind: 4, fogFar: 480, pixelRatio: 1.5, shadows: 1024, tier: 'pbr', grass: 260, grassReach: 30 },
-  high: { reach: 700, props: 1.5, ahead: 11, behind: 4, fogFar: 650, pixelRatio: 2, shadows: 2048, tier: 'pbr', grass: 520, grassReach: 50 },
-  ultra: { reach: 700, props: 2, ahead: 14, behind: 5, fogFar: 860, pixelRatio: 3, shadows: 4096, tier: 'pbr', grass: 950, grassReach: 70 },
+  medium: { reach: 520, props: 1, ahead: 8, behind: 4, fogFar: 480, pixelRatio: 1.5, shadows: 1024, tier: 'pbr', grass: 380, grassReach: 32 },
+  high: { reach: 700, props: 1.5, ahead: 11, behind: 4, fogFar: 650, pixelRatio: 2, shadows: 2048, tier: 'pbr', grass: 720, grassReach: 50 },
+  ultra: { reach: 700, props: 2, ahead: 14, behind: 5, fogFar: 860, pixelRatio: 3, shadows: 4096, tier: 'pbr', grass: 1300, grassReach: 70 },
 };
 
 /** Column offsets (x) from the road centre: fine near the road, coarse far away. */
@@ -380,10 +380,17 @@ export class ChunkManager {
     const tints: THREE.Color[] = [];
     const m4 = new THREE.Matrix4(), qt = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
     const rgb = [0, 0, 0];
+    let cz = 0, cu = 0;
     for (let n = 0; n < q.grass; n++) {
-      const z = z0 + r() * CHUNK;
-      const side = r() < 0.5 ? -1 : 1;
-      const u = side * (FLAT - 1.5 + (w.roadHalf(z) - ROAD_HALF) + Math.pow(r(), 1.6) * q.grassReach);
+      // Grass grows in clumps: a few tufts around each patch centre
+      if (n % 4 === 0) {
+        cz = z0 + r() * CHUNK;
+        const side = r() < 0.5 ? -1 : 1;
+        cu = side * (FLAT - 1.5 + (w.roadHalf(cz) - ROAD_HALF) + Math.pow(r(), 1.6) * q.grassReach);
+      }
+      const z = Math.min(z0 + CHUNK - 0.01, Math.max(z0, cz + (r() - 0.5) * 3));
+      const u = cu + (r() - 0.5) * 3;
+      if (Math.abs(u) < FLAT - 1.6 + (w.roadHalf(z) - ROAD_HALF)) continue;
       if (w.tunnelAt(z) > 0.05) continue;
       const [, tz] = w.tangent(z);
       const x = w.roadX(z) - u / tz;
@@ -399,8 +406,11 @@ export class ChunkManager {
       qt.setFromAxisAngle(up, r() * Math.PI);
       m4.compose(new THREE.Vector3(x - ox, h - 0.05, z - z0), qt, new THREE.Vector3(s, s * (0.8 + r() * 0.5), s));
       mats.push(m4.clone());
-      const k = 1.05 + r() * 0.25;
-      tints.push(new THREE.Color(lin(rgb[0] * k), lin(rgb[1] * k * 1.05), lin(rgb[2] * k)));
+      const k = 1.0 + r() * 0.35;
+      // A few tufts are drier and yellower, a few lusher and darker
+      const v = r();
+      const dryK = v < 0.15 ? [1.18, 1.02, 0.7] : v > 0.85 ? [0.85, 0.95, 0.85] : [1, 1.05, 1];
+      tints.push(new THREE.Color(lin(rgb[0] * k * dryK[0]), lin(rgb[1] * k * dryK[1]), lin(rgb[2] * k * dryK[2])));
     }
     if (!mats.length) return null;
     const im = new THREE.InstancedMesh(this.grassGeo, this.grassMat, mats.length);
@@ -740,6 +750,9 @@ export class ChunkManager {
       } else if (season === 'spring' && type === 'tree' && r() < 0.35) type = 'cherry';
       else if (season === 'summer' && type === 'treeAutumn') type = 'tree';
       else if ((season === 'summer' || season === 'spring') && type === 'pineSnow') type = 'pine';
+      // Two shapes of each common tree, so forests don't look cloned
+      if (type === 'tree' && r() < 0.45) type = 'tree2';
+      else if (type === 'pine' && r() < 0.45) type = 'pine2';
       q.setFromAxisAngle(up, rot);
       m4.compose(new THREE.Vector3(x - ox, y, z - z0), q, new THREE.Vector3(s, s, s));
       if (!items.has(type)) { items.set(type, []); tints.set(type, []); }

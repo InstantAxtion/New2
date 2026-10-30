@@ -71,7 +71,7 @@ export class CarModel {
     const P = profile(s);
 
     this.paint = paintMaterial(c.color, c.finish, pbr) as THREE.MeshPhysicalMaterial;
-    if (pbr) weatherPaint(this.paint);
+    if (pbr) weatherPaint(this.paint, c.finish === 'metallic' ? 1 : c.finish === 'pearl' ? 0.6 : 0);
     const second = paintMaterial(c.color2, c.finish === 'pearl' ? 'metallic' : c.finish, pbr);
     const roofM = c.twoTone ? second : this.paint;
     const glass = pbr

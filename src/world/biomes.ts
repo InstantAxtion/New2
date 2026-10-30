@@ -6,7 +6,7 @@ export type PropType =
   | 'pine' | 'pineSnow' | 'tree' | 'treeAutumn' | 'bush' | 'palm' | 'cactus' | 'rock' | 'rockSnow'
   | 'house' | 'barn' | 'windmill' | 'turbine' | 'hay' | 'sheep' | 'boat' | 'umbrella'
   | 'lighthouse' | 'deadTree' | 'cabin' | 'snowman' | 'mesaRock' | 'post'
-  | 'tower1' | 'tower2' | 'tower3' | 'billboard' | 'lamp' | 'jungleTree' | 'fern' | 'hoodoo' | 'arch' | 'pier' | 'shop' | 'cherry' | 'flowers' | 'vines' | 'lavender' | 'cypress' | 'farmhouse' | 'hut';
+  | 'tower1' | 'tower2' | 'tower3' | 'billboard' | 'lamp' | 'jungleTree' | 'fern' | 'hoodoo' | 'arch' | 'pier' | 'shop' | 'cherry' | 'flowers' | 'vines' | 'lavender' | 'cypress' | 'farmhouse' | 'hut' | 'tree2' | 'pine2';
 
 export interface PropSpec {
   type: PropType;
@@ -175,6 +175,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     },
     props: [
       { type: 'tree', n: 16, u: [10, 260], scale: [0.8, 1.5], cluster: 5 },
+      { type: 'flowers', n: 9, u: [8, 45], scale: [0.7, 1.2], cluster: 3 },
       { type: 'bush', n: 8, u: [8, 120], scale: [0.6, 1.3] },
       { type: 'house', n: 1.2, u: [16, 120], scale: [0.9, 1.2], cluster: 2 },
       { type: 'turbine', n: 0.5, u: [80, 300], scale: [1, 1.2], cluster: 3 },

@@ -43,6 +43,7 @@ function splatMaterial(): THREE.Material {
     seasonal(sh);
     sh.uniforms.detailMap = { value: detailTexture() };
     sh.uniforms.uSnow = shared.snow;
+    sh.uniforms.uTime = shared.time;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec3 wA;\nattribute vec3 wB;\nvarying vec3 vWA;\nvarying vec3 vWB;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
       .replace(
@@ -56,6 +57,7 @@ function splatMaterial(): THREE.Material {
         uniform sampler2D tGrass, tDry, tLeaves, tSand, tRock, tSnow, detailMap;
         uniform vec3 avg[6];
         uniform float uSnow;
+        uniform float uTime;
         varying vec3 vWA; varying vec3 vWB; varying vec3 vWPos; varying vec3 vWNrm;
         // Two scales, rotated against each other, hide the tiling
         vec3 layer(sampler2D t, vec2 p, vec2 dx, vec2 dy) {
@@ -99,6 +101,10 @@ function splatMaterial(): THREE.Material {
           // Fresh snow settles on flat ground while it snows
           float settle = uSnow * smoothstep(0.55, 0.85, vWNrm.y) * smoothstep(0.25, 0.6, dA.g + uSnow * 0.5);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.94) * (0.9 + dA.b * 0.15), settle);
+          // Surf: foam washing up and down the shore where the water meets the land
+          float shore = 1.0 - smoothstep(0.0, 0.45, abs(vWPos.y - 0.05 - sin(uTime * 0.8 + vWPos.x * 0.05 + vWPos.z * 0.04) * 0.12));
+          float lace = smoothstep(0.45, 0.75, texture2D(detailMap, vWPos.xz * 0.09).g + sin(vWPos.x * 0.9 + uTime * 1.3) * 0.15 + sin(vWPos.z * 1.1 - uTime) * 0.15);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.96), shore * lace * 0.85 * (1.0 - smoothstep(250.0, 500.0, dist)));
         }`,
       );
   };
@@ -191,7 +197,7 @@ export function waterMaterial(tier: Tier): THREE.Material {
   }
   const n = waterNormals();
   n.repeat.set(5000 / 22, 5000 / 22);
-  return new THREE.MeshStandardMaterial({
+  const m = new THREE.MeshStandardMaterial({
     color: 0x0f4f6e,
     roughness: 0.06,
     metalness: 0.15,
@@ -200,6 +206,29 @@ export function waterMaterial(tier: Tier): THREE.Material {
     transparent: true,
     opacity: 0.93,
   });
+  // Two layers of ripples drifting different ways, and a slow swell rolling across
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = shared.time;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vec4 wp = modelMatrix * vec4(transformed, 1.0);
+        transformed.y += sin(wp.x * 0.07 + uTime * 0.9) * 0.14 + sin(wp.z * 0.09 - uTime * 0.7) * 0.11;`,
+      );
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace(
+        '#include <normal_fragment_maps>',
+        `vec3 mapN = texture2D(normalMap, vNormalMapUv).xyz * 2.0 - 1.0;
+        vec3 mapN2 = texture2D(normalMap, vNormalMapUv * 0.37 + vec2(uTime * 0.0021, -uTime * 0.0016)).xyz * 2.0 - 1.0;
+        vec3 mapN3 = texture2D(normalMap, vNormalMapUv * 2.3 + vec2(-uTime * 0.004, uTime * 0.003)).xyz * 2.0 - 1.0;
+        mapN = vec3((mapN.xy + mapN2.xy * 0.9 + mapN3.xy * 0.35) * normalScale, mapN.z);
+        normal = normalize(tbn * mapN);`,
+      );
+  };
+  return m;
 }
 
 /** Trees: bark-textured wood, and alpha-cut leaf cards that sway in the wind. */
@@ -265,20 +294,27 @@ export function addPuddles(m: THREE.MeshStandardMaterial, muddy = false) {
 }
 
 /** Car paint in the weather: raindrops bead on it, and snow settles on the roof and bonnet. */
-export function weatherPaint(m: THREE.Material) {
+export function weatherPaint(m: THREE.Material, flake = 0) {
   m.onBeforeCompile = (sh) => {
+    sh.uniforms.uFlake = { value: flake };
     sh.uniforms.uCarWet = shared.carWet;
     sh.uniforms.uCarSnow = shared.carSnow;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vCarPos;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCarPos = position;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vCarPos;\nuniform float uCarWet;\nuniform float uCarSnow;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCarPos;\nuniform float uCarWet;\nuniform float uCarSnow;\nuniform float uFlake;')
       .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
         {
           vec3 wN = inverseTransformDirection(normal, viewMatrix);
+          // Metallic flakes glinting under the clear coat
+          if (uFlake > 0.0) {
+            float fl = fract(sin(dot(floor(vCarPos * 380.0), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+            float near = 1.0 - smoothstep(1.5, 6.0, length(vViewPosition));
+            normal = normalize(normal + (vec3(fl, fract(fl * 13.1), fract(fl * 7.7)) - 0.5) * 0.1 * uFlake * near);
+          }
           // Beads of water: a scatter of little lenses over the paint
           vec2 dp = vCarPos.xz * 26.0 + vec2(vCarPos.y * 9.0, -vCarPos.y * 5.0);
           vec2 cell = floor(dp);

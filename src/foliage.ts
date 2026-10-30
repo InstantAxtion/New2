@@ -400,6 +400,22 @@ export function foliageParts(type: PropType): Part[] | null {
       parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leafBlossom' }];
       break;
     }
+    case 'tree2': {
+      // Taller, rounder-topped broadleaf
+      const t = broadleaf(21);
+      t.wood.scale(0.9, 1.25, 0.9);
+      t.leaves.scale(0.9, 1.2, 0.9).translate(0, 0.6, 0);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leaf' }];
+      break;
+    }
+    case 'pine2': {
+      // A broader, older spruce
+      const t = conifer(22);
+      t.wood.scale(1.2, 0.9, 1.2);
+      t.leaves.scale(1.25, 0.9, 1.25);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'needle' }];
+      break;
+    }
     case 'cypress': {
       // Tall, slim and dark: an Italian cypress
       const t = conifer(16);

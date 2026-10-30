@@ -111,6 +111,7 @@ export class Game {
   private last = performance.now();
   private regionTimer = 0;
   private lowFpsTime = 0;
+  private resTimer = 3;
   private pmrem: THREE.PMREMGenerator;
   private envScene = new THREE.Scene();
   private envRT: THREE.WebGLRenderTarget | null = null;
@@ -150,7 +151,7 @@ export class Game {
     this.setupShadows(q.shadows);
     this.sky.setClouds(settings.clouds);
 
-    const waterG = new THREE.PlaneGeometry(5000, 5000, 1, 1);
+    const waterG = new THREE.PlaneGeometry(5000, 5000, 160, 160);
     waterG.rotateX(-Math.PI / 2);
     this.water = new THREE.Mesh(waterG, waterMaterial(this.tier));
     this.water.receiveShadow = true;
@@ -670,6 +671,21 @@ export class Game {
     // Drop quality automatically if the phone is struggling
     if (this.phase === 'drive' && this.fps < 24) this.lowFpsTime += dt;
     else this.lowFpsTime = 0;
+    // Adaptive resolution: render a little softer before anything else has to give
+    this.resTimer -= dt;
+    if (this.resTimer <= 0 && this.phase === 'drive') {
+      this.resTimer = 2.5;
+      const maxPR = Math.min(window.devicePixelRatio || 1, QUALITY[this.settings.quality].pixelRatio);
+      const pr = this.renderer.getPixelRatio();
+      let next = pr;
+      if (this.fps < 40 && pr > 1) next = Math.max(1, pr - 0.25);
+      else if (this.fps > 56 && pr < maxPR) next = Math.min(maxPR, pr + 0.25);
+      if (next !== pr) {
+        this.renderer.setPixelRatio(next);
+        this.composer?.setPixelRatio(next);
+        this.resize();
+      }
+    }
 
     this.updateSunFx(v);
     this.flare.visible = false;
@@ -864,9 +880,12 @@ export class Game {
   }
 
   /** Render what the rear-view and side mirrors see (only from the driver's seat). */
+  private mirrorSkip = 0;
   private renderMirrors() {
     const car = this.car;
     if (!car.interior.visible || this.settings.quality === 'low') return;
+    // Mirrors are small: refreshing them every other frame is plenty
+    if (++this.mirrorSkip % 2 === 1 && this.settings.quality !== 'ultra') return;
     if (!this.mirrorRT.length) {
       this.mirrorRT = [new THREE.WebGLRenderTarget(320, 88), new THREE.WebGLRenderTarget(160, 120), new THREE.WebGLRenderTarget(160, 120)];
       for (const rt of this.mirrorRT) rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
