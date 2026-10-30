@@ -205,3 +205,57 @@ export function glowTexture(): THREE.Texture {
   glow = new THREE.CanvasTexture(c);
   return glow;
 }
+
+/** Four-lane highway: shoulders, dashed lane lines and a central reservation. 16.4 m wide, 9 m long. */
+export function highwayTexture(): THREE.Texture {
+  const W = 1024, H = 512;
+  const { c, g } = canvas(W, H);
+  if (assets.asphalt) {
+    const tw = W / 6, th = H / 3.2;
+    for (let y = 0; y < H; y += th) for (let x = 0; x < W; x += tw) g.drawImage(assets.asphalt, x, y, tw, th);
+  } else {
+    g.fillStyle = '#4a4c52';
+    g.fillRect(0, 0, W, H);
+  }
+  const px = (m: number) => ((m + 8.2) / 16.4) * W; // metres from the centre to pixels
+  g.globalAlpha = 0.9;
+  g.fillStyle = '#ecebe4';
+  for (const m of [-7.8, 7.8]) g.fillRect(px(m) - 5, 0, 10, H);
+  for (const m of [-4.2, 4.2]) g.fillRect(px(m) - 4, 0, 8, H * 0.35);
+  g.fillStyle = '#efc94a';
+  for (const m of [-0.6, 0.6]) g.fillRect(px(m) - 4, 0, 8, H);
+  g.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.ClampToEdgeWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+/** A gravel track (photo), a little lighter in the wheel ruts. */
+export function gravelTexture(): THREE.Texture {
+  const W = 256, H = 512;
+  const { c, g } = canvas(W, H);
+  const img = assets.gravel;
+  if (img) {
+    for (let y = 0; y < H; y += W / 3) for (let x = 0; x < W; x += W / 3) g.drawImage(img, x, y, W / 3, W / 3);
+  } else {
+    g.fillStyle = '#9a8a72';
+    g.fillRect(0, 0, W, H);
+  }
+  for (const lx of [0.3, 0.7]) {
+    const grad = g.createLinearGradient(lx * W - 20, 0, lx * W + 20, 0);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.5, 'rgba(255,240,220,0.12)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(lx * W - 20, 0, 40, H);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.ClampToEdgeWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}

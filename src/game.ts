@@ -10,6 +10,7 @@ import { Traffic } from './traffic';
 import { Pedestrians } from './peds';
 import { nightGlow } from './special';
 import { Weather } from './weather';
+import { Effects } from './effects';
 import type { AmbientMix } from './audio';
 import { drawNav } from './map';
 import { TripStats } from './stats';
@@ -37,6 +38,8 @@ export class Game {
   readonly traffic: Traffic;
   readonly peds: Pedestrians;
   readonly weather: Weather;
+  readonly effects = new Effects();
+  private puffTimer = 0;
   readonly stats = new TripStats();
   private lastOdo = 0;
   private wipePhase = 0;
@@ -128,6 +131,7 @@ export class Game {
     this.weather.kind = settings.weather;
     this.weather.onThunder = (s) => this.engine.thunder?.(s);
     this.scene.add(this.weather.group);
+    this.scene.add(this.effects.group);
 
     this.rig = new CameraRig(this.camera, this.world);
     this.rig.mode = settings.cam;
@@ -338,6 +342,20 @@ export class Game {
 
     if (this.phase === 'drive') this.traffic.update(dt, v, night, (z) => this.speedLimit(z));
     this.peds.update(v.z, this.elapsed);
+    // Dust on gravel, spray on wet roads, thrown up by the rear wheels
+    this.puffTimer -= dt;
+    const wet = this.weather.look.wet > 0.6 && this.weather.look.rain > 0.3;
+    if (this.puffTimer <= 0 && Math.abs(v.v) > 5 && (v.gravel || v.offroad || wet)) {
+      this.puffTimer = 0.06;
+      const back = new THREE.Vector3(Math.sin(v.heading), 0, Math.cos(v.heading)).multiplyScalar(-v.spec.length / 2);
+      for (const sd of [-1, 1]) {
+        const side = new THREE.Vector3(Math.cos(v.heading), 0, -Math.sin(v.heading)).multiplyScalar(sd * v.spec.width * 0.4);
+        const pos = new THREE.Vector3(v.x, v.y + 0.25, v.z).add(back).add(side);
+        const vel = back.clone().normalize().multiplyScalar(Math.abs(v.v) * 0.15).add(new THREE.Vector3(0, 0.6, 0));
+        this.effects.emit(pos, vel, v.gravel || v.offroad ? 'dust' : 'spray');
+      }
+    }
+    this.effects.update(dt);
     if (this.phase === 'drive') {
       const moved = v.odometer - this.lastOdo;
       if (this.region) this.stats.add(dt, moved, Math.abs(v.v), this.region.id, v.spec.id);
@@ -490,8 +508,11 @@ export class Game {
       const lead = t.leader(v, 1);
       env.leader = lead;
       const free = Math.min(v.cruise, v.safeSpeed(style.lat), limit);
+      // On a highway the fast lane goes our way: no oncoming traffic to wait for
+      const highway = this.world.highwayAt(v.z) > 0.6;
+      const fastLaneFree = !t.leader(v, -1) || t.leader(v, -1)!.gap > 35;
       if (lead && lead.gap < 55 && lead.v < free - style.overtake && limit === Infinity &&
-          this.straightAhead(200) && t.oncomingClear(v, 230, 9)) {
+          (highway ? fastLaneFree : this.straightAhead(200) && t.oncomingClear(v, 230, 9))) {
         this.passing = true;
         this.passedBeside = false;
         this.passTime = 0;
@@ -501,13 +522,14 @@ export class Game {
       this.passTime += dt;
       const beside = t.beside(v);
       if (beside) this.passedBeside = true;
-      const danger = !t.oncomingClear(v, 90, 3.5);
+      const danger = this.world.highwayAt(v.z) > 0.6 ? false : !t.oncomingClear(v, 90, 3.5);
       if ((this.passedBeside && !beside) || this.passTime > 30 || (danger && !beside)) {
         this.passing = false;
         v.lane = 1;
         env.leader = t.leader(v, 1);
       }
       if (danger && beside) env.limit = Math.min(limit, v.v + 3); // get past quickly
+      if (this.world.highwayAt(v.z) > 0.6 && this.passing) env.leader = t.leader(v, -1);
     }
     return v.autopilot(env, style);
   }

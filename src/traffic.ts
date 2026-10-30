@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CARS, COLORS, CarModel } from './cars';
-import { LANE, type World } from './world/world';
+import type { World } from './world/world';
 import type { Vehicle } from './drive';
 import { makeBike, makeBus, makeTruck, type RoadUser } from './vehicles';
 
@@ -19,6 +19,8 @@ interface Other {
   dist: number;
   /** Seconds it stays stopped after a bump. */
   stun: number;
+  /** 1 = normal lane, -1 = the fast lane on a highway. */
+  lane: number;
 }
 
 /** Widths for collisions. */
@@ -48,7 +50,7 @@ export class Traffic {
     const add = (kind: Kind, user: RoadUser) => {
       user.group.visible = false;
       this.group.add(user.group);
-      this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0, stun: 0 });
+      this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0, stun: 0, lane: 1 });
     };
     const specs = CARS.filter((c) => c.id !== 'van');
     for (let i = 0; i < 7; i++) add('car', carUser(new CarModel(specs[(i * 3 + 1) % specs.length], { color: COLORS[(i * 5 + 2) % COLORS.length], stripes: false })));
@@ -82,8 +84,9 @@ export class Traffic {
   /** Where a road user is: on its own right-hand lane. */
   private place(c: Other) {
     const w = this.world;
+    if (c.lane !== 1 && w.highwayAt(c.z) < 0.5) c.lane = 1;
     const [tx, tz] = w.tangent(c.z);
-    const o = LANE * c.dir;
+    const o = w.laneOffset(c.z, c.lane) * c.dir;
     return { x: w.roadX(c.z) - tz * o, z: c.z + tx * o, y: w.roadY(c.z), tx, tz };
   }
 
@@ -104,6 +107,10 @@ export class Traffic {
         c.want = (base + (Math.random() - 0.5) * 18) / 3.6;
         c.v = c.want;
         c.active = true;
+        c.stun = 0;
+        // On highways some cars use the fast lane
+        c.lane = this.world.highwayAt(c.z) > 0.5 && c.kind === 'car' && Math.random() < 0.4 ? -1 : 1;
+        if (c.lane === -1) c.want *= 1.15;
         c.user.group.visible = true;
         if (c.kind === 'car' || c.kind === 'bike') c.user.setColor(COLORS[Math.floor(Math.random() * COLORS.length)]);
       }
@@ -115,7 +122,7 @@ export class Traffic {
       const k = Math.abs(w.curvature(c.z + c.dir * 20));
       let target = Math.min(c.want, Math.sqrt(3.5 / Math.max(k, 1e-4)), limitAt(c.z));
       for (const o of this.pool) {
-        if (o === c || !o.active || o.dir !== c.dir) continue;
+        if (o === c || !o.active || o.dir !== c.dir || o.lane !== c.lane) continue;
         const gap = (o.z - c.z) * c.dir - (o.user.length + c.user.length) / 2;
         if (gap > 0 && gap < 40) target = Math.min(target, o.v + (gap - 12) * 0.3);
       }
@@ -192,7 +199,7 @@ export class Traffic {
     const fwd = Math.cos(me.heading) >= 0 ? 1 : -1;
     let best: { gap: number; v: number } | null = null;
     for (const c of this.pool) {
-      if (!c.active || c.dir !== fwd || lane !== 1) continue;
+      if (!c.active || c.dir !== fwd || c.lane !== (lane >= 1 ? 1 : -1)) continue;
       const gap = (c.z - me.z) * fwd - (c.user.length + me.spec.length) / 2;
       if (gap > -2 && (!best || gap < best.gap)) best = { gap, v: c.v };
     }

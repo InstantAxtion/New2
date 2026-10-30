@@ -11,6 +11,7 @@ export const assets = {
   asphalt: null as HTMLImageElement | null,
   asphaltNormal: null as THREE.Texture | null,
   bark: null as THREE.Texture | null,
+  gravel: null as HTMLImageElement | null,
   ready: false,
 };
 
@@ -54,7 +55,8 @@ export async function loadAssets(): Promise<void> {
   try {
     const base = './textures/';
     const ground = await Promise.all(LAYERS.map((n) => loadImage(`${base}${n}.jpg`)));
-    const [asphalt, asphaltN, bark] = await Promise.all(['asphalt', 'asphalt_nor', 'bark'].map((n) => loadImage(`${base}${n}.jpg`)));
+    const [asphalt, asphaltN, bark, gravel] = await Promise.all(['asphalt', 'asphalt_nor', 'bark', 'gravel'].map((n) => loadImage(`${base}${n}.jpg`)));
+    assets.gravel = gravel;
     assets.ground = ground.map((im) => tex(im));
     assets.groundAvg = ground.map(average);
     assets.asphalt = asphalt;

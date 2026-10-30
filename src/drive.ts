@@ -1,5 +1,5 @@
 import type { World } from './world/world';
-import { LANE, ROAD_HALF } from './world/world';
+
 import type { CarSpec } from './cars';
 
 /** How auto-drive drives. */
@@ -57,6 +57,8 @@ export class Vehicle {
   /** Total metres driven forward. */
   odometer = 0;
   offroad = false;
+  /** On a gravel road: looser grip, a bumpier ride, dust. */
+  gravel = false;
   braking = false;
   /** Short bump flash after hitting something. */
   bump = 0;
@@ -86,8 +88,9 @@ export class Vehicle {
   place(z: number) {
     const w = this.world;
     const [tx, tz] = w.tangent(z);
-    this.x = w.roadX(z) - tz * LANE * this.lane;
-    this.z = z + tx * LANE * this.lane;
+    const lo = w.laneOffset(z, this.lane);
+    this.x = w.roadX(z) - tz * lo;
+    this.z = z + tx * lo;
     this.heading = Math.atan2(tx, tz);
     this.y = w.surface(this.x, this.z);
     this.v = 0;
@@ -101,7 +104,7 @@ export class Vehicle {
     const dir = Math.cos(this.heading) >= 0 ? 1 : -1;
     const zt = this.z + ahead * dir;
     const [tx, tz] = w.tangent(zt);
-    const o = LANE * lane * dir;
+    const o = w.laneOffset(zt, lane) * dir;
     return [w.roadX(zt) - tz * o, zt + tx * o];
   }
 
@@ -193,7 +196,7 @@ export class Vehicle {
     // Lateral: bicycle model, limited by grip
     const angle = this.steer * this.maxAngle();
     let yaw = (this.v * Math.tan(angle)) / this.wheelbase;
-    const maxYaw = (s.grip * (this.offroad ? 0.6 : 1)) / Math.max(Math.abs(this.v), 1);
+    const maxYaw = (s.grip * (this.offroad ? 0.6 : this.gravel ? 0.78 : 1)) / Math.max(Math.abs(this.v), 1);
     yaw = clamp(yaw, -maxYaw, maxYaw);
     this.heading = wrap(this.heading - yaw * dt);
 
@@ -204,7 +207,9 @@ export class Vehicle {
     const ny = w.surface(nx, nz);
     const climb = (ny - this.y) / Math.max(Math.abs(ds), 1e-3);
     const u = w.lateral(nx, nz);
-    if (ny < 0.15 || (climb > 1.1 && Math.abs(u) > ROAD_HALF) || Math.abs(u) > 420) {
+    // Walls: the sea, steep ground, the highway's central barrier
+    const barrier = w.highwayAt(nz) > 0.5 && Math.abs(u) < 0.6 && Math.abs(w.lateral(this.x, this.z)) >= 0.6;
+    if (ny < 0.15 || (climb > 1.1 && Math.abs(u) > w.roadHalf(nz)) || Math.abs(u) > 420 || barrier) {
       this.v *= -0.25;
       this.bump = 1;
     } else {
@@ -214,7 +219,8 @@ export class Vehicle {
       this.dist += ds;
       if (ds > 0) this.odometer += ds;
     }
-    this.offroad = Math.abs(w.lateral(this.x, this.z)) > ROAD_HALF + 0.7;
+    this.offroad = Math.abs(w.lateral(this.x, this.z)) > w.roadHalf(this.z) + 0.7;
+    this.gravel = !this.offroad && w.gravelAt(this.z) > 0.5;
 
     // Body follows the ground
     const half = s.length * 0.4;
@@ -244,7 +250,8 @@ export class Vehicle {
       this.pitchV += ((tp - this.bodyPitch) * k - this.pitchV * d) * dt;
       this.bodyPitch += this.pitchV * dt;
       // Off-road (or a bump) shakes the body on its springs
-      const kick = (this.offroad ? (Math.random() - 0.5) * Math.abs(this.v) * 0.04 : 0) + this.bump * (Math.random() - 0.5) * 0.3;
+      const rough = this.offroad ? 0.04 : this.gravel ? 0.022 : 0;
+      const kick = (Math.random() - 0.5) * Math.abs(this.v) * rough + this.bump * (Math.random() - 0.5) * 0.3;
       this.bounceV += (-this.bounce * k - this.bounceV * d) * dt + kick * dt * 60 * 0.02;
       this.bounce = clamp(this.bounce + this.bounceV * dt, -0.05, 0.05);
     }

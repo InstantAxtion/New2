@@ -85,7 +85,9 @@ export class World {
 
   roadX(z: number): number {
     const p = this.phases;
-    return (
+    // Mountain roads wind much more tightly
+    const alp = this.cached('a', z, () => this.weights(z).reduce((m, x) => m + (x.biome.id === 'alpine' ? x.w : 0), 0));
+    return alp * 24 * Math.sin(z / 42 + p[3]) + (
       130 * Math.sin(z / 260 + p[0]) +
       45 * Math.sin(z / 105 + p[1]) +
       12 * Math.sin(z / 47 + p[2]) +
@@ -151,11 +153,23 @@ export class World {
     const a = Math.abs(u);
     const bridge = this.bridge(z);
     // Towns and the city get a wider flat strip for pavements
-    const flat = FLAT + this.urban(z) * 9;
-    if (a <= flat && bridge < 0.01) return ry - 0.12;
-    let t = smoothstep(flat, flat + 26, a);
-    t = t + (1 - t) * bridge;
-    return ry - 0.12 + (this.natural(x, z, u, ry) - ry + 0.12) * t;
+    const flat = FLAT + this.urban(z) * 9 + (this.roadHalf(z) - ROAD_HALF);
+    const tunnel = this.tunnelAt(z);
+    let h: number;
+    if (a <= flat && bridge < 0.01) h = ry - 0.12;
+    else {
+      let t = smoothstep(flat, flat + 26, a);
+      t = t + (1 - t) * bridge;
+      h = ry - 0.12 + (this.natural(x, z, u, ry) - ry + 0.12) * t;
+    }
+    if (tunnel > 0) {
+      // A ridge across the road; the road runs through a cutting under it (the tunnel tube
+      // and its roof are separate meshes), so the corridor itself stays at road level
+      const ridge = this.tunnelRidge(z) * (1 - smoothstep(40, 90, a)) + ry * smoothstep(40, 90, a);
+      const k = smoothstep(0.08, 0.4, tunnel) * smoothstep(7.4, 9.5, a);
+      h = Math.max(h, h + (ridge - h) * k);
+    }
+    return h;
   }
 
   // ---- Bridges, towns, the city ----
@@ -184,6 +198,80 @@ export class World {
     return smoothstep(0.35, 0.65, b);
   }
 
+  // ---- Road features: highways, gravel, tunnels ----
+
+  /** A stretch of road feature in some cells of length `cell`: 0..1 with soft ends. */
+  private feature(z: number, cell: number, salt: number, prob: number, len: [number, number], ok: (centre: number) => boolean): number {
+    const c0 = Math.floor(z / cell);
+    let best = 0;
+    for (const c of [c0 - 1, c0, c0 + 1]) {
+      if (hash1(c, this.seed + salt) > prob) continue;
+      const L = len[0] + (len[1] - len[0]) * hash1(c, this.seed + salt + 1);
+      const start = c * cell + hash1(c, this.seed + salt + 2) * (cell - L);
+      if (z < start - 80 || z > start + L + 80) continue;
+      if (!ok(start + L / 2)) continue;
+      best = Math.max(best, smoothstep(start - 80, start + 20, z) * (1 - smoothstep(start + L - 20, start + L + 80, z)));
+    }
+    return best;
+  }
+
+  /** 0..1: a four-lane highway with a central barrier. */
+  highwayAt(z: number): number {
+    return this.cached('h', z, () =>
+      this.feature(z, 9000, 401, 0.65, [1800, 3400], (c) => {
+        const b = this.dominant(c).id;
+        return ['flatlands', 'hills', 'desert', 'autumn', 'seaside', 'city'].includes(b) && this.bridgeRaw(c) < 0.01;
+      }),
+    );
+  }
+
+  /** 0..1: an unsealed gravel road. */
+  gravelAt(z: number): number {
+    return this.cached('g', z, () =>
+      this.feature(z, 5200, 411, 0.5, [500, 1100], (c) => {
+        const b = this.dominant(c).id;
+        return ['flatlands', 'desert', 'forest', 'autumn', 'rainforest', 'hills', 'canyon'].includes(b) && this.highwayAt(c) < 0.01 && this.bridgeRaw(c) < 0.01;
+      }),
+    );
+  }
+
+  /** 0..1: the road goes through a tunnel under a ridge. */
+  tunnelAt(z: number): number {
+    return this.cached('n', z, () =>
+      this.feature(z, 4200, 421, 0.55, [160, 460], (c) => {
+        const b = this.dominant(c).id;
+        return ['alpine', 'canyon', 'rainforest', 'forest', 'hills', 'winter'].includes(b) && this.highwayAt(c) < 0.01 && this.bridgeRaw(c) < 0.01;
+      }),
+    );
+  }
+
+  /** Height of the ridge a tunnel passes under. */
+  tunnelRidge(z: number): number {
+    return this.roadY(z) + 18 + noise1(z / 60, this.seed + 431) * 5;
+  }
+
+  /** Half-width of the road surface at z. */
+  roadHalf(z: number): number {
+    return ROAD_HALF + (8.2 - ROAD_HALF) * this.highwayAt(z);
+  }
+
+  /**
+   * Lateral offset of a lane (for the direction of travel): lane 1 is the normal lane,
+   * -1 the overtaking lane (oncoming on a normal road, the fast lane on a highway),
+   * 1.6 the hard shoulder.
+   */
+  laneOffset(z: number, lane: number): number {
+    const h = this.highwayAt(z);
+    const hw = lane >= 1 ? 6.0 + (lane - 1) * 2.67 : 2.4;
+    return LANE * lane * (1 - h) + hw * h;
+  }
+
+  /** Where the camera may go: inside a tunnel the "ground" is the road, not the hill above. */
+  floorAt(x: number, z: number): number {
+    if (this.tunnelAt(z) > 0.3 && Math.abs(this.lateral(x, z)) < 7) return this.roadY(z) - 0.12;
+    return this.height(x, z);
+  }
+
   /** 0..1: inside a small town. */
   townAt(z: number): number {
     return this.cached('t', z, () => this.townRaw(z));
@@ -204,7 +292,7 @@ export class World {
     if (hash1(c, this.seed + 201) < 0.4) return null;
     const centre = c * 2400 + 500 + hash1(c, this.seed + 202) * 1400;
     const b = this.dominant(centre);
-    return b.towns && this.bridge(centre) < 0.01 ? centre : null;
+    return b.towns && this.bridge(centre) < 0.01 && this.highwayAt(centre) < 0.01 ? centre : null;
   }
 
   /** 0..1: in the neon city. */
@@ -275,7 +363,7 @@ export class World {
   /** The surface the car rolls on: the road if on it, the ground otherwise. */
   surface(x: number, z: number): number {
     const u = this.lateral(x, z);
-    if (Math.abs(u) <= ROAD_HALF + 0.6) return this.roadY(z);
+    if (Math.abs(u) <= this.roadHalf(z) + 0.6) return this.roadY(z);
     return this.height(x, z);
   }
 

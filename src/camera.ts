@@ -65,7 +65,7 @@ export class CameraRig {
     const r = this.focus ? THREE.MathUtils.clamp((5.2 * h) / Math.max(this.focus.size, 60), 6.5, 26) : 7.5;
     const cx = v.x, cz = v.z, cy = v.y;
     this.cam.position.set(cx + Math.sin(a) * r, cy + 2.2 + this.pitch * 4, cz + Math.cos(a) * r);
-    const g = this.world.height(this.cam.position.x, this.cam.position.z);
+    const g = this.world.floorAt(this.cam.position.x, this.cam.position.z);
     this.cam.position.y = Math.max(this.cam.position.y, g + 1.2);
     this.cam.lookAt(cx, cy + 0.8, cz);
     void dt;
@@ -160,7 +160,7 @@ export class CameraRig {
 
   /** Smooth towards the desired spot. Smoothing happens relative to the car so fast driving doesn't drag the camera behind. */
   private apply(v: Vehicle, desired: THREE.Vector3, target: THREE.Vector3, dt: number, stiff: number, snap: boolean, fixed = false) {
-    const ground = this.world.height(desired.x, desired.z);
+    const ground = this.world.floorAt(desired.x, desired.z);
     desired.y = Math.max(desired.y, ground + 0.8, 0.8);
     const car = new THREE.Vector3(v.x, v.y, v.z);
     if (this.first || snap) {
@@ -174,7 +174,7 @@ export class CameraRig {
     }
     this.pos.copy(fixed ? desired : car.clone().add(this.offset));
     this.look.copy(car).add(this.lookOff);
-    const g2 = this.world.height(this.pos.x, this.pos.z);
+    const g2 = this.world.floorAt(this.pos.x, this.pos.z);
     this.pos.y = Math.max(this.pos.y, g2 + 0.6);
     this.cam.position.copy(this.pos);
     this.cam.lookAt(this.look);

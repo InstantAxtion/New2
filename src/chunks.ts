@@ -8,7 +8,7 @@ import { foliageMaterial, grassMaterial, propMaterial, terrainMaterial, type Tie
 import { foliageParts, type FoliageMat } from './foliage';
 import { specialMaterial, specialParts, type SpecialMat } from './special';
 import type { BiomeId } from './world/biomes';
-import { roadTexture } from './textures';
+import { gravelTexture, highwayTexture, roadTexture } from './textures';
 import { assets } from './assets';
 
 export const CHUNK = 64;
@@ -92,6 +92,10 @@ export class ChunkManager {
   private grassGeo = grassGeometry();
   private foliageMats = new Map<FoliageMat, THREE.Material>();
   private roadTex = roadTexture();
+  private highwayTex = highwayTexture();
+  private gravelTex = gravelTexture();
+  private highwayMat!: THREE.Material;
+  private gravelMat!: THREE.Material;
   private cols: number[];
 
   constructor(public world: World, public quality: Quality) {
@@ -120,15 +124,22 @@ export class ChunkManager {
       }
       this.roadMat = rm;
     } else this.roadMat = new THREE.MeshLambertMaterial(ro);
+    // Highway (four lanes) and gravel surfaces
+    this.highwayMat = (this.roadMat as THREE.Material).clone();
+    (this.highwayMat as THREE.MeshStandardMaterial).map = this.highwayTex;
+    const gm = { map: this.gravelTex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+    this.gravelMat = tier === 'pbr' ? new THREE.MeshStandardMaterial({ ...gm, roughness: 0.95 }) : new THREE.MeshLambertMaterial(gm);
   }
 
   /** Rain makes the road dark and shiny. */
   setWet(wet: number) {
-    const m = this.roadMat as THREE.MeshStandardMaterial;
-    if (!m.isMeshStandardMaterial) return;
-    m.roughness = 0.78 - wet * 0.62;
-    m.color.setScalar(1 - wet * 0.38);
-    m.envMapIntensity = 1 + wet * 0.8;
+    for (const mat of [this.roadMat, this.highwayMat]) {
+      const m = mat as THREE.MeshStandardMaterial;
+      if (!m?.isMeshStandardMaterial) continue;
+      m.roughness = 0.78 - wet * 0.62;
+      m.color.setScalar(1 - wet * 0.38);
+      m.envMapIntensity = 1 + wet * 0.8;
+    }
   }
 
   setWorld(world: World) {
@@ -293,7 +304,8 @@ export class ChunkManager {
     for (let n = 0; n < q.grass; n++) {
       const z = z0 + r() * CHUNK;
       const side = r() < 0.5 ? -1 : 1;
-      const u = side * (FLAT - 1.5 + Math.pow(r(), 1.6) * q.grassReach);
+      const u = side * (FLAT - 1.5 + (w.roadHalf(z) - ROAD_HALF) + Math.pow(r(), 1.6) * q.grassReach);
+      if (w.tunnelAt(z) > 0.05) continue;
       const [, tz] = w.tangent(z);
       const x = w.roadX(z) - u / tz;
       const h = w.height(x, z);
@@ -337,7 +349,8 @@ export class ChunkManager {
       const [tx, tz] = w.tangent(z);
       // Right-hand normal is (-tz, tx)
       for (let s = 0; s < 2; s++) {
-        const o = s === 0 ? -ROAD_HALF : ROAD_HALF; // lateral offset
+        const half = w.roadHalf(z);
+        const o = s === 0 ? -half : half; // lateral offset
         const j = (r * 2 + s);
         pos[j * 3] = rx - tz * o - ox;
         pos[j * 3 + 1] = ry;
@@ -357,12 +370,19 @@ export class ChunkManager {
     g.setIndex(idx);
     g.computeVertexNormals();
     g.computeBoundingSphere();
-    const m = new THREE.Mesh(g, this.roadMat);
+    const zc = z0 + CHUNK / 2;
+    const mat = w.gravelAt(zc) > 0.5 ? this.gravelMat : w.highwayAt(zc) > 0.5 ? this.highwayMat : this.roadMat;
+    const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true;
     return m;
   }
 
   private concreteMat = new THREE.MeshStandardMaterial({ color: 0x9b9a96, roughness: 0.85 });
+  private barrierMat = new THREE.MeshStandardMaterial({ color: 0xb9b6ae, roughness: 0.85, side: THREE.DoubleSide });
+  private tunnelMat = new THREE.MeshStandardMaterial({ color: 0x8a8781, roughness: 0.9, side: THREE.DoubleSide });
+  private portalMat = new THREE.MeshStandardMaterial({ color: 0x9c9890, roughness: 0.9, side: THREE.DoubleSide });
+  private roofMat = new THREE.MeshStandardMaterial({ color: 0x5f7046, roughness: 1, side: THREE.DoubleSide });
+  private tunnelLightMat = new THREE.MeshStandardMaterial({ color: 0xffe9c0, emissive: 0xffd9a0, emissiveIntensity: 4 });
   private stripeMat = new THREE.MeshStandardMaterial({ color: 0xf0f0ea, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
 
   /** Bridge decks, parapets and piers, and zebra crossings painted on the road. */
@@ -423,6 +443,81 @@ export class ChunkManager {
         g.add(pm);
       }
     }
+    // Highway: concrete barrier down the middle
+    const bar: number[] = [];
+    const tun: number[] = [];
+    const roof: number[] = [];
+    const lights: THREE.BufferGeometry[] = [];
+    const quadTo = (arr: number[], a: THREE.Vector3, b: THREE.Vector3, c2: THREE.Vector3, d: THREE.Vector3) =>
+      arr.push(a.x, a.y, a.z, b.x, b.y, b.z, c2.x, c2.y, c2.z, b.x, b.y, b.z, d.x, d.y, d.z, c2.x, c2.y, c2.z);
+    for (let z = z0; z < z0 + CHUNK; z += step) {
+      const z2 = z + step;
+      const y0 = w.roadY(z), y1 = w.roadY(z2);
+      if (w.highwayAt(z) > 0.7 && w.highwayAt(z2) > 0.7) {
+        for (const sd of [-1, 1]) {
+          quadTo(bar, at(z, sd * 0.45, y0), at(z2, sd * 0.45, y1), at(z, sd * 0.2, y0 + 0.8), at(z2, sd * 0.2, y1 + 0.8));
+        }
+        quadTo(bar, at(z, -0.2, y0 + 0.8), at(z2, -0.2, y1 + 0.8), at(z, 0.2, y0 + 0.8), at(z2, 0.2, y1 + 0.8));
+      }
+      // Tunnel: a lined tube over the road, with lights along the roof, a roof of rock and
+      // grass over it, and a portal with an arched opening where it starts and ends
+      const in1 = w.tunnelAt(z) > 0.45, in2 = w.tunnelAt(z2) > 0.45;
+      if (in1 !== in2) {
+        const zp = in1 ? z2 : z;
+        const yp = w.roadY(zp), top = w.tunnelRidge(zp);
+        const face = new THREE.Shape();
+        face.moveTo(-9.6, -0.5);
+        face.lineTo(9.6, -0.5);
+        face.lineTo(9.6, top - yp);
+        face.lineTo(-9.6, top - yp);
+        face.closePath();
+        const arch = new THREE.Path();
+        arch.moveTo(-6.6, -0.5);
+        arch.absellipse(0, -0.2, 6.6, 6.6 * 0.8, Math.PI, 0, true, 0);
+        arch.lineTo(6.6, -0.5);
+        arch.lineTo(-6.6, -0.5);
+        face.holes.push(arch);
+        const fg = new THREE.ShapeGeometry(face, 16);
+        const [tx, tz] = w.tangent(zp);
+        fg.rotateY(Math.atan2(tx, tz));
+        const c0 = at(zp, 0, yp);
+        fg.translate(c0.x, c0.y, c0.z);
+        const pm = new THREE.Mesh(fg, this.portalMat);
+        pm.castShadow = true;
+        g.add(pm);
+      }
+      if (in1 && in2) {
+        const t1 = w.tunnelRidge(z), t2 = w.tunnelRidge(z2);
+        quadTo(roof, at(z, -9.6, t1), at(z2, -9.6, t2), at(z, 9.6, t1), at(z2, 9.6, t2));
+      }
+      if (in1 && in2) {
+        const R = 6.6, n = 10;
+        for (let k = 0; k < n; k++) {
+          const a1 = Math.PI * (k / n), a2 = Math.PI * ((k + 1) / n);
+          const p = (zz: number, a: number, y: number) => at(zz, Math.cos(a) * R, y + Math.sin(a) * R * 0.8 - 0.2);
+          quadTo(tun, p(z, a1, y0), p(z2, a1, y1), p(z, a2, y0), p(z2, a2, y1));
+        }
+        if (Math.round(z / step) % 4 === 0) {
+          for (const sd of [-1, 1]) {
+            const q = at(z, sd * 2.8, y0 + 5.0);
+            lights.push(new THREE.BoxGeometry(0.25, 0.08, 1.2).translate(q.x, q.y, q.z));
+          }
+        }
+      }
+    }
+    const strip = (arr: number[], mat: THREE.Material) => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+      geo.computeVertexNormals();
+      const m = new THREE.Mesh(geo, mat);
+      m.receiveShadow = true;
+      g.add(m);
+    };
+    if (bar.length) strip(bar, this.barrierMat);
+    if (tun.length) strip(tun, this.tunnelMat);
+    if (roof.length) strip(roof, this.roofMat);
+    if (lights.length) g.add(new THREE.Mesh(mergeGeometries(lights)!, this.tunnelLightMat));
+
     // Zebra crossings
     const stripes: THREE.BufferGeometry[] = [];
     for (const cz of w.crossings(z0, z0 + CHUNK)) {
@@ -466,11 +561,13 @@ export class ChunkManager {
       if (w.bridge(z) > 0.3) continue;
       if (w.urban(z) > 0.5) {
         const side = Math.round(z / 28) % 2 === 0 ? 1 : -1;
-        const o = side * (ROAD_HALF + 1.8);
+        const o = side * (w.roadHalf(z) + 1.8);
         // The lamp's arm (local +z) reaches out over the road
         put('lamp', rx - tz * o, ry - 0.1, z + tx * o, 1, Math.atan2(tz * side, -tx * side));
       } else if (z % 32 < 28 && Math.round(z / 28) % 8 !== 3) {
-        for (const o of [-ROAD_HALF - 1.1, ROAD_HALF + 1.1]) put('post', rx - tz * o, ry - 0.1, z + tx * o, 1, 0);
+        if (w.tunnelAt(z) > 0.2) continue;
+        const hw = w.roadHalf(z) + 1.1;
+        for (const o of [-hw, hw]) put('post', rx - tz * o, ry - 0.1, z + tx * o, 1, 0);
       }
     }
 
@@ -516,6 +613,9 @@ export class ChunkManager {
           // Keep the countryside clear of the road in town, and nothing on bridges
           if (!isTown && w.townAt(z) > 0.3 && Math.abs(u) < 36) continue;
           if (w.bridge(z) > 0.3 && Math.abs(u) < 14 && !spec.float) continue;
+          // Keep clear of highways and of the hill over a tunnel
+          if (Math.abs(u) < w.roadHalf(z) + 5) continue;
+          if (w.tunnelAt(z) > 0.05 && Math.abs(u) < 70) continue;
           const [, tz] = w.tangent(z);
           const x = w.roadX(z) - u / tz;
           const h = w.height(x, z);

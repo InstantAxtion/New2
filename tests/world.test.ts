@@ -75,7 +75,7 @@ describe('autopilot', () => {
       const dt = 1 / 60;
       for (let i = 0; i < 60 * 240; i++) {
         v.step(dt, v.autopilot(), false);
-        if (i > 60 * 10) worst = Math.max(worst, Math.abs(w.lateral(v.x, v.z) - LANE));
+        if (i > 60 * 10) worst = Math.max(worst, Math.abs(w.lateral(v.x, v.z) - w.laneOffset(v.z, 1)));
       }
       expect(v.z).toBeGreaterThan(3000);
       expect(worst).toBeLessThan(ROAD_HALF - LANE + 0.5);
@@ -148,5 +148,34 @@ describe('new worlds', () => {
   it('keeps the neon city dark', () => {
     const w = new World(3, ['city']);
     expect(w.nightAt(500)).toBeCloseTo(1);
+  });
+});
+
+describe('road features', () => {
+  it('has highways, gravel and tunnels', () => {
+    const w = new World(8, []);
+    let hw = 0, gr = 0, tn = 0;
+    for (let z = 0; z < 120000; z += 50) {
+      if (w.highwayAt(z) > 0.9) hw++;
+      if (w.gravelAt(z) > 0.9) gr++;
+      if (w.tunnelAt(z) > 0.9) tn++;
+    }
+    expect(hw).toBeGreaterThan(10);
+    expect(gr).toBeGreaterThan(5);
+    expect(tn).toBeGreaterThan(2);
+  });
+
+  it('auto-drive keeps its lane through highways and tunnels', () => {
+    const w = new World(8, ['flatlands', 'alpine', 'hills']);
+    const v = new Vehicle(w, CARS[0]);
+    v.place(100);
+    v.cruise = 100 / 3.6;
+    let worst = 0;
+    for (let i = 0; i < 60 * 300; i++) {
+      v.step(1 / 60, v.autopilot(), false);
+      if (i > 600) worst = Math.max(worst, Math.abs(w.lateral(v.x, v.z) - w.laneOffset(v.z, 1)));
+    }
+    expect(v.z).toBeGreaterThan(4000);
+    expect(worst).toBeLessThan(2.2);
   });
 });
