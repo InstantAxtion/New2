@@ -49,6 +49,8 @@ export interface Settings {
   favourites: Favourite[];
   /** Distance on the resettable trip meter (metres). */
   tripMeter: number;
+  /** Season: each region's own look, or the whole world in one season. */
+  season: 'regions' | 'spring' | 'summer' | 'autumn' | 'winter';
 }
 
 export interface SavedDrive {
@@ -107,6 +109,7 @@ export const DEFAULTS: Settings = {
   saved: null,
   favourites: [],
   tripMeter: 0,
+  season: 'regions',
 };
 
 export function loadSettings(): Settings {

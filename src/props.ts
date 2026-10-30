@@ -362,6 +362,54 @@ function build(type: PropType): THREE.BufferGeometry {
         box(4, 0.7, 0.12, 0x23262b, 0, 3.75, 3.06),
       ]);
     }
+    case 'vines': {
+      // A 2.4 m stretch of a vine row along z: posts, wire and a leafy hedge with grapes
+      const parts = [
+        box(0.08, 1.5, 0.08, 0x6b5338, 0, 0.75, -1.15),
+        blob(0.55, 0x4f7a2c, 0, 1.05, -0.6, 0.35, 0.75),
+        blob(0.6, 0x5e8a33, 0, 1.1, 0.1, 0.35, 0.75),
+        blob(0.55, 0x4a7428, 0, 1.0, 0.75, 0.35, 0.75),
+      ];
+      for (const [x, z] of [[0.3, -0.4], [-0.3, 0.3], [0.28, 0.85]]) parts.push(blob(0.11, 0x4b2a5a, x, 0.72, z, 0.2, 1.3));
+      const g = merge(parts);
+      g.scale(0.55, 1, 1);
+      return g;
+    }
+    case 'lavender': {
+      // A row of rounded lavender bushes, purple flower spikes over grey-green
+      const parts: Part[] = [];
+      for (const z of [-0.8, 0, 0.8]) {
+        parts.push(blob(0.42, 0x6f7d5e, 0, 0.28, z, 0.3, 0.7));
+        parts.push(blob(0.4, 0x8a68c4, 0, 0.5, z, 0.45, 0.55));
+      }
+      return merge(parts);
+    }
+    case 'cypress':
+      return merge([cyl(0.12, 0.18, 1.2, 0x5a4330, 6, 0, 0.6, 0), blob(0.9, 0x24452a, 0, 4.2, 0, 0.5, 3.6), blob(0.7, 0x2c5232, 0, 6.6, 0, 0.6, 2.4)]);
+    case 'farmhouse': {
+      // Stone farmhouse with a terracotta roof and shutters
+      const stone = 0xd2bfa0, shutter = 0x5f7d5a;
+      const parts = [
+        box(9, 4.6, 6, stone, 0, 2.3, 0),
+        roof(9.8, 2.2, 6.8, 0xb35a36, 4.6),
+        box(4, 3.4, 5, stone, 5.6, 1.7, 0.4),
+        roof(4.6, 1.6, 5.6, 0xb35a36, 3.4).translate(5.6, 0, 0.4) as Part,
+        box(1.1, 2.1, 0.12, 0x5b3a26, -1, 1.05, 3.02),
+        box(0.9, 1.6, 0.9, 0xc9b28d, -3, 6.2, -1),
+      ];
+      for (const x of [-3.2, 1.4, 3.2]) for (const y of [1.6, 3.4]) {
+        parts.push(box(0.8, 1, 0.08, 0x2c2a28, x, y, 3.02), box(0.35, 1.05, 0.06, shutter, x - 0.6, y, 3.04), box(0.35, 1.05, 0.06, shutter, x + 0.6, y, 3.04));
+      }
+      return merge(parts);
+    }
+    case 'hut': {
+      // A beach hut on stilts with a thatched roof
+      const wood = 0xb88a58, thatch = 0xcfae6a;
+      const parts = [box(3.6, 0.2, 3.6, 0x8a6a48, 0, 1.2, 0), box(3, 2.2, 3, wood, 0, 2.4, 0), box(1, 1.6, 0.1, 0x5b3a26, 0, 2.1, 1.52)];
+      for (const [x, z] of [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]]) parts.push(cyl(0.1, 0.12, 1.3, 0x6b4a2c, 5, x, 0.6, z));
+      parts.push(cone(3.2, 2.2, thatch, 4, 0, 4.6, 0));
+      return merge(parts);
+    }
     case 'post':
       return merge([box(0.14, 1.1, 0.14, 0xf2f2f2, 0, 0.55, 0), box(0.16, 0.12, 0.16, 0xff8a1e, 0, 0.95, 0)]);
     case 'snowman':
@@ -397,3 +445,28 @@ export function propGeometry(type: PropType): THREE.BufferGeometry {
 
 /** Roughly how tall a prop is, so far-away culling can keep big things. */
 export const BIG_PROPS: Set<PropType> = new Set(['turbine', 'windmill', 'mesaRock', 'lighthouse', 'barn']);
+
+/** Window panes of a building that glow at night (just outside the glass, facing out). */
+export function litGeometry(type: PropType): THREE.BufferGeometry {
+  const panes: THREE.BufferGeometry[] = [];
+  const pane = (w: number, h: number, x: number, y: number, z: number, rotY = 0) =>
+    panes.push(new THREE.PlaneGeometry(w, h).rotateY(rotY).translate(x, y, z));
+  if (type === 'house') {
+    for (const [x, y] of [[-1.9, 1.9], [1.9, 1.9], [-1.9, 4.0], [1.9, 4.0], [0, 4.0]]) pane(0.95, 1.0, x, y, 2.62);
+    for (const z of [-1.2, 1.2]) for (const y of [1.9, 4.0]) {
+      pane(0.85, 1.0, 3.1, y, z, Math.PI / 2);
+      pane(0.85, 1.0, -3.1, y, z, -Math.PI / 2);
+    }
+  } else if (type === 'shop') {
+    pane(6.6, 2.2, 0, 1.5, 3.1);
+    pane(4, 0.7, 0, 3.75, 3.14);
+  } else if (type === 'cabin') {
+    pane(0.9, 0.8, 1.6, 2.1, 2.3);
+    pane(0.9, 0.8, -1.6, 2.1, 2.3);
+  } else if (type === 'farmhouse') {
+    for (const x of [-3.2, 1.4, 3.2]) for (const y of [1.6, 3.4]) pane(0.8, 1, x, y, 3.08);
+  }
+  const g = mergeGeometries(panes)!;
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));
+  return g;
+}

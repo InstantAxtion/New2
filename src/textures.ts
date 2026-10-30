@@ -259,3 +259,42 @@ export function gravelTexture(): THREE.Texture {
   t.anisotropy = 8;
   return t;
 }
+
+/** Cobblestones for old town streets: rows of rounded setts with dark joints. 8.4 m wide, 9 m long. */
+export function cobbleTexture(): THREE.Texture {
+  const W = 512, H = 512;
+  const { c, g } = canvas(W, H);
+  g.fillStyle = '#3a352f';
+  g.fillRect(0, 0, W, H);
+  const r = rng(77);
+  const rows = 34, cols = 30;
+  const rh = H / rows;
+  for (let y = 0; y < rows; y++) {
+    const off = (y % 2) * 0.5;
+    for (let x = -1; x < cols; x++) {
+      const cw = W / cols;
+      const px = (x + off) * cw + 1.5, py = y * rh + 1.5;
+      const tone = 105 + r() * 55;
+      const warm = r() * 14;
+      g.fillStyle = `rgb(${tone + warm},${tone + warm * 0.6},${tone - 4})`;
+      g.beginPath();
+      g.roundRect(px, py, cw - 3, rh - 3, 4);
+      g.fill();
+      // A worn, lighter top on each stone
+      g.fillStyle = 'rgba(255,255,255,0.09)';
+      g.beginPath();
+      g.ellipse(px + cw / 2 - 1, py + rh / 2 - 1.5, cw * 0.32, rh * 0.25, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  // Gutters at the edges
+  g.fillStyle = 'rgba(30,26,22,0.6)';
+  g.fillRect(0, 0, 10, H);
+  g.fillRect(W - 10, 0, 10, H);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.ClampToEdgeWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}

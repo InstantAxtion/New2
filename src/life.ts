@@ -283,6 +283,32 @@ function whale(): THREE.Group {
   return g;
 }
 
+/** A yacht: a white hull, a mast and two sails (some colourful). */
+function sailboat(variant: number): THREE.Group {
+  const g = new THREE.Group();
+  const hull = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.9, 5, 4, 10).rotateX(Math.PI / 2).scale(1, 0.55, 1).translate(0, 0.1, 0),
+    new THREE.MeshStandardMaterial({ color: [0xf4f4f2, 0x1f3e6e, 0xf4f4f2, 0x8a2a24][variant % 4], roughness: 0.35 }),
+  );
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 4.6).translate(0, 0.55, 0), new THREE.MeshStandardMaterial({ color: 0xb58a5a, roughness: 0.8 }));
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 9, 6).translate(0, 5, 0.6), new THREE.MeshStandardMaterial({ color: 0xd8d8d8, metalness: 0.6, roughness: 0.3 }));
+  const sailCol = [0xfdfdfb, 0xfdfdfb, 0xe9533f, 0x2f7fd0][variant % 4];
+  const sailMat = new THREE.MeshStandardMaterial({ color: sailCol, roughness: 0.7, side: THREE.DoubleSide });
+  const tri = (pts: number[]) => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, sailMat);
+  };
+  const main = tri([0, 1.2, 0.5, 0, 9.2, 0.6, 0, 1.3, -2.6]);
+  const jib = tri([0, 1.0, 0.75, 0, 8.4, 0.7, 0, 0.9, 3.2]);
+  g.add(hull, deck, mast, main, jib);
+  g.userData.sails = [main, jib];
+  g.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+  g.visible = false;
+  return g;
+}
+
 // ---- Sky traffic ----
 
 function plane(): THREE.Group {
@@ -374,10 +400,10 @@ function balloon(variant: number): THREE.Group {
 interface Balloon { g: THREE.Group; x: number; y: number; z: number; drift: number; active: boolean; burn: number }
 interface Plane { g: THREE.Group; active: boolean; t: number; dur: number; from: THREE.Vector3; to: THREE.Vector3; alt: number }
 
-const FIELD: BiomeId[] = ['hills', 'flatlands', 'autumn', 'lakes', 'seaside', 'blossom'];
+const FIELD: BiomeId[] = ['hills', 'flatlands', 'autumn', 'lakes', 'seaside', 'blossom', 'vineyard'];
 const WOODS: BiomeId[] = ['forest', 'alpine', 'autumn', 'winter', 'hills', 'rainforest'];
-const GLOW_BUGS: BiomeId[] = ['blossom', 'forest', 'hills', 'flatlands', 'autumn', 'lakes', 'rainforest', 'seaside'];
-const BALLOON_LANDS: BiomeId[] = ['blossom', 'hills', 'flatlands', 'autumn', 'lakes', 'desert', 'canyon'];
+const GLOW_BUGS: BiomeId[] = ['vineyard', 'tropical', 'blossom', 'forest', 'hills', 'flatlands', 'autumn', 'lakes', 'rainforest', 'seaside'];
+const BALLOON_LANDS: BiomeId[] = ['vineyard', 'blossom', 'hills', 'flatlands', 'autumn', 'lakes', 'desert', 'canyon'];
 
 export class Life {
   readonly group = new THREE.Group();
@@ -397,6 +423,8 @@ export class Life {
   private whaleG: THREE.Group;
   private whaleState: { x: number; z: number; dx: number; dz: number; t: number; spouted: boolean } | null = null;
   private seaTimer = 3;
+  private boats: { g: THREE.Group; x: number; z: number; heading: number; active: boolean; t: number }[] = [];
+  private boatTimer = 2;
 
   private flies: THREE.Points;
   private flyPos: Float32Array;
@@ -452,6 +480,11 @@ export class Life {
       const d = dolphin();
       this.pod.push(d);
       this.group.add(d);
+    }
+    for (let i = 0; i < 3; i++) {
+      const b = sailboat(i);
+      this.group.add(b);
+      this.boats.push({ g: b, x: 0, z: 0, heading: 0, active: false, t: 0 });
     }
     this.whaleG = whale();
     this.group.add(this.whaleG);
@@ -511,6 +544,7 @@ export class Life {
   /** Forget everything placed in the old world (after the themes or seed change). */
   reset(world: World) {
     this.world = world;
+    for (const b of this.boats) b.active = false;
     this.crossing = null;
     this.flocks = [];
     this.podState = null;
@@ -658,7 +692,7 @@ export class Life {
   private spawnFlock(car: { z: number; v: number }, env: LifeEnv): Flock | null {
     const w = this.world;
     const z = car.z + 120 + Math.random() * 220;
-    const coast = weightOf(w, z, ['seaside', 'lakes']);
+    const coast = weightOf(w, z, ['seaside', 'lakes', 'tropical']);
     const peaks = weightOf(w, z, ['alpine', 'canyon', 'desert']);
     const woods = weightOf(w, z, WOODS);
     const r = Math.random();
@@ -775,8 +809,32 @@ export class Life {
 
   private sea(dt: number, car: { z: number }, env: LifeEnv) {
     const w = this.world;
+    // Sailing boats out on the water, heeling in the breeze
+    this.boatTimer -= dt;
+    const watery = weightOf(w, car.z + 200, ['seaside', 'lakes', 'tropical']);
+    if (this.boatTimer <= 0) {
+      this.boatTimer = 3;
+      const b = this.boats.find((x) => !x.active);
+      if (b && watery > 0.4 && env.night < 0.6) {
+        const at = this.findWater(car.z + 40, 2.5);
+        if (at) Object.assign(b, { x: at.x, z: at.z, heading: Math.random() * Math.PI * 2, active: true, t: 0 });
+      }
+    }
+    for (const b of this.boats) {
+      if (b.active && (b.z < car.z - 200 || b.t > 160)) b.active = false;
+      b.g.visible = b.active;
+      if (!b.active) continue;
+      b.t += dt;
+      b.heading += Math.sin(b.t * 0.05) * dt * 0.02;
+      b.x += Math.sin(b.heading) * 2.8 * dt;
+      b.z += Math.cos(b.heading) * 2.8 * dt;
+      if (w.height(b.x + Math.sin(b.heading) * 12, b.z + Math.cos(b.heading) * 12) > -1.2) b.heading += dt * 0.6;
+      b.g.position.set(b.x, Math.sin(b.t * 1.3) * 0.12, b.z);
+      b.g.rotation.set(0, b.heading, 0);
+      b.g.rotateZ(0.18 + Math.sin(b.t * 0.7) * 0.04);
+    }
     this.seaTimer -= dt;
-    const coast = weightOf(w, car.z + 150, ['seaside']);
+    const coast = weightOf(w, car.z + 150, ['seaside', 'tropical']);
     if (this.seaTimer <= 0) {
       this.seaTimer = 4;
       if (coast > 0.5 && env.night < 0.5) {
@@ -972,7 +1030,7 @@ export class Life {
     const w = this.world;
     if (env.rain > 0.4) return;
     if (env.night > 0.6 && weightOf(w, car.z, WOODS) > 0.4) this.call = { kind: 'owl', level: 0.8 };
-    else if (env.night < 0.4 && weightOf(w, car.z, ['seaside', 'lakes']) > 0.4) this.call = { kind: 'gull', level: 0.7 };
+    else if (env.night < 0.4 && weightOf(w, car.z, ['seaside', 'lakes', 'tropical']) > 0.4) this.call = { kind: 'gull', level: 0.7 };
     else if (this.flocks.some((f) => f.kind === 'eagle')) this.call = { kind: 'eagle', level: 0.5 };
   }
 }

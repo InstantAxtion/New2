@@ -264,7 +264,116 @@ function harbour(): THREE.Group {
   return g;
 }
 
-const BUILDERS: Record<StopKind, () => THREE.Group> = { fuel, diner, viewpoint, campsite, harbour };
+// ---- The drive-in: a big screen showing a film after dark ----
+
+const film = (() => {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return { c, g: c.getContext('2d')!, tex };
+})();
+const filmMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffffff, emissiveMap: film.tex, emissiveIntensity: 0, roughness: 0.9 });
+
+/** Draw the next frame of the film (a few looping scenes), lit only at night. */
+export function updateFilm(t: number, night: number) {
+  filmMat.emissiveIntensity = night * 1.3;
+  filmMat.color.setScalar(0.85 * (1 - night) + 0.05);
+  if (night < 0.05) return;
+  const { g, tex } = film;
+  const W = 256, H = 128;
+  const scene = Math.floor(t / 9) % 4, k = (t % 9) / 9;
+  const flick = 0.9 + Math.random() * 0.1;
+  if (scene === 0) {
+    // Sunset, and a car driving across the desert
+    const sky = g.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#2a1b4a');
+    sky.addColorStop(0.6, '#ff8a4a');
+    sky.addColorStop(1, '#ffd27a');
+    g.fillStyle = sky;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#ffe9a0';
+    g.beginPath();
+    g.arc(W * 0.7, H * 0.7, 22, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#1a1020';
+    g.fillRect(0, H * 0.78, W, H);
+    const x = -40 + k * (W + 80);
+    g.fillRect(x, H * 0.7, 46, 10);
+    g.fillRect(x + 10, H * 0.64, 24, 8);
+  } else if (scene === 1) {
+    // Into space: stars streaming past
+    g.fillStyle = '#04040c';
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#ffffff';
+    for (let i = 0; i < 70; i++) {
+      const a = i * 2.4, d = ((i * 37 + t * 60) % 160) / 160;
+      const x = W / 2 + Math.cos(a) * d * W * 0.7, y = H / 2 + Math.sin(a) * d * H * 0.7;
+      g.fillRect(x, y, 1 + d * 2, 1 + d * 2);
+    }
+  } else if (scene === 2) {
+    // A title card
+    g.fillStyle = '#16120e';
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#efe2c4';
+    g.font = '700 26px Georgia, serif';
+    g.textAlign = 'center';
+    g.fillText('THE ENDLESS', W / 2, H * 0.45);
+    g.fillText('ROAD', W / 2, H * 0.72);
+  } else {
+    // Waves rolling in at dusk
+    g.fillStyle = '#20345a';
+    g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 6; i++) {
+      g.fillStyle = `rgba(${120 + i * 20},${170 + i * 12},${210 + i * 6},0.8)`;
+      g.beginPath();
+      g.moveTo(0, H);
+      for (let x = 0; x <= W; x += 8) g.lineTo(x, H * (0.45 + i * 0.09) + Math.sin(x * 0.05 + t * 1.5 + i) * 5);
+      g.lineTo(W, H);
+      g.fill();
+    }
+  }
+  g.fillStyle = `rgba(0,0,0,${1 - flick})`;
+  g.fillRect(0, 0, W, H);
+  tex.needsUpdate = true;
+}
+
+function drivein(): THREE.Group {
+  const S: G[] = [];
+  const r = rng(5);
+  S.push(box(46, 4, 96, 0x8b8070, 23, -1.9, 0));
+  // The screen on its frame, facing the road and the cars
+  S.push(box(1, 13, 22, 0xe8e4dc, 42, 8.5, 0));
+  for (const z of [-9, -3, 3, 9]) S.push(box(0.5, 15, 0.5, 0x5a5a5a, 43, 7.5, z));
+  // Rows of parked cars facing the screen, with speaker posts
+  const cols = [0xb3271f, 0x2b5d9b, 0xe8e2c8, 0x2f7f5a, 0x1e1f22, 0xd9a02a, 0x7a3fa0];
+  for (let row = 0; row < 3; row++) {
+    for (let k = -4; k <= 4; k++) {
+      if (r() < 0.3) continue;
+      const x = 14 + row * 8, z = k * 4.2 + row * 1.2;
+      const c = cols[Math.floor(r() * cols.length)];
+      S.push(box(4.2, 0.9, 1.8, c, x, 0.75, z));
+      S.push(box(2.2, 0.7, 1.6, c, x - 0.2, 1.5, z));
+      S.push(box(2.1, 0.5, 1.62, 0x1b2430, x - 0.2, 1.5, z));
+      S.push(box(0.1, 1.1, 0.1, 0x555555, x - 1, 0.55, z + 1.6));
+    }
+  }
+  // Projection booth and snack bar
+  S.push(box(5, 3.2, 8, 0xd9cbb4, 4, 1.6, 30));
+  S.push(box(5.4, 0.4, 8.4, 0xc0322e, 4, 3.4, 30));
+  const g = assemble(S, [], []);
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(21, 11).rotateY(-Math.PI / 2), filmMat);
+  screen.position.set(41.45, 9, 0);
+  g.add(screen);
+  const pylon = new THREE.Group();
+  pylon.add(new THREE.Mesh(colored(new THREE.BoxGeometry(0.4, 7, 0.4).translate(0, 3.5, 0), 0xc9c9c9), mats().solid));
+  pylon.add(panel(signTexture(['DRIVE-IN', 'tonight at dusk'], '#1b1f4a', '#ffd23a', 512, 256), 3.6, 1.8, -0.25, 6.4, 0));
+  pylon.position.set(2, 0, -40);
+  g.add(pylon);
+  return g;
+}
+
+const BUILDERS: Record<StopKind, () => THREE.Group> = { fuel, diner, viewpoint, campsite, harbour, drivein };
 
 /** Build a stop and place it beside the road (world coordinates, relative to `origin`). */
 export function buildStop(stop: Stop, roadX: number, roadY: number, roadHalf: number, tangent: [number, number], origin: THREE.Vector3): THREE.Group {

@@ -138,7 +138,7 @@ export class UI {
       <h3>Time of day</h3>
       <div class="chips" id="times">${timeChips}</div>
       <h3>Weather</h3>
-      <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button></div>
+      <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">🌨️💧 Sleet</button></div>
       <h3>Traffic</h3>
       <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
       <h3>Auto-drive style</h3>
@@ -222,7 +222,7 @@ export class UI {
     <h3>Time of day</h3>
     <div class="chips center">${timeChips}</div>
     <h3>Weather</h3>
-    <div class="chips center" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button></div>
+    <div class="chips center" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">🌨️💧 Sleet</button></div>
     <h3>Traffic</h3>
     <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
     <h3>Auto-drive</h3>
@@ -351,8 +351,10 @@ export class UI {
     <div class="chips" data-set="dashScreen"><button class="chip" data-v="map">🗺️ Dash shows the map</button><button class="chip" data-v="visualizer">🎶 Dash shows a visualizer</button></div>
     <h3>Time of day</h3>
     <div class="chips">${timeChips}</div>
+    <h3>Season</h3>
+    <div class="chips" data-set="season"><button class="chip" data-v="regions">🗺️ Each region's own</button><button class="chip" data-v="spring">🌱 Spring</button><button class="chip" data-v="summer">☀️ Summer</button><button class="chip" data-v="autumn">🍂 Autumn</button><button class="chip" data-v="winter">❄️ Winter</button></div>
     <h3>Weather</h3>
-    <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button></div>
+    <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">🌨️💧 Sleet</button></div>
     <h3>World</h3>
     <h3>Traffic</h3>
     <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
@@ -812,7 +814,7 @@ export class UI {
       const town = g.world.towns(v.z - 600, v.z + 600)[0];
       const near = town !== undefined ? `near ${g.world.townName(town)}` : b ? b.name : 'Somewhere nice';
       const st = g.world.stopNear(v.z, 80);
-      const name = st ? `${b ? b.name + ' ' : ''}${st.kind === 'viewpoint' ? 'viewpoint' : st.kind === 'harbour' ? 'harbour' : st.kind === 'campsite' ? 'campsite' : st.kind === 'diner' ? 'diner' : 'services'}` : near;
+      const name = st ? `${b ? b.name + ' ' : ''}${st.kind === 'viewpoint' ? 'viewpoint' : st.kind === 'harbour' ? 'harbour' : st.kind === 'campsite' ? 'campsite' : st.kind === 'diner' ? 'diner' : st.kind === 'drivein' ? 'drive-in' : 'services'}` : near;
       this.s.favourites.unshift({ name, seed: g.seed, themes: [...this.s.themes], z: v.z, hour: g.hour, region: b ? `${b.emoji} ${b.name}` : '', at: Date.now() });
       this.s.favourites = this.s.favourites.slice(0, 30);
       this.save();
@@ -1518,6 +1520,11 @@ export class UI {
   private applySetting(key: keyof Settings) {
     const g = this.game;
     if (key === 'quality') g.setQuality(this.s.quality);
+    if (key === 'season') {
+      g.chunks.season = this.s.season;
+      g.chunks.clear();
+      g.chunks.fill(g.vehicle.z);
+    }
     if (key === 'units') {
       g.chunks.units = this.s.units;
       g.chunks.clear();

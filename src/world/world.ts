@@ -1,4 +1,4 @@
-import { BIOMES, BIOME_IDS, type Biome, type BiomeId, type Ctx } from './biomes';
+import { BIOMES, BIOME_IDS, cliffAt, type Biome, type BiomeId, type Ctx } from './biomes';
 import { hash1, noise1, rng, smoothstep } from './noise';
 
 export const ROAD_HALF = 4.2; // asphalt half-width (two lanes)
@@ -7,7 +7,7 @@ export const FLAT = 7.5; // ground is flat out to here (perpendicular metres)
 export const SEGMENT = 1400; // metres of road per region
 const BLEND = 220; // half-width of the blend between two regions
 
-export type StopKind = 'fuel' | 'diner' | 'viewpoint' | 'campsite' | 'harbour';
+export type StopKind = 'fuel' | 'diner' | 'viewpoint' | 'campsite' | 'harbour' | 'drivein';
 
 /** A place to pull over beside the road. */
 export interface Stop {
@@ -21,12 +21,23 @@ export interface Stop {
   depth: number;
 }
 
+export type LandmarkKind = 'castle' | 'ruin' | 'waterfall';
+
+/** Something to look at off to the side of the road. */
+export interface Landmark {
+  kind: LandmarkKind;
+  z: number;
+  /** Lateral offset of its centre from the road (+ right). */
+  u: number;
+}
+
 export const STOP_INFO: Record<StopKind, { name: string; icon: string }> = {
   fuel: { name: 'Fuel & charging', icon: '⛽' },
   diner: { name: 'Roadside diner', icon: '🍔' },
   viewpoint: { name: 'Scenic viewpoint', icon: '📷' },
   campsite: { name: 'Campsite', icon: '🏕️' },
   harbour: { name: 'Harbour', icon: '⚓' },
+  drivein: { name: 'Drive-in cinema', icon: '🎬' },
 };
 
 const TOWN_A = ['Ash', 'Bram', 'Clay', 'Elm', 'Fern', 'Glen', 'Holly', 'Kings', 'Lark', 'Mill', 'Oak', 'Pine', 'Red', 'Stone', 'Wil', 'Brook', 'Hazel', 'Ridge', 'Silver', 'Thorn', 'Wren', 'Marsh', 'Fox', 'Bay'];
@@ -130,6 +141,8 @@ export class World {
     for (const { biome, w } of this.weights(z)) {
       const n = noise1(z / 520, this.seed + 7) * 0.75 + noise1(z / 190, this.seed + 8) * 0.25;
       y += w * (biome.roadBase + biome.roadAmp * (0.5 + 0.5 * n));
+      // Seaside clifftops lift the road high above the water
+      if (biome.id === 'seaside') y += w * cliffAt(z, this.seed) * 26;
     }
     return y;
   }
@@ -226,18 +239,18 @@ export class World {
       const highway = this.highwayAt(z) > 0.01;
       if (highway) kind = 'fuel';
       else if (b === 'seaside') kind = r < 0.5 ? 'harbour' : r < 0.75 ? 'diner' : 'fuel';
-      else if (b === 'desert' || b === 'flatlands') kind = r < 0.5 ? 'diner' : 'fuel';
+      else if (b === 'desert' || b === 'flatlands') kind = r < 0.35 ? 'diner' : r < 0.6 ? 'drivein' : 'fuel';
       else if (b === 'alpine' || b === 'canyon') kind = r < 0.6 ? 'viewpoint' : r < 0.8 ? 'fuel' : b === 'alpine' ? 'campsite' : 'diner';
       else if (b === 'forest' || b === 'lakes' || b === 'rainforest') kind = r < 0.5 ? 'campsite' : r < 0.8 ? 'fuel' : 'viewpoint';
-      else if (b !== 'city') kind = r < 0.3 ? 'viewpoint' : r < 0.6 ? 'diner' : 'fuel';
+      else if (b !== 'city') kind = r < 0.3 ? 'viewpoint' : r < 0.5 ? 'diner' : r < 0.62 ? 'drivein' : 'fuel';
       const clear = (zz: number) => this.urban(zz) < 0.01 && this.bridgeRaw(zz) < 0.01 && this.tunnelAt(zz) < 0.01;
       if (kind && clear(z - 90) && clear(z) && clear(z + 90) && !(highway && this.highwayAt(z) < 0.99)) {
         let side = h(604) < 0.5 ? -1 : 1;
         // The harbour is on the sea side of the road
         if (kind === 'harbour') side = this.seaSide(Math.floor(z / SEGMENT)) > 0 ? 1 : -1;
         if (highway) side = 1;
-        const depth = { fuel: 30, diner: 28, campsite: 34, viewpoint: 12, harbour: 12 }[kind];
-        stop = { kind, z, side, len: kind === 'viewpoint' ? 60 : 90, depth };
+        const depth = { fuel: 30, diner: 28, campsite: 34, viewpoint: 12, harbour: 12, drivein: 44 }[kind];
+        stop = { kind, z, side, len: kind === 'viewpoint' ? 60 : kind === 'drivein' ? 100 : 90, depth };
       }
     }
     this.stopMemo.set(c, stop);
@@ -271,6 +284,67 @@ export class World {
       if (s && s.z > z) return s;
     }
     return null;
+  }
+
+  private landMemo = new Map<number, Landmark | null>();
+
+  private landmarkCell(c: number): Landmark | null {
+    if (this.landMemo.has(c)) return this.landMemo.get(c)!;
+    let lm: Landmark | null = null;
+    const h = (salt: number) => hash1(c, this.seed + salt);
+    if (h(801) < 0.75) {
+      const z = c * 2900 + 400 + h(802) * 2000;
+      const b = this.dominant(z).id;
+      const r = h(803);
+      const castle = ['hills', 'vineyard', 'autumn', 'blossom', 'alpine', 'forest', 'flatlands'].includes(b);
+      const ruin = ['hills', 'winter', 'canyon', 'desert', 'flatlands', 'seaside', 'autumn'].includes(b);
+      const fall = ['alpine', 'rainforest', 'forest', 'canyon', 'tropical', 'lakes'].includes(b);
+      let kind: LandmarkKind | null = null;
+      if (fall && (r < 0.6 || !castle)) kind = 'waterfall';
+      else if (castle && (r < 0.75 || !ruin)) kind = 'castle';
+      else if (ruin) kind = 'ruin';
+      const clear = [-150, 0, 150].every((d) => this.urban(z + d) < 0.01 && this.bridgeRaw(z + d) < 0.01 && this.tunnelAt(z + d) < 0.01) && !this.stopNear(z, 120);
+      if (kind && clear) {
+        const side = h(804) < 0.5 ? -1 : 1;
+        const dist = kind === 'castle' ? 130 + h(805) * 70 : kind === 'ruin' ? 45 + h(805) * 40 : 52 + h(805) * 20;
+        // Not out at sea
+        if (!(b === 'seaside' && side === this.seaSide(Math.floor(z / SEGMENT)))) lm = { kind, z, u: side * (this.roadHalf(z) + dist) };
+      }
+    }
+    this.landMemo.set(c, lm);
+    return lm;
+  }
+
+  /** Landmarks whose centres lie between z0 and z1. */
+  landmarks(z0: number, z1: number): Landmark[] {
+    const out: Landmark[] = [];
+    for (let c = Math.floor(z0 / 2900) - 1; c <= Math.floor(z1 / 2900) + 1; c++) {
+      const l = this.landmarkCell(c);
+      if (l && l.z >= z0 && l.z < z1) out.push(l);
+    }
+    return out;
+  }
+
+  /** The landmark near z (for keeping the ground around it clear), if any. */
+  landmarkNear(z: number, margin: number): Landmark | null {
+    const c0 = Math.floor(z / 2900);
+    for (const c of [c0 - 1, c0, c0 + 1]) {
+      const l = this.landmarkCell(c);
+      if (l && Math.abs(l.z - z) < margin) return l;
+    }
+    return null;
+  }
+
+  /** An old walled town with cobbled streets (some towns in the old country). */
+  oldTown(centre: number): boolean {
+    const c = Math.floor(centre / 2400);
+    return hash1(c, this.seed + 221) < 0.45 && ['hills', 'vineyard', 'autumn', 'blossom', 'alpine', 'flatlands', 'winter'].includes(this.dominant(centre).id);
+  }
+
+  /** 0..1: in an old town's cobbled streets. */
+  oldTownAt(z: number): number {
+    for (const c of this.towns(z - 300, z + 300)) if (this.oldTown(c)) return 1 - smoothstep(200, 240, Math.abs(z - c));
+    return 0;
   }
 
   /** Town centres between z0 and z1. */
@@ -520,6 +594,11 @@ export class World {
         }
         case 'autumn': add(1, 0.45); add(2, 0.55); break;
         case 'blossom': add(0, 0.9); add(2, 0.1); break;
+        case 'tropical':
+          if (h < 1.6) add(3, 1);
+          else { add(0, 0.8); add(2, 0.2); }
+          break;
+        case 'vineyard': add(0, 0.6); add(1, 0.4); break;
         case 'winter': add(5, 1); break;
         case 'city': add(4, 0.85); add(3, 0.15); break;
         case 'rainforest': add(2, 0.5); add(0, 0.5); break;

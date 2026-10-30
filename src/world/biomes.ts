@@ -1,12 +1,12 @@
 import { fbm2, noise2, ridged2, smoothstep, clamp, lerp } from './noise';
 
-export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon' | 'blossom';
+export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon' | 'blossom' | 'tropical' | 'vineyard';
 
 export type PropType =
   | 'pine' | 'pineSnow' | 'tree' | 'treeAutumn' | 'bush' | 'palm' | 'cactus' | 'rock' | 'rockSnow'
   | 'house' | 'barn' | 'windmill' | 'turbine' | 'hay' | 'sheep' | 'boat' | 'umbrella'
   | 'lighthouse' | 'deadTree' | 'cabin' | 'snowman' | 'mesaRock' | 'post'
-  | 'tower1' | 'tower2' | 'tower3' | 'billboard' | 'lamp' | 'jungleTree' | 'fern' | 'hoodoo' | 'arch' | 'pier' | 'shop' | 'cherry' | 'flowers';
+  | 'tower1' | 'tower2' | 'tower3' | 'billboard' | 'lamp' | 'jungleTree' | 'fern' | 'hoodoo' | 'arch' | 'pier' | 'shop' | 'cherry' | 'flowers' | 'vines' | 'lavender' | 'cypress' | 'farmhouse' | 'hut';
 
 export interface PropSpec {
   type: PropType;
@@ -31,6 +31,27 @@ export function lakeAt(x: number, z: number, seed: number, road = false): number
   const along = noise2(z / 420, 3.7, seed + 131);
   const shape = along + noise2(x / 160, z / 160, seed + 132) * 0.35;
   return road ? smoothstep(0.12, 0.3, along) : smoothstep(0.08, 0.3, shape);
+}
+
+/** Tropical islands: 1 on land, 0 in the sea. `road` says whether the road is on an island here. */
+export function islandAt(x: number, z: number, seed: number, road = false): number {
+  const along = noise2(z / 420, 5.3, seed + 151);
+  if (road) return smoothstep(-0.12, 0.05, along);
+  const shape = along * 0.75 + noise2(x / 150, z / 150, seed + 152) * 0.55 + 0.04;
+  return smoothstep(-0.04, 0.1, shape);
+}
+
+/** Vineyard country fields: 0 meadow, 1 vines, 2 lavender, 3 wheat. */
+export function vineField(x: number, z: number, seed: number): number {
+  const fx = Math.floor((x + noise2(z / 90, x / 90, seed + 171) * 12) / 64);
+  const fz = Math.floor((z + noise2(x / 80, z / 80, seed + 172) * 12) / 72);
+  const k = Math.floor((noise2(fx * 4.7, fz * 3.1, seed + 173) * 0.5 + 0.5) * 9);
+  return k < 4 ? 1 : k < 6 ? 2 : k < 7 ? 3 : 0;
+}
+
+/** Coastal cliffs: the seaside road climbs onto clifftops now and then (0..1). */
+export function cliffAt(z: number, seed: number): number {
+  return smoothstep(0.32, 0.5, noise2(z / 900, 4.4, seed + 161));
 }
 
 /** Gorges the canyon road bridges over (0..1). */
@@ -98,12 +119,27 @@ export const BIOMES: Record<BiomeId, Biome> = {
       if (s > 0) {
         const d = Math.max(0, s - 8 + coast);
         const shelf = c.roadY - 1 - d * 0.13 - Math.max(0, d - 60) * 0.08;
-        return Math.max(shelf, -9 + noise2(x / 40, z / 40, 3));
+        const normal = Math.max(shelf, -9 + noise2(x / 40, z / 40, 3));
+        // Clifftop: level ground, then a sheer rocky drop into the sea
+        const cl = cliffAt(z, c.seed ?? 0);
+        if (cl <= 0) return normal;
+        const edge = 11 + coast * 0.6;
+        const drop = smoothstep(edge, edge + 5, s);
+        const top = c.roadY - 0.3 - Math.max(0, s - 8) * 0.03 + ridged2(x / 14, z / 14, 2, 14) * 1.5 * drop;
+        const cliff = top + (-6 + noise2(x / 30, z / 30, 15) * 2 - top) * drop;
+        return normal + (cliff - normal) * cl;
       }
       const hill = fbm2(x / 160, z / 160, 4, 12) * 0.5 + 0.5;
       return c.roadY + hill * 34 * ramp(c.u, 12, 140) + ridged2(x / 70, z / 70, 2, 13) * 6 * ramp(c.u, 20, 90);
     },
     color(x, z, h, rel, c, out) {
+      if (c.u * c.seaSide > 0 && cliffAt(z, c.seed ?? 0) > 0.3 && h < c.roadY - 2.5) {
+        // Bare cliff face, banded rock
+        const band = Math.sin(h * 1.3 + noise2(x / 9, z / 9, 16) * 2) * 0.5 + 0.5;
+        set(out, lerp(0.5, 0.42, band), lerp(0.46, 0.39, band), lerp(0.4, 0.34, band));
+        if (h < 0.4) set(out, 0.36, 0.33, 0.3);
+        return;
+      }
       if (c.u * c.seaSide > 0 && beachAndSea(out, h)) return;
       set(out, 0.42, 0.66, 0.3);
       const n = noise2(x / 30, z / 30, 5) * 0.5 + 0.5;
@@ -417,6 +453,66 @@ export const BIOMES: Record<BiomeId, Biome> = {
     ],
     haze: [1.0, 0.9, 0.95, 0.14],
     verge: [0.55, 0.53, 0.47],
+    towns: true,
+  },
+  tropical: {
+    id: 'tropical', name: 'Tropical Islands', emoji: '🏝️', roadBase: 2.4, roadAmp: 0.8,
+    height(x, z, c) {
+      const land = islandAt(x, z, c.seed ?? 0);
+      const hills = (fbm2(x / 120, z / 120, 3, 181) * 0.5 + 0.5) * 22 * ramp(c.u, 14, 110);
+      const ground = c.roadY - 0.4 + hills * smoothstep(0.5, 1, land);
+      const sea = -2.2 - smoothstep(0, 1, 1 - land) * 5 + noise2(x / 50, z / 50, 182) * 0.8;
+      return sea + (ground - sea) * smoothstep(0, 0.6, land);
+    },
+    color(x, z, h, rel, c, out) {
+      if (h < 1.3) {
+        // White sand, and the pale sandy seabed under shallow water
+        set(out, 0.96, 0.92, 0.78);
+        if (h < -0.3) mix(out, 0.85, 0.86, 0.72, smoothstep(-0.3, -3, h));
+        return;
+      }
+      set(out, 0.3, 0.6, 0.24);
+      mix(out, 0.42, 0.66, 0.28, noise2(x / 25, z / 25, 183) * 0.5 + 0.5);
+      if (h < 2.2) mix(out, 0.9, 0.86, 0.68, 0.5);
+    },
+    props: [
+      { type: 'palm', n: 16, u: [9, 160], scale: [0.85, 1.35], h: [0.5, 12], cluster: 4 },
+      { type: 'jungleTree', n: 5, u: [20, 200], scale: [0.9, 1.4], h: [2.5, 40], cluster: 4 },
+      { type: 'bush', n: 6, u: [9, 80], scale: [0.7, 1.2], h: [1.5, 40] },
+      { type: 'hut', n: 0.8, u: [16, 70], scale: [0.9, 1.1], h: [0.6, 3] },
+      { type: 'umbrella', n: 2, u: [11, 40], scale: [0.9, 1.1], h: [0.4, 1.6] },
+      { type: 'boat', n: 1.4, u: [40, 260], scale: [0.8, 1.3], h: [-99, -1.2], float: true },
+    ],
+    haze: [0.85, 0.95, 1.0, 0.16],
+    verge: [0.9, 0.86, 0.72],
+    bridges: (x, z, seed) => 1 - islandAt(x, z, seed, true),
+  },
+  vineyard: {
+    id: 'vineyard', name: 'Vineyards & Lavender', emoji: '🍇', roadBase: 10, roadAmp: 10,
+    height(x, z, c) {
+      const r = ramp(c.u, 10, 130);
+      return c.roadY + (fbm2(x / 300, z / 300, 4, 191) * 26 + 6) * r;
+    },
+    color(x, z, h, rel, c, out) {
+      set(out, 0.5, 0.62, 0.3);
+      mix(out, 0.62, 0.66, 0.36, noise2(x / 40, z / 40, 192) * 0.5 + 0.5);
+      if (Math.abs(c.u) > 13) {
+        const f = vineField(x, z, c.seed ?? 0);
+        const k = smoothstep(13, 20, Math.abs(c.u));
+        if (f === 1) mix(out, 0.56, 0.47, 0.33, 0.6 * k); // soil between the vines
+        else if (f === 2) mix(out, 0.55, 0.45, 0.7, 0.75 * k);
+        else if (f === 3) mix(out, 0.88, 0.76, 0.42, 0.8 * k);
+      }
+      if (h < 0.6) set(out, 0.7, 0.66, 0.5);
+    },
+    props: [
+      { type: 'cypress', n: 7, u: [9, 200], scale: [0.85, 1.3], cluster: 4 },
+      { type: 'farmhouse', n: 0.8, u: [20, 140], scale: [0.9, 1.15] },
+      { type: 'tree', n: 2, u: [14, 220], scale: [0.8, 1.2], cluster: 3 },
+      { type: 'bush', n: 3, u: [9, 60], scale: [0.6, 1] },
+    ],
+    haze: [1.0, 0.94, 0.86, 0.14],
+    verge: [0.66, 0.6, 0.48],
     towns: true,
   },
 };

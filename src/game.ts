@@ -15,6 +15,7 @@ import { Life } from './life';
 import { Drift } from './drift';
 import { Windscreen } from './glass';
 import { Showroom } from './showroom';
+import { updateFilm } from './stops';
 import { drawVisualizer } from './map';
 import { AtmosphereShader, makeLensflare } from './post';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
@@ -136,6 +137,7 @@ export class Game {
     this.world = new World(this.seed, settings.themes);
     this.chunks = new ChunkManager(this.world, q);
     this.chunks.units = settings.units;
+    this.chunks.season = settings.season;
     this.scene.add(this.chunks.root);
 
     this.sky = new Sky(q.fogFar);
@@ -219,6 +221,7 @@ export class Game {
   }
 
   private flareOn = false;
+  private filmTimer = 0;
   private passPrev = new Map<THREE.Vector3, number>();
   /** Where the sun is on screen: for the lens flare, the sun shafts and the heat haze. */
   private updateSunFx(v: { z: number; heading: number }) {
@@ -464,6 +467,12 @@ export class Game {
         this.effects.emit(pos, vel, v.gravel || v.offroad ? 'dust' : 'spray');
       }
     }
+    // The drive-in's film, while one is nearby
+    this.filmTimer -= dt;
+    if (this.filmTimer <= 0) {
+      this.filmTimer = 0.08;
+      if (this.world.stopNear(v.z, 500)?.kind === 'drivein') updateFilm(this.elapsed, this.sky.night);
+    }
     this.life.update(dt, this.elapsed, { x: v.x, z: v.z, v: v.v }, this.camera.position, {
       night: this.sky.night, hour: this.sky.hour, cover: this.weather.look.cover, rain: this.weather.look.rain, fog: this.weather.look.fog,
     });
@@ -507,9 +516,12 @@ export class Game {
       const sd = this.sand;
       this.sky.setHaze(r + (0.78 - r) * sd, g + (0.6 - g) * sd, bl + (0.4 - bl) * sd, a + (0.95 - a) * sd);
       const winter = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'winter' ? x.w : 0), 0);
+      const tropic = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'tropical' ? x.w : 0), 0);
       const wc = (this.water.material as THREE.MeshPhongMaterial).color;
-      if (this.tier === 'pbr') wc.setRGB(0.02 + winter * 0.6, 0.18 + winter * 0.5, 0.26 + winter * 0.55);
-      else wc.setRGB(0.17 + winter * 0.55, 0.5 + winter * 0.32, 0.68 + winter * 0.22);
+      if (this.tier === 'pbr') wc.setRGB(0.02 + winter * 0.6 + tropic * 0.0, 0.18 + winter * 0.5 + tropic * 0.3, 0.26 + winter * 0.55 + tropic * 0.12);
+      else wc.setRGB(0.17 + winter * 0.55 - tropic * 0.1, 0.5 + winter * 0.32 + tropic * 0.25, 0.68 + winter * 0.22 - tropic * 0.02);
+      // Clear tropical water lets the sand show through
+      (this.water.material as THREE.Material).opacity = 0.93 - tropic * 0.25;
     }
     // The neon city is always at night: pull the clock towards midnight there
     // (It already fades in with distance as the regions blend.)
@@ -550,7 +562,10 @@ export class Game {
         this.effects.emit(back, new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.8, -o.dir * o.v * 0.12), 'spray', o.heavy ? 2.2 : 1.3);
       }
     }
-    shared.snow.value = wx.snowCover;
+    const season = this.settings.season;
+    shared.snow.value = Math.max(wx.snowCover, season === 'winter' ? 0.9 : 0);
+    const tintTarget = season === 'autumn' ? [1.06, 0.9, 0.7] : season === 'summer' ? [1.05, 1.0, 0.86] : season === 'spring' ? [0.97, 1.05, 0.97] : season === 'winter' ? [0.95, 0.97, 1.02] : [1, 1, 1];
+    shared.season.value.setRGB(tintTarget[0], tintTarget[1], tintTarget[2]);
     // Wind, blown petals and leaves, desert sandstorms and heat haze
     let desert = 0, petals = 0, leaves = 0, hot = 0;
     for (const { biome, w } of this.world.weights(v.z)) {
@@ -587,7 +602,7 @@ export class Game {
     }
     this.sky.setFogFar(QUALITY[this.settings.quality].fogFar * this.fogScale * wx.look.fog * (1 - this.sand * 0.8));
     // Wipers sweep while it rains or snows
-    const wiping = wx.look.rain + wx.look.snow > 0.15 && this.phase === 'drive';
+    const wiping = wx.look.rain + wx.look.snow + (wx.look.hail ?? 0) > 0.15 && this.phase === 'drive';
     if (wiping || Math.sin(this.wipePhase) > -0.99) this.wipePhase += dt * (wx.kind === 'storm' ? 5.5 : 3.5);
     if (!wiping && Math.sin(this.wipePhase) < -0.98) this.wipePhase = -Math.PI / 2;
     this.car.wipe(this.wipePhase);
@@ -616,7 +631,7 @@ export class Game {
     this.engine.sealed = this.car.interior.visible && !this.windowsOpen;
     this.engine.surface = v.gravel ? 'gravel' : v.offroad ? 'grass' : 'road';
     this.engine.wet = this.weather.look.wet;
-    this.engine.roofRain = this.weather.look.rain * (this.world.tunnelAt(v.z) > 0.45 ? 0 : 1);
+    this.engine.roofRain = Math.min(1, this.weather.look.rain + (this.weather.look.hail ?? 0) * 1.2) * (this.world.tunnelAt(v.z) > 0.45 ? 0 : 1);
     // A whoosh when another vehicle goes by close
     if (this.phase === 'drive') {
       for (const o of this.traffic.moving()) {
@@ -673,8 +688,8 @@ export class Game {
     const night = this.sky.night;
     for (const { biome, w: k } of w.weights(v.z)) {
       const id = biome.id;
-      if (id === 'seaside' || id === 'lakes') m.waves += k * (id === 'lakes' ? 0.4 : 1);
-      if (['forest', 'hills', 'autumn', 'rainforest', 'lakes', 'flatlands', 'blossom'].includes(id)) m.birds += k * (1 - night) * (id === 'rainforest' ? 1 : 0.6);
+      if (id === 'seaside' || id === 'lakes' || id === 'tropical') m.waves += k * (id === 'lakes' ? 0.4 : 1);
+      if (['forest', 'hills', 'autumn', 'rainforest', 'lakes', 'flatlands', 'blossom', 'vineyard', 'tropical'].includes(id)) m.birds += k * (1 - night) * (id === 'rainforest' ? 1 : 0.6);
       if (id === 'rainforest') m.insects += k;
       if (['alpine', 'winter', 'canyon', 'desert'].includes(id)) m.wind += k;
       if (id === 'city') m.city += k;

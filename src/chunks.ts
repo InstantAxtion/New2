@@ -3,14 +3,16 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { World, ROAD_HALF, FLAT } from './world/world';
 import type { PropSpec, PropType } from './world/biomes';
 import { rng } from './world/noise';
-import { propGeometry } from './props';
+import { litGeometry, propGeometry } from './props';
 import { addPuddles, foliageMaterial, grassMaterial, propMaterial, shared, terrainMaterial, type Tier } from './materials';
 import { foliageParts, type FoliageMat } from './foliage';
-import { specialMaterial, specialParts, type SpecialMat } from './special';
+import { nightGlow, specialMaterial, specialParts, type SpecialMat } from './special';
 import type { BiomeId } from './world/biomes';
-import { glowTexture, gravelTexture, highwayTexture, roadTexture } from './textures';
+import { vineField } from './world/biomes';
+import { cobbleTexture, glowTexture, gravelTexture, highwayTexture, roadTexture } from './textures';
 import { assets } from './assets';
 import { buildStop } from './stops';
+import { buildLandmark } from './landmarks';
 import { buildSigns } from './signs';
 
 export const CHUNK = 64;
@@ -83,6 +85,9 @@ export class Chunk {
   }
 }
 
+/** How far to keep scenery away from a landmark. */
+const lmClear = (lm: { kind: string } | null) => (!lm ? 0 : lm.kind === 'castle' ? 45 : 35);
+
 export class ChunkManager {
   readonly root = new THREE.Group();
   private chunks = new Map<number, Chunk>();
@@ -99,7 +104,11 @@ export class ChunkManager {
   private gravelTex = gravelTexture();
   private highwayMat!: THREE.Material;
   private gravelMat!: THREE.Material;
+  private cobbleMat!: THREE.Material;
+  private cobbleTex = cobbleTexture();
   private cols: number[];
+  /** The whole world in one season (or 'regions' for each region's own look). */
+  season: 'regions' | 'spring' | 'summer' | 'autumn' | 'winter' = 'regions';
   /** Speed signs show mph or km/h. */
   units: 'mph' | 'kmh' = 'mph';
 
@@ -134,11 +143,46 @@ export class ChunkManager {
     (this.highwayMat as THREE.MeshStandardMaterial).map = this.highwayTex;
     const gm = { map: this.gravelTex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
     this.gravelMat = tier === 'pbr' ? new THREE.MeshStandardMaterial({ ...gm, roughness: 0.95 }) : new THREE.MeshLambertMaterial(gm);
+    const cm = { map: this.cobbleTex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+    this.cobbleMat = tier === 'pbr' ? new THREE.MeshStandardMaterial({ ...cm, roughness: 0.8 }) : new THREE.MeshLambertMaterial(cm);
     if (tier === 'pbr') {
+      addPuddles(this.cobbleMat as THREE.MeshStandardMaterial);
       addPuddles(this.roadMat as THREE.MeshStandardMaterial);
       addPuddles(this.highwayMat as THREE.MeshStandardMaterial);
       addPuddles(this.gravelMat as THREE.MeshStandardMaterial, true);
     }
+  }
+
+  /** Windows glowing warm at night (instance colour = which rooms are lit). */
+  private litMat = (() => {
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, color: 0x1a1d22, roughness: 0.3, emissive: 0xffffff, emissiveIntensity: 0 });
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vColor.rgb;');
+    };
+    nightGlow.push({ m, day: 0, night: 1.5 });
+    return m;
+  })();
+  private gateMat = new THREE.MeshStandardMaterial({ color: 0xb3a487, roughness: 0.9 });
+  private bridgeSteel = new THREE.MeshStandardMaterial({ color: 0xb5452f, roughness: 0.5, metalness: 0.4 });
+  private bridgeLights = (() => {
+    const m = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xfff0c8, emissiveIntensity: 0 });
+    nightGlow.push({ m, day: 0, night: 5 });
+    return m;
+  })();
+  private spans = new Map<number, { start: number; end: number; len: number } | null>();
+
+  /** The whole bridge that z is on (its start, end and length), if any. */
+  private bridgeSpan(z: number) {
+    const w = this.world;
+    if (w.bridge(z) < 0.3) return null;
+    let a = z, b = z;
+    while (a > z - 2000 && w.bridge(a - 8) >= 0.3) a -= 8;
+    const key = Math.round(a / 8);
+    if (this.spans.has(key)) return this.spans.get(key)!;
+    while (b < z + 2000 && w.bridge(b + 8) >= 0.3) b += 8;
+    const span = { start: a, end: b, len: b - a };
+    this.spans.set(key, span);
+    return span;
   }
 
   /** Street lights mirrored in the wet road at night. */
@@ -154,7 +198,7 @@ export class ChunkManager {
   /** Rain makes the road dark and shiny. */
   setWet(wet: number) {
     shared.wet.value = wet;
-    for (const mat of [this.roadMat, this.highwayMat]) {
+    for (const mat of [this.roadMat, this.highwayMat, this.cobbleMat]) {
       const m = mat as THREE.MeshStandardMaterial;
       if (!m?.isMeshStandardMaterial) continue;
       m.roughness = 0.78 - wet * 0.62;
@@ -165,6 +209,7 @@ export class ChunkManager {
 
   setWorld(world: World) {
     this.world = world;
+    this.spans.clear();
     this.clear();
   }
 
@@ -233,6 +278,12 @@ export class ChunkManager {
     const w = this.world, z0 = i * CHUNK;
     for (const st of w.stops(z0, z0 + CHUNK)) {
       c.group.add(buildStop(st, w.roadX(st.z), w.roadY(st.z), w.roadHalf(st.z), w.tangent(st.z), c.group.position));
+    }
+    for (const lm of w.landmarks(z0, z0 + CHUNK)) {
+      const [tx, tz] = w.tangent(lm.z);
+      const x = w.roadX(lm.z) - tz * lm.u, zz = lm.z + tx * lm.u;
+      const y = lm.kind === 'waterfall' ? Math.min(w.height(x, zz), w.roadY(lm.z) + 6) : w.height(x, zz) - 0.5;
+      c.group.add(buildLandmark(lm, x, y, zz, [tx, tz], c.group.position));
     }
     const signs = buildSigns(w, z0, z0 + CHUNK, c.group.position, this.units);
     if (signs) c.group.add(signs);
@@ -399,7 +450,7 @@ export class ChunkManager {
     g.computeVertexNormals();
     g.computeBoundingSphere();
     const zc = z0 + CHUNK / 2;
-    const mat = w.gravelAt(zc) > 0.5 ? this.gravelMat : w.highwayAt(zc) > 0.5 ? this.highwayMat : this.roadMat;
+    const mat = w.oldTownAt(zc) > 0.5 ? this.cobbleMat : w.gravelAt(zc) > 0.5 ? this.gravelMat : w.highwayAt(zc) > 0.5 ? this.highwayMat : this.roadMat;
     const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true;
     return m;
@@ -452,6 +503,63 @@ export class ChunkManager {
       const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x9b9a96, roughness: 0.85, side: THREE.DoubleSide }));
       m.castShadow = m.receiveShadow = true;
       g.add(m);
+      // Long crossings become a great suspension bridge: two towers, sweeping main cables
+      // and hangers, lit up at night
+      const span = this.bridgeSpan(z0 + CHUNK / 2);
+      if (span && span.len > 280) {
+        const steel: THREE.BufferGeometry[] = [];
+        const lamps: THREE.BufferGeometry[] = [];
+        const t1 = span.start + span.len * 0.22, t2 = span.end - span.len * 0.22;
+        const deck = (z: number) => w.roadY(Math.min(Math.max(z, span.start), span.end));
+        const TOP = 62;
+        const cableY = (z: number) => {
+          if (z <= t1) return deck(z) + 1.5 + (TOP - 1.5) * Math.max(0, (z - span.start) / (t1 - span.start)) ** 1.3;
+          if (z >= t2) return deck(z) + 1.5 + (TOP - 1.5) * Math.max(0, (span.end - z) / (span.end - t2)) ** 1.3;
+          const m = (z - t1) / (t2 - t1);
+          return deck(z) + 4 + (TOP - 4) * (2 * m - 1) ** 2;
+        };
+        const E2 = ROAD_HALF + 1.3;
+        for (const tz0 of [t1, t2]) {
+          if (tz0 < z0 || tz0 >= z0 + CHUNK) continue;
+          const yb = deck(tz0);
+          for (const sd of [-1, 1]) {
+            const p = at(tz0, sd * E2, yb - 30);
+            steel.push(new THREE.BoxGeometry(1.8, TOP + 34, 2.4).translate(p.x, yb - 30 + (TOP + 34) / 2, p.z));
+          }
+          for (const hy of [TOP - 2, TOP * 0.55, -1.5]) {
+            const p = at(tz0, 0, yb + hy);
+            const [tx, tz] = w.tangent(tz0);
+            steel.push(new THREE.BoxGeometry(E2 * 2 + 1.8, 1.6, 1.6).rotateY(Math.atan2(tx, tz)).translate(p.x, p.y, p.z));
+          }
+          for (const sd of [-1, 1]) {
+            const p = at(tz0, sd * E2, yb + TOP + 4.5);
+            lamps.push(new THREE.SphereGeometry(0.5, 8, 6).translate(p.x, p.y, p.z));
+          }
+        }
+        for (let z = Math.max(z0, span.start); z < Math.min(z0 + CHUNK, span.end); z += 2) {
+          for (const sd of [-1, 1]) {
+            const a = at(z, sd * E2, cableY(z)), b = at(z + 2, sd * E2, cableY(z + 2));
+            const len = a.distanceTo(b);
+            const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+            const cg = new THREE.CylinderGeometry(0.35, 0.35, len, 6).applyQuaternion(q).translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+            steel.push(cg);
+            if (Math.round(z) % 8 === 0) {
+              const hgt = cableY(z) - deck(z) - 1;
+              if (hgt > 1.5) {
+                const p = at(z, sd * E2, deck(z) + 1 + hgt / 2);
+                steel.push(new THREE.BoxGeometry(0.12, hgt, 0.12).translate(p.x, p.y, p.z));
+              }
+            }
+            if (Math.round(z) % 16 === 0) lamps.push(new THREE.SphereGeometry(0.28, 6, 4).translate(a.x, a.y + 0.4, a.z));
+          }
+        }
+        if (steel.length) {
+          const sm = new THREE.Mesh(mergeGeometries(steel.map((x) => x.toNonIndexed()))!, this.bridgeSteel);
+          sm.castShadow = true;
+          g.add(sm);
+        }
+        if (lamps.length) g.add(new THREE.Mesh(mergeGeometries(lamps.map((x) => x.toNonIndexed()))!, this.bridgeLights));
+      }
       // Piers down to the water or the floor of the gorge
       const piers: THREE.BufferGeometry[] = [];
       for (let z = Math.ceil(z0 / 30) * 30; z < z0 + CHUNK; z += 30) {
@@ -557,6 +665,43 @@ export class ChunkManager {
       }
     }
     if (stripes.length) g.add(new THREE.Mesh(mergeGeometries(stripes)!, this.stripeMat));
+    // Old towns: a stone gatehouse over the road at each end
+    const gates: THREE.BufferGeometry[] = [];
+    for (const c of w.towns(z0 - 300, z0 + CHUNK + 300)) {
+      if (!w.oldTown(c)) continue;
+      for (const gz of [c - 236, c + 236]) {
+        if (gz < z0 || gz >= z0 + CHUNK) continue;
+        const [tx, tz] = w.tangent(gz);
+        const yaw = Math.atan2(tx, tz);
+        const y = w.roadY(gz);
+        const half = w.roadHalf(gz) + 1.6;
+        const add = (geo: THREE.BufferGeometry, u: number, h: number) => {
+          const p = at(gz, u, y + h);
+          gates.push(geo.rotateY(yaw).translate(p.x, p.y, p.z).toNonIndexed());
+        };
+        for (const sd of [-1, 1]) {
+          add(new THREE.BoxGeometry(4, 13, 5), sd * (half + 2), 6.5);
+          for (let k = -1; k <= 1; k++) add(new THREE.BoxGeometry(0.9, 1.2, 0.9), sd * (half + 2) + k * 1.4, 13.6);
+        }
+        add(new THREE.BoxGeometry(half * 2, 4, 5), 0, 9.5);
+        // The arch itself: a curved underside
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI, a2 = ((k + 1) / 8) * Math.PI;
+          const xa = Math.cos(a) * half, xb = Math.cos(a2) * half;
+          const ya = 6 + Math.sin(a) * 1.6, yb = 6 + Math.sin(a2) * 1.6;
+          const wdt = Math.abs(xa - xb) + 0.05;
+          const top = 7.6;
+          const hgt = top - Math.min(ya, yb);
+          add(new THREE.BoxGeometry(wdt, hgt, 5), (xa + xb) / 2, Math.min(ya, yb) + hgt / 2);
+        }
+        for (let k = -4; k <= 4; k++) add(new THREE.BoxGeometry(0.9, 1.1, 0.9), (k / 4) * (half - 0.5), 12.05);
+      }
+    }
+    if (gates.length) {
+      const gm = new THREE.Mesh(mergeGeometries(gates)!, this.gateMat);
+      gm.castShadow = gm.receiveShadow = true;
+      g.add(gm);
+    }
     // Reflections of the street lamps (only seen on a wet night)
     const glows: THREE.BufferGeometry[] = [];
     for (let z = Math.ceil(z0 / 28) * 28; z < z0 + CHUNK; z += 28) {
@@ -582,7 +727,19 @@ export class ChunkManager {
     const up = new THREE.Vector3(0, 1, 0);
     const reach = this.quality.reach * 0.75;
 
-    const put = (type: PropType, x: number, y: number, z: number, s: number, rot: number) => {
+    const lit: { type: PropType; m: THREE.Matrix4; on: number }[] = [];
+    const season = this.season;
+    const put = (type0: PropType, x: number, y: number, z: number, s: number, rot: number) => {
+      // Trees change with the season
+      let type = type0;
+      if (season === 'autumn' && (type === 'tree' || type === 'cherry' || type === 'jungleTree')) type = 'treeAutumn';
+      else if (season === 'winter') {
+        if (type === 'tree' || type === 'treeAutumn' || type === 'cherry') type = 'deadTree';
+        else if (type === 'pine' || type === 'cypress') type = 'pineSnow';
+        else if (type === 'flowers' || type === 'lavender') return;
+      } else if (season === 'spring' && type === 'tree' && r() < 0.35) type = 'cherry';
+      else if (season === 'summer' && type === 'treeAutumn') type = 'tree';
+      else if ((season === 'summer' || season === 'spring') && type === 'pineSnow') type = 'pine';
       q.setFromAxisAngle(up, rot);
       m4.compose(new THREE.Vector3(x - ox, y, z - z0), q, new THREE.Vector3(s, s, s));
       if (!items.has(type)) { items.set(type, []); tints.set(type, []); }
@@ -654,6 +811,8 @@ export class ChunkManager {
           // Keep clear of highways and of the hill over a tunnel
           if (Math.abs(u) < w.roadHalf(z) + 5) continue;
           if (w.tunnelAt(z) > 0.05 && Math.abs(u) < 70) continue;
+          const lm = w.landmarkNear(z, 45);
+          if (lm && Math.abs(u - lm.u) < lmClear(lm)) continue;
           const st = w.stopNear(z, 12);
           if (st && u * st.side > 0 && Math.abs(u) < w.roadHalf(z) + st.depth + (st.kind === 'harbour' ? 60 : 16)) continue;
           const [, tz] = w.tangent(z);
@@ -662,12 +821,52 @@ export class ChunkManager {
           const [hmin, hmax] = spec.h ?? [0.6, Infinity];
           if (h < hmin || h > hmax) continue;
           const s = spec.scale[0] + (spec.scale[1] - spec.scale[0]) * r();
-          put(spec.type, x, spec.float ? 0 : h - 0.15, z, s, r() * Math.PI * 2);
+          const rot = r() * Math.PI * 2;
+          put(spec.type, x, spec.float ? 0 : h - 0.15, z, s, rot);
+          // Old towns are built of warm stone
+          if (isTown && w.oldTownAt(z) > 0.5) tints.get(spec.type)![tints.get(spec.type)!.length - 1].setRGB(0.86, 0.76, 0.6);
+          // Windows that light up at night
+          if (spec.type === 'house' || spec.type === 'shop' || spec.type === 'cabin' || spec.type === 'farmhouse') lit.push({ type: spec.type, m: m4.clone(), on: r() });
+        }
+      }
+    }
+
+    // Vineyard country: vines and lavender in long straight rows beside the road
+    const vineW = Math.max(0, ...regions.filter((x) => x.biome.id === 'vineyard').map((x) => x.w));
+    if (vineW > 0.05 && w.urban(z0 + CHUNK / 2) < 0.1) {
+      for (const side of [-1, 1]) {
+        for (let k = 0; k < Math.round(10 * Math.min(1.4, this.quality.props)); k++) {
+          for (let z = Math.ceil(z0 / 2.4) * 2.4; z < z0 + CHUNK; z += 2.4) {
+            const u = side * (w.roadHalf(z) + 11 + k * 3.2);
+            if (r() > vineW) continue;
+            const [tx, tz] = w.tangent(z);
+            const x = w.roadX(z) - tz * u, zz = z + tx * u;
+            const f = vineField(x, zz, w.seed);
+            if (f !== 1 && f !== 2) continue;
+            const st = w.stopNear(z, 12);
+            if (st && u * st.side > 0 && Math.abs(u) < w.roadHalf(z) + st.depth + 16) continue;
+            const h = w.height(x, zz);
+            if (h < 0.6) continue;
+            put(f === 1 ? 'vines' : 'lavender', x, h - 0.05, zz, 1, Math.atan2(tx, tz));
+          }
         }
       }
     }
 
     const out: THREE.InstancedMesh[] = [];
+    // Lit windows: one instanced mesh per building type, some rooms lit and some dark
+    for (const type of ['house', 'shop', 'cabin', 'farmhouse'] as PropType[]) {
+      const these = lit.filter((l) => l.type === type);
+      if (!these.length) continue;
+      const im = new THREE.InstancedMesh(litGeometry(type), this.litMat, these.length);
+      const warm = new THREE.Color();
+      these.forEach((l, j) => {
+        im.setMatrixAt(j, l.m);
+        im.setColorAt(j, l.on < 0.75 ? warm.setRGB(1, 0.78 + l.on * 0.2, 0.45 + l.on * 0.3) : warm.setRGB(0.05, 0.05, 0.06));
+      });
+      im.computeBoundingSphere();
+      out.push(im);
+    }
     for (const [type, mats] of items) {
       // Good graphics: real trees made of bark and leaf cards
       const parts = this.quality.tier === 'pbr' ? (foliageParts(type) ?? specialParts(type)) : null;

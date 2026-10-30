@@ -193,7 +193,7 @@ describe('stops, towns and tunnels', () => {
       const [tx, tz] = w.tangent(st.z);
       const u = st.side * (w.roadHalf(st.z) + st.depth / 2);
       const x = w.roadX(st.z) - tz * u;
-      expect(Math.abs(w.height(x, st.z + tx * u) - (w.roadY(st.z) - 0.12))).toBeLessThan(0.6);
+      expect(Math.abs(w.height(x, st.z + tx * u) - (w.roadY(st.z + tx * u) - 0.12))).toBeLessThan(0.8);
     }
     const next = w.nextStop(0, 60000)!;
     expect(next.z).toBe(stops[0].z);

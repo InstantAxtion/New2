@@ -8,7 +8,15 @@ export type Tier = 'basic' | 'pbr';
 
 /** Shared, animated shader inputs. */
 /** Uniforms shared by every material: time, snow cover, and wind strength (1 = a breeze). */
-export const shared = { time: { value: 0 }, snow: { value: 0 }, wind: { value: 1 }, wet: { value: 0 } };
+export const shared = { time: { value: 0 }, snow: { value: 0 }, wind: { value: 1 }, wet: { value: 0 }, season: { value: new THREE.Color(1, 1, 1) } };
+
+/** Tint ground and leaves for the chosen season (spring fresh, summer dry, autumn golden). */
+function seasonal(sh: THREE.WebGLProgramParametersWithUniforms) {
+  sh.uniforms.uSeason = shared.season;
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform vec3 uSeason;')
+    .replace('#include <tonemapping_fragment>', 'gl_FragColor.rgb *= uSeason;\n#include <tonemapping_fragment>');
+}
 
 const SWAY_VERT = /* glsl */ `
 #ifdef USE_INSTANCING
@@ -32,6 +40,7 @@ function splatMaterial(): THREE.Material {
     const names = ['tGrass', 'tDry', 'tLeaves', 'tSand', 'tRock', 'tSnow'];
     names.forEach((n, i) => (sh.uniforms[n] = { value: assets.ground[i] }));
     sh.uniforms.avg = { value: assets.groundAvg };
+    seasonal(sh);
     sh.uniforms.detailMap = { value: detailTexture() };
     sh.uniforms.uSnow = shared.snow;
     sh.vertexShader = sh.vertexShader
@@ -104,6 +113,7 @@ export function terrainMaterial(tier: Tier): THREE.Material {
       ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 })
       : new THREE.MeshLambertMaterial({ vertexColors: true });
   m.onBeforeCompile = (sh) => {
+    seasonal(sh);
     sh.uniforms.detailMap = { value: detailTexture() };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
@@ -156,6 +166,7 @@ export function grassMaterial(tier: Tier): THREE.Material {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = shared.time;
     sh.uniforms.uWind = shared.wind;
+    seasonal(sh);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWind;')
       .replace(
@@ -211,10 +222,12 @@ export function foliageMaterial(kind: FoliageMat): THREE.Material {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = shared.time;
     sh.uniforms.uWind = shared.wind;
+    if (kind !== 'bark' && kind !== 'palmBark') seasonal(sh);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float sway;\nuniform float uTime;\nuniform float uWind;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SWAY_VERT);
   };
+  m.customProgramCacheKey = () => (kind === 'bark' || kind === 'palmBark' ? 'foliage-bark' : 'foliage-leaf');
   return m;
 }
 

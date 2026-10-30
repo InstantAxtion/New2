@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { rng } from './world/noise';
 
-export type WeatherKind = 'clear' | 'rain' | 'snow' | 'storm' | 'fog';
+export type WeatherKind = 'clear' | 'rain' | 'snow' | 'storm' | 'fog' | 'hail' | 'sleet';
 
 /** What a kind of weather does to the world. */
 export interface WeatherLook {
@@ -14,6 +14,8 @@ export interface WeatherLook {
   /** Visibility, relative to normal. */
   fog: number;
   lightning: boolean;
+  /** Hailstones (0..1): fast, small and bouncing. */
+  hail?: number;
 }
 
 export const LOOKS: Record<WeatherKind, WeatherLook> = {
@@ -22,6 +24,8 @@ export const LOOKS: Record<WeatherKind, WeatherLook> = {
   storm: { cover: 1, rain: 1, snow: 0, wet: 1, fog: 0.5, lightning: true },
   snow: { cover: 0.7, rain: 0, snow: 1, wet: 0.2, fog: 0.55, lightning: false },
   fog: { cover: 0.55, rain: 0, snow: 0, wet: 0.3, fog: 0.28, lightning: false },
+  hail: { cover: 0.9, rain: 0.25, snow: 0, wet: 0.8, fog: 0.65, lightning: false, hail: 1 },
+  sleet: { cover: 0.8, rain: 0.45, snow: 0.55, wet: 0.9, fog: 0.6, lightning: false, hail: 0 },
 };
 
 const BOX = 46; // size of the particle box around the camera
@@ -54,27 +58,30 @@ const snowVert = /* glsl */ `
 uniform float uTime;
 uniform vec3 uCam;
 uniform float uAmount;
+uniform float uFall;
+uniform float uSize;
 varying float vAlpha;
 void main() {
   vec3 p = position;
-  float fall = mod(p.y - uTime * 1.6, ${BOX.toFixed(1)});
+  float fall = mod(p.y - uTime * uFall, ${BOX.toFixed(1)});
   vec3 w = vec3(mod(p.x - uCam.x + sin(uTime * 0.7 + p.y) * 0.8, ${BOX.toFixed(1)}) - ${(BOX / 2).toFixed(1)},
                 fall - ${(BOX / 2).toFixed(1)} + 8.0,
                 mod(p.z - uCam.z + cos(uTime * 0.6 + p.x) * 0.8, ${BOX.toFixed(1)}) - ${(BOX / 2).toFixed(1)});
   w += uCam;
   vec4 mv = viewMatrix * vec4(w, 1.0);
   vAlpha = step(fract(position.x * 7.13 + position.z * 3.7), uAmount);
-  gl_PointSize = clamp(90.0 / -mv.z, 1.5, 9.0);
+  gl_PointSize = clamp(uSize / -mv.z, 1.5, 9.0);
   gl_Position = projectionMatrix * mv;
 }`;
 
 const snowFrag = /* glsl */ `
+uniform vec3 uTint;
 varying float vAlpha;
 void main() {
   vec2 c = gl_PointCoord - 0.5;
   float a = smoothstep(0.5, 0.15, length(c)) * vAlpha * 0.9;
   if (a < 0.02) discard;
-  gl_FragColor = vec4(vec3(1.0), a);
+  gl_FragColor = vec4(uTint, a);
 }`;
 
 export class Weather {
@@ -92,7 +99,7 @@ export class Weather {
   private rain: THREE.LineSegments;
   private snow: THREE.Points;
   private uniforms = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uAmount: { value: 0 }, uColor: { value: new THREE.Color(0xc4ccd6) } };
-  private snowUniforms = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uAmount: { value: 0 } };
+  private snowUniforms = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uAmount: { value: 0 }, uFall: { value: 1.6 }, uSize: { value: 90 }, uTint: { value: new THREE.Color(1, 1, 1) } };
   private nextFlash = 8;
   private flashT = 0;
 
@@ -128,17 +135,26 @@ export class Weather {
     const target = LOOKS[this.kind];
     const k = 1 - Math.exp(-dt * 0.4);
     for (const key of ['cover', 'rain', 'snow', 'wet', 'fog'] as const) this.look[key] += (target[key] - this.look[key]) * k;
+    this.look.hail = (this.look.hail ?? 0) + ((target.hail ?? 0) - (this.look.hail ?? 0)) * k;
     this.look.lightning = target.lightning;
-    this.snowCover += ((target.snow > 0 ? 1 : 0) - this.snowCover) * (1 - Math.exp(-dt * (target.snow > 0 ? 0.03 : 0.08)));
+    const settles = target.snow > 0 && this.kind === 'snow';
+    this.snowCover += ((settles ? 1 : 0) - this.snowCover) * (1 - Math.exp(-dt * (settles ? 0.03 : 0.08)));
 
     this.uniforms.uTime.value = time;
     this.uniforms.uCam.value.copy(cam);
     this.uniforms.uAmount.value = this.look.rain;
     this.snowUniforms.uTime.value = time;
     this.snowUniforms.uCam.value.copy(cam);
-    this.snowUniforms.uAmount.value = this.look.snow;
+    // The snow particles also do hail (small, fast, white) and sleet (wet, grey, quicker)
+    const hail = this.look.hail ?? 0;
+    const sleet = this.kind === 'sleet' ? 1 : 0;
+    const su = this.snowUniforms;
+    su.uAmount.value = Math.max(this.look.snow, hail);
+    su.uFall.value = hail > 0.3 ? 16 : sleet ? 5 : 1.6;
+    su.uSize.value = hail > 0.3 ? 50 : sleet ? 100 : 90;
+    su.uTint.value.setRGB(sleet ? 0.82 : 1, sleet ? 0.85 : 1, sleet ? 0.88 : 1);
     this.rain.visible = this.look.rain > 0.02;
-    this.snow.visible = this.look.snow > 0.02;
+    this.snow.visible = this.look.snow > 0.02 || hail > 0.02;
 
     // Lightning: a double flicker, thunder a few seconds later
     this.flash = 0;

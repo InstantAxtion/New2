@@ -400,6 +400,14 @@ export function foliageParts(type: PropType): Part[] | null {
       parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leafBlossom' }];
       break;
     }
+    case 'cypress': {
+      // Tall, slim and dark: an Italian cypress
+      const t = conifer(16);
+      t.wood.scale(0.6, 1.25, 0.6);
+      t.leaves.scale(0.42, 1.3, 0.42);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'needle' }];
+      break;
+    }
     case 'pine': {
       const t = conifer(9);
       parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'needle' }];
