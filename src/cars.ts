@@ -53,6 +53,8 @@ export class CarModel {
   private softTop: THREE.Object3D | null = null;
   private sunroof: THREE.Object3D | null = null;
   private night = false;
+  /** Side mirror glass (left, right) for the working mirrors. */
+  readonly mirrorGlass: THREE.Mesh[] = [];
 
   constructor(public spec: CarSpec, custom: Partial<Custom> = {}, tier: Tier = 'pbr') {
     const pbr = (this.pbr = tier === 'pbr');
@@ -102,10 +104,11 @@ export class CarModel {
       const mx = s.open ? s.A - 0.1 : s.A - 0.15;
       const mirror = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10).scale(0.55, 0.62, 0.85), this.paint);
       mirror.position.set(side * (P.half(mx) + 0.1), P.belt(mx) + 0.1, mx);
-      const mg = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16).scale(0.95, 1.05, 1), new THREE.MeshBasicMaterial({ color: 0x8c96a3 }));
-      mg.position.set(0, 0, -0.072);
+      const mg = new THREE.Mesh(new THREE.CircleGeometry(0.05, 20).scale(1.25, 0.95, 1), new THREE.MeshBasicMaterial({ color: 0x8c96a3 }));
+      mg.position.set(0, 0, -0.074);
       mg.rotation.y = Math.PI;
       mirror.add(mg);
+      this.mirrorGlass.push(mg);
       b.add(mirror);
     }
 

@@ -22,7 +22,7 @@ export interface Settings {
   traffic: boolean;
   cruiseKmh: number;
   /** What the music panel plays. */
-  musicMode: 'spotify' | 'videos';
+  musicMode: 'spotify' | 'videos' | 'radio';
   /** The player's own YouTube Data API key (for finding music videos). */
   youtubeKey: string;
   prefer: 'video' | 'lyrics';

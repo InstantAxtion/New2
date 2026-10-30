@@ -10,6 +10,9 @@ import { Traffic } from './traffic';
 import { Pedestrians } from './peds';
 import { nightGlow } from './special';
 import { Weather } from './weather';
+import type { AmbientMix } from './audio';
+import { drawNav } from './map';
+import { TripStats } from './stats';
 import { EngineSound } from './audio';
 import { shared, waterMaterial, type Tier } from './materials';
 import type { MusicVideos } from './music';
@@ -34,6 +37,8 @@ export class Game {
   readonly traffic: Traffic;
   readonly peds: Pedestrians;
   readonly weather: Weather;
+  readonly stats = new TripStats();
+  private lastOdo = 0;
   private wipePhase = 0;
   /** How much of the night the current place forces (the neon city). */
   private nightLock = 0;
@@ -56,6 +61,10 @@ export class Game {
   videos: MusicVideos | null = null;
   private screenTimer = 0;
   private lastPlace = '';
+  /** Working mirrors: small cameras that render the road behind. */
+  private mirrorCam = new THREE.PerspectiveCamera(24, 3.6, 0.3, 500);
+  private mirrorRT: THREE.WebGLRenderTarget[] = [];
+  private mirrorTick = 0;
   /** Where the corner video goes (below the top-left HUD), set by the UI. */
   pipY = 124;
   /** Auto-drive overtaking: cruising in lane, or out passing someone. */
@@ -192,8 +201,10 @@ export class Game {
       this.car.dispose();
     }
     this.car = new CarModel(spec, custom, this.tier);
+    this.engine.setProfile(spec.engine);
     this.scene.add(this.car.group);
     this.rig.car = this.car;
+    this.car.setOpenings(this.windowsOpen, this.sunroofOpen, this.roofUp);
     const old = this.vehicle;
     this.vehicle = new Vehicle(this.world, spec);
     if (old) {
@@ -327,6 +338,11 @@ export class Game {
 
     if (this.phase === 'drive') this.traffic.update(dt, v, night, (z) => this.speedLimit(z));
     this.peds.update(v.z, this.elapsed);
+    if (this.phase === 'drive') {
+      const moved = v.odometer - this.lastOdo;
+      if (this.region) this.stats.add(dt, moved, Math.abs(v.v), this.region.id, v.spec.id);
+    }
+    this.lastOdo = v.odometer;
 
     if (this.phase === 'garage') this.rig.orbit(v, dt, this.elapsed);
     else {
@@ -393,18 +409,55 @@ export class Game {
       this.updateEnvironment();
     }
 
-    this.engine.update(v.v, this.applied.throttle, v.vmax, this.phase === 'drive');
+    this.engine.sealed = this.car.interior.visible && !this.windowsOpen;
+    this.engine.update(v.v, this.applied.throttle, v.vmax, this.phase === 'drive', dt, this.ambientMix());
 
     // Drop quality automatically if the phone is struggling
     if (this.phase === 'drive' && this.fps < 24) this.lowFpsTime += dt;
     else this.lowFpsTime = 0;
 
+    this.renderMirrors();
     if (this.composer) this.composer.render(dt);
     else this.renderer.render(this.scene, this.camera);
     this.placeVideo();
     this.updateCarScreen(dt);
     requestAnimationFrame(this.frame);
   };
+
+  /** Windows down (and sunroof / soft top), set from the cabin buttons. */
+  /** What's playing (shown on the car's screen). */
+  nowPlaying = '';
+  windowsOpen = false;
+  sunroofOpen = false;
+  roofUp = false;
+
+  setOpenings(windows: boolean, sunroof: boolean, roofUp: boolean) {
+    this.windowsOpen = windows;
+    this.sunroofOpen = sunroof;
+    this.roofUp = roofUp;
+    this.car.setOpenings(windows, sunroof, roofUp);
+  }
+
+  /** What you'd hear here: waves by the sea, birds in the woods, the hum of the city… */
+  private ambientMix(): AmbientMix {
+    const v = this.vehicle;
+    const w = this.world;
+    const m: AmbientMix = { waves: 0, birds: 0, insects: 0, wind: 0, city: 0, crickets: 0, rain: 0 };
+    const night = this.sky.night;
+    for (const { biome, w: k } of w.weights(v.z)) {
+      const id = biome.id;
+      if (id === 'seaside' || id === 'lakes') m.waves += k * (id === 'lakes' ? 0.4 : 1);
+      if (['forest', 'hills', 'autumn', 'rainforest', 'lakes', 'flatlands'].includes(id)) m.birds += k * (1 - night) * (id === 'rainforest' ? 1 : 0.6);
+      if (id === 'rainforest') m.insects += k;
+      if (['alpine', 'winter', 'canyon', 'desert'].includes(id)) m.wind += k;
+      if (id === 'city') m.city += k;
+      if (['hills', 'flatlands', 'autumn', 'seaside'].includes(id)) m.crickets += k * night;
+    }
+    m.city = Math.max(m.city, w.townAt(v.z) * 0.5);
+    m.rain = this.weather.look.rain;
+    m.wind = Math.max(m.wind * 0.6, this.weather.look.cover * 0.5);
+    return m;
+  }
 
   /** Speed limit at z (towns), m/s. */
   speedLimit(z: number): number {
@@ -466,6 +519,61 @@ export class Game {
     return w.stopFor ? w.stopFor(v.z, Math.cos(v.heading) >= 0 ? 1 : -1, this.elapsed) : null;
   }
 
+  /** Render what the rear-view and side mirrors see (only from the driver's seat). */
+  private renderMirrors() {
+    const car = this.car;
+    if (!car.interior.visible || this.settings.quality === 'low') return;
+    if (!this.mirrorRT.length) {
+      this.mirrorRT = [new THREE.WebGLRenderTarget(320, 88), new THREE.WebGLRenderTarget(160, 120), new THREE.WebGLRenderTarget(160, 120)];
+      for (const rt of this.mirrorRT) rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
+    }
+    const tex = (i: number) => {
+      const t = this.mirrorRT[i].texture;
+      // Mirrors show the world flipped left to right
+      t.repeat.set(-1, 1);
+      t.offset.set(1, 0);
+      return t;
+    };
+    const glass = [car.cockpit.mirrorRear, ...car.mirrorGlass];
+    glass.forEach((m, i) => {
+      if (!m) return;
+      const mat = m.material as THREE.MeshBasicMaterial;
+      if (mat.map !== this.mirrorRT[i].texture) {
+        mat.map = tex(i);
+        mat.color.setHex(0xffffff);
+        mat.needsUpdate = true;
+      }
+    });
+    this.mirrorTick++;
+    const r = this.renderer;
+    const auto = r.shadowMap.autoUpdate;
+    r.shadowMap.autoUpdate = false;
+    car.interior.visible = false;
+    const cam = this.mirrorCam;
+    const q = car.body.getWorldQuaternion(new THREE.Quaternion());
+    // Rear view every frame; the side mirrors take turns
+    const which = [0, this.mirrorTick % 2 === 0 ? 1 : 2];
+    for (const i of which) {
+      const m = glass[i];
+      if (!m) continue;
+      const pos = m.getWorldPosition(new THREE.Vector3());
+      cam.position.copy(pos);
+      cam.aspect = i === 0 ? 3.6 : 1.33;
+      cam.fov = i === 0 ? 22 : 30;
+      cam.updateProjectionMatrix();
+      // Look backwards (and a little outwards for the side mirrors)
+      const side = i === 0 ? 0 : i === 1 ? -1 : 1;
+      const dir = new THREE.Vector3(side * 0.25, -0.03, -1).applyQuaternion(q);
+      cam.up.set(0, 1, 0).applyQuaternion(q);
+      cam.lookAt(pos.clone().add(dir));
+      r.setRenderTarget(this.mirrorRT[i]);
+      r.render(this.scene, cam);
+    }
+    r.setRenderTarget(null);
+    car.interior.visible = true;
+    r.shadowMap.autoUpdate = auto;
+  }
+
   /** Lay the YouTube player over the dashboard screen (or in a corner). */
   private placeVideo() {
     const scr = this.videos?.screen;
@@ -507,9 +615,15 @@ export class Game {
     const sp = Math.round(Math.abs(this.vehicle.v) * 3.6 * (mph ? 0.621371 : 1));
     const h = this.hour;
     const clock = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+    void sp;
     const r = this.region ? `${this.region.name}` : '';
     const music = this.videos?.active ? 'Loading video…' : 'Tap 📺 to watch music videos here';
-    this.car.drawScreen(`${sp} ${mph ? 'mph' : 'km/h'}`, `${r} · ${clock}`, music);
+    if (this.videos?.active) this.car.drawScreen(`${sp} ${mph ? 'mph' : 'km/h'}`, `${r} · ${clock}`, music);
+    else {
+      const { ctx, tex } = this.car.screenCanvas;
+      drawNav(ctx, this.world, this.vehicle, mph, clock, this.nowPlaying || '🎵 Tap 📺 for music videos');
+      tex.needsUpdate = true;
+    }
     const v = this.vehicle;
     const within = (Math.abs(v.v) % (v.vmax / 5)) / (v.vmax / 5);
     this.car.drawCluster(sp, mph ? 'mph' : 'km/h', Math.abs(v.v) < 0.5 ? 0.12 : 0.25 + within * 0.65);

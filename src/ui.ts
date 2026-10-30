@@ -13,6 +13,8 @@ import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { MusicVideos } from './music';
 import { fetchSongs } from './tracks';
 import { parseYouTube } from './youtube';
+import { Radio, STATIONS } from './radio';
+
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const $$ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => [...root.querySelectorAll(sel)] as T[];
@@ -64,6 +66,7 @@ export class UI {
     this.bindHud();
     this.bindMusic();
     this.bindVideos();
+    this.bindRadio();
     this.bindSettings();
     this.applyOrientation();
     game.videos = this.videos;
@@ -98,6 +101,7 @@ export class UI {
     return `
 <section id="garage" class="screen">
   <header class="title"><h1>Endless Drive</h1><div class="top-btns">
+    <button class="icon" data-open="stats" aria-label="Trip stats">📊</button>
     <button class="icon" data-open="music" aria-label="Music">🎵</button>
     <button class="icon" data-open="settings" aria-label="Settings">⚙️</button></div></header>
   <div class="garage-body">
@@ -175,6 +179,10 @@ export class UI {
       <button class="pad small" id="faster" aria-label="Faster">+</button>
     </div>
   </div>
+  <div class="cabin-btns">
+    <button class="pad small" id="win-btn" aria-label="Windows">🪟<span>Windows</span></button>
+    <button class="pad small" id="roof-btn" aria-label="Sunroof">☀️<span id="roof-lbl">Sunroof</span></button>
+  </div>
   <div class="toast" id="toast"></div>
   <div class="sleep-cover" id="sleep-cover"><div><b>Good night 🌙</b><span>Pulled over and stopped. The music has faded out.</span>
     <button class="go small" id="wake">Keep driving</button></div></div>
@@ -185,6 +193,7 @@ export class UI {
     <h2>Paused</h2>
     <button class="go" id="resume">Keep driving ▶</button>
     <button class="ghost" id="to-garage">🚗 Garage &amp; world</button>
+    <button class="ghost" data-open="stats">📊 Trips</button>
     <h3>Time of day</h3>
     <div class="chips center">${timeChips}</div>
     <h3>Weather</h3>
@@ -206,6 +215,7 @@ export class UI {
   <div class="tabs">
     <button class="tab" data-mtab="spotify">🎧 Spotify player</button>
     <button class="tab" data-mtab="videos">📺 Music videos</button>
+    <button class="tab" data-mtab="radio">📻 Radio</button>
   </div>
   <div class="sheet-body">
     <div class="row"><input id="sp-input" type="url" inputmode="url" placeholder="Paste a Spotify or YouTube link" autocomplete="off" />
@@ -221,6 +231,12 @@ export class UI {
         <button class="ghost small" id="sp-app" disabled>Open in Spotify app ↗</button></div>
       <div id="sp-player"><p class="hint">In Spotify, open a playlist → ⋯ → Share → <b>Copy link</b>, then paste it here.</p></div>
       <p class="hint">Log in once and the player plays full songs (Spotify may limit free accounts to shuffle). Use your Spotify email and password, or "Log in without password" — Google and Facebook buttons don't work inside apps. You can also tap <b>Open in Spotify app</b> and come back (the music keeps playing while you drive), or switch to <b>📺 Music videos</b>.</p>
+    </div>
+    <div class="mpane" data-pane="radio">
+      <p class="now-status" id="rd-status"></p>
+      <div id="rd-list">${STATIONS.map((st) => `<button class="song" data-station="${st.id}"><b>${st.name}</b><span>${st.about}</span></button>`).join('')}</div>
+      <div class="row"><button class="ghost small" id="rd-stop">⏹ Stop</button></div>
+      <p class="hint">Free internet radio from <a href="#" id="rd-soma">SomaFM</a>, listener-supported and ad-free.</p>
     </div>
     <div class="mpane" data-pane="videos">
       <div class="now-card">
@@ -270,6 +286,11 @@ export class UI {
     <div class="swatches left">${AMBIENTS.map((c) => `<button class="swatch${c ? '' : ' off'}" data-cu-ambient="${c}" style="background:${c ? hex(c) : '#2a2b2f'}">${c ? '' : '✕'}</button>`).join('')}</div>
     <button class="ghost small" id="cu-reset">Reset to factory</button>
   </div>
+</aside>
+
+<aside id="stats" class="sheet hidden">
+  <div class="sheet-head"><h2>📊 Your drives</h2><button class="icon" data-close="stats" aria-label="Close">✕</button></div>
+  <div class="sheet-body" id="stats-body"></div>
 </aside>
 
 <aside id="settings" class="sheet hidden">
@@ -440,6 +461,7 @@ export class UI {
       $('#go', r).click();
     };
     $('#go', r).onclick = () => {
+      this.game.stats.newTrip();
       this.game.startDrive();
       this.show('hud');
       this.recentreTilt();
@@ -606,6 +628,18 @@ export class UI {
     $('#faster', r).onclick = () => cruise(1);
     $('#lane-btn', r).onclick = () => (this.game.vehicle.lane *= -1);
     $('#tilt-zero', r).onclick = () => this.recentreTilt();
+    $('#win-btn', r).onclick = () => {
+      const g = this.game;
+      g.setOpenings(!g.windowsOpen, g.sunroofOpen, g.roofUp);
+      this.refreshCabin();
+    };
+    $('#roof-btn', r).onclick = () => {
+      const g = this.game;
+      if (g.car.hasSoftTop) g.setOpenings(g.windowsOpen, g.sunroofOpen, !g.roofUp);
+      else g.setOpenings(g.windowsOpen, !g.sunroofOpen, g.roofUp);
+      this.refreshCabin();
+    };
+    for (const b of $$('[data-open="stats"]', r)) b.addEventListener('click', () => this.renderStats());
     $('#tv-btn', r).onclick = () => this.tvButton();
     $('#nb-toggle', r).onclick = () => this.videos.toggle();
     $('#nb-next', r).onclick = () => this.videos.next();
@@ -710,6 +744,46 @@ export class UI {
   private radioVolume?: (v: number) => void;
   private radioStop?: () => void;
 
+  private refreshCabin() {
+    const g = this.game;
+    $('#win-btn').classList.toggle('on', g.windowsOpen);
+    const soft = g.car.hasSoftTop;
+    $('#roof-btn').style.display = soft || g.car.hasSunroof ? '' : 'none';
+    $('#roof-lbl').textContent = soft ? (g.roofUp ? 'Roof up' : 'Roof down') : 'Sunroof';
+    $('#roof-btn').classList.toggle('on', soft ? !g.roofUp : g.sunroofOpen);
+  }
+
+  private renderStats() {
+    const st = this.game.stats;
+    const d = st.data;
+    const mph = this.s.units === 'mph';
+    const dist = (m: number) => (mph ? `${(m / 1609.34).toFixed(1)} mi` : `${(m / 1000).toFixed(1)} km`);
+    const hrs = (sec: number) => (sec < 3600 ? `${Math.round(sec / 60)} min` : `${(sec / 3600).toFixed(1)} h`);
+    const regions = Object.entries(d.perRegion).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0));
+    const cars = Object.entries(d.perCar).sort((a, b) => b[1] - a[1]);
+    const max = Math.max(1, ...regions.map((r) => r[1] ?? 0));
+    $('#stats-body').innerHTML = `
+      <div class="stat-grid">
+        <div><b>${dist(st.tripM)}</b><span>This trip · ${hrs(st.tripS)}</span></div>
+        <div><b>${dist(d.totalM)}</b><span>All time</span></div>
+        <div><b>${hrs(d.totalS)}</b><span>Time driving</span></div>
+        <div><b>${dist(d.longestM)}</b><span>Longest trip</span></div>
+        <div><b>${Math.round(d.topSpeed * (mph ? 2.237 : 3.6))} ${mph ? 'mph' : 'km/h'}</b><span>Top speed</span></div>
+        <div><b>${d.trips + (st.tripM > 100 ? 1 : 0)}</b><span>Trips</span></div>
+      </div>
+      <h3>By region</h3>
+      ${regions.map(([id, m]) => `<div class="stat"><span>${BIOMES[id as BiomeId].emoji} ${BIOMES[id as BiomeId].name}</span><i><b style="width:${Math.round(((m ?? 0) / max) * 100)}%"></b></i><em>${dist(m ?? 0)}</em></div>`).join('') || '<p class="hint">Go for a drive!</p>'}
+      <h3>By car</h3>
+      ${cars.map(([id, m]) => `<div class="stat"><span>${CARS.find((c) => c.id === id)?.name ?? id}</span><em>${dist(m)}</em></div>`).join('')}
+      <button class="ghost small" id="stats-reset">Reset stats</button>`;
+    $('#stats-reset').onclick = () => {
+      if (confirm('Reset all your trip stats?')) {
+        st.reset();
+        this.renderStats();
+      }
+    };
+  }
+
   private refreshTraffic() {
     const d = this.s.trafficDensity;
     const label = d < 0.02 ? 'Empty roads' : d < 0.3 ? 'Light traffic' : d < 0.65 ? 'Normal traffic' : 'Busy roads';
@@ -721,6 +795,7 @@ export class UI {
     $('#cam-label').textContent = CAM_LABEL[this.s.cam];
     $('#tv-btn').classList.toggle('on', this.s.cam === 'hood');
     document.body.classList.toggle('driver-view', this.s.cam === 'hood');
+    this.refreshCabin();
     $('#mode-ico').textContent = this.s.auto ? '🤖' : '🕹️';
     $('#mode-label').textContent = this.s.auto ? 'Auto' : 'Manual';
     $('#style-ico').textContent = STYLE_LABEL[this.s.driveStyle].split(' ')[0];
@@ -744,6 +819,10 @@ export class UI {
     $('#odo').textContent = `${((v.odometer / 1000) * k).toFixed(1)} ${this.s.units === 'mph' ? 'mi' : 'km'}`;
     const h = g.hour;
     $('#clock').textContent = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+    // Music playing: quieter engine and world, and say what's on
+    const musicOn = this.videos.active || this.radio.playing || (this.s.musicMode === 'spotify' && !!$('#sp-player iframe'));
+    g.engine.duck = musicOn ? 0.45 : 1;
+    g.nowPlaying = this.radio.playing && this.radio.station ? `📻 ${this.radio.station.name}` : this.s.musicMode === 'spotify' && musicOn ? '🎧 Spotify' : '';
     const tl = $('.hud-tl').getBoundingClientRect();
     g.pipY = Math.round(tl.bottom + 8);
     const np = this.videos.now();
@@ -935,13 +1014,14 @@ export class UI {
     this.save();
     this.refreshMusicTabs();
     if (!changed) return;
+    if (mode !== 'radio') this.radio.stop();
+    if (mode !== 'videos') this.videos.stop();
     if (mode === 'videos') {
       $('#sp-player').innerHTML = '<p class="hint">Spotify is paused while music videos play.</p>';
       if (autoplay && this.videos.songs.length && !this.videos.active) void this.videos.playIndex(Math.max(0, this.videos.index));
-    } else {
-      this.videos.stop();
-      if (this.current) this.embed(this.current);
-    }
+    } else if (mode === 'radio') {
+      $('#sp-player').innerHTML = '<p class="hint">Spotify is paused while the radio plays.</p>';
+    } else if (this.current) this.embed(this.current);
   }
 
   private refreshMusicTabs() {
@@ -1000,6 +1080,31 @@ export class UI {
         this.refreshVideos();
       }
     }
+  }
+
+  // ---------- Radio ----------
+
+  readonly radio = new Radio();
+
+  private bindRadio() {
+    const rd = this.radio;
+    this.radioVolume = (v) => rd.setVolume(v);
+    this.radioStop = () => rd.stop();
+    rd.onChange = () => {
+      $('#rd-status').textContent = rd.error || (rd.station ? (rd.playing ? `▶ ${rd.station.name}` : `Tuning in to ${rd.station.name}…`) : '');
+      for (const b of $$('[data-station]')) b.classList.toggle('on', rd.playing && b.dataset.station === rd.station?.id);
+    };
+    for (const b of $$('[data-station]')) {
+      b.onclick = () => {
+        this.setMusicMode('radio', false);
+        rd.play(STATIONS.find((s) => s.id === b.dataset.station)!);
+      };
+    }
+    $('#rd-stop').onclick = () => rd.stop();
+    $('#rd-soma').onclick = (e) => {
+      e.preventDefault();
+      void this.openExternal('https://somafm.com/support/');
+    };
   }
 
   // ---------- Music videos ----------

@@ -1,14 +1,88 @@
-// A soft synthesised engine hum and wind, so the drive has some life under the music.
+import type { Engine } from './carspecs';
+
+// Synthesised sound: an engine per car type, wind, and the sounds of the place you're in.
+
+interface Profile {
+  /** Idle and redline pitch of the firing frequency (Hz). */
+  idle: number;
+  red: number;
+  /** Oscillator shapes for the main tone and an octave below. */
+  main: OscillatorType;
+  sub: OscillatorType;
+  /** Engine "beat": amplitude wobble at a share of the firing frequency (V8 burble). */
+  beat: number;
+  beatDepth: number;
+  /** How open the exhaust sounds (filter cut-off scale). */
+  bright: number;
+  /** Mechanical noise mixed in (diesel clatter). */
+  noise: number;
+  gears: number;
+  /** Electric: no gears, a rising whine. */
+  electric?: boolean;
+  loud: number;
+}
+
+const PROFILES: Record<Engine, Profile> = {
+  v8: { idle: 32, red: 115, main: 'sawtooth', sub: 'square', beat: 0.5, beatDepth: 0.55, bright: 0.8, noise: 0.05, gears: 5, loud: 1.2 },
+  v12: { idle: 60, red: 260, main: 'sawtooth', sub: 'sawtooth', beat: 0, beatDepth: 0, bright: 1.6, noise: 0.02, gears: 7, loud: 1.1 },
+  flat6: { idle: 45, red: 200, main: 'square', sub: 'sawtooth', beat: 0.33, beatDepth: 0.2, bright: 1.3, noise: 0.03, gears: 6, loud: 1 },
+  i4: { idle: 40, red: 170, main: 'sawtooth', sub: 'triangle', beat: 0, beatDepth: 0, bright: 1.1, noise: 0.04, gears: 5, loud: 0.75 },
+  i6: { idle: 42, red: 175, main: 'sawtooth', sub: 'sawtooth', beat: 0, beatDepth: 0, bright: 1.15, noise: 0.02, gears: 6, loud: 0.9 },
+  v6: { idle: 38, red: 150, main: 'sawtooth', sub: 'square', beat: 0.25, beatDepth: 0.2, bright: 0.95, noise: 0.03, gears: 6, loud: 0.85 },
+  diesel: { idle: 26, red: 70, main: 'sawtooth', sub: 'square', beat: 0.5, beatDepth: 0.35, bright: 0.6, noise: 0.25, gears: 6, loud: 0.95 },
+  flat4: { idle: 24, red: 85, main: 'triangle', sub: 'square', beat: 0.5, beatDepth: 0.7, bright: 0.7, noise: 0.08, gears: 4, loud: 0.8 },
+  ev: { idle: 0, red: 0, main: 'sine', sub: 'sine', beat: 0, beatDepth: 0, bright: 1, noise: 0, gears: 1, electric: true, loud: 0.5 },
+};
+
+/** How much of each ambient sound a place has (0..1 each). */
+export interface AmbientMix {
+  waves: number;
+  birds: number;
+  insects: number;
+  wind: number;
+  city: number;
+  crickets: number;
+  rain: number;
+}
+
+function noiseBuffer(ctx: AudioContext, seconds = 2, brown = false) {
+  const len = ctx.sampleRate * seconds;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random() * 2 - 1;
+    if (brown) {
+      last = (last + 0.02 * w) / 1.02;
+      d[i] = last * 3.5;
+    } else d[i] = w;
+  }
+  return buf;
+}
 
 export class EngineSound {
   private ctx: AudioContext | null = null;
-  private gain!: GainNode;
-  private osc1!: OscillatorNode;
-  private osc2!: OscillatorNode;
-  private filter!: BiquadFilterNode;
-  private wind!: GainNode;
-  private windFilter!: BiquadFilterNode;
   volume = 0.5;
+  /** 1 = full, lower while music plays. */
+  duck = 1;
+  /** Inside the cabin with the windows shut: outside sounds are muffled. */
+  sealed = false;
+  private profile: Profile = PROFILES.i4;
+  private out!: GainNode;
+  private cabin!: BiquadFilterNode;
+  private eng!: { main: OscillatorNode; sub: OscillatorNode; whine: OscillatorNode; filter: BiquadFilterNode; gain: GainNode; beat: OscillatorNode; beatGain: GainNode; noise: GainNode };
+  private wind!: { gain: GainNode; filter: BiquadFilterNode };
+  private amb!: Record<keyof AmbientMix, GainNode>;
+  private birdTimer = 0;
+  private gearShift = 0;
+  private lastGear = 0;
+
+  setProfile(engine: Engine) {
+    this.profile = PROFILES[engine] ?? PROFILES.i4;
+    if (!this.ctx) return;
+    this.eng.main.type = this.profile.main;
+    this.eng.sub.type = this.profile.sub;
+  }
 
   /** Must be called from a user gesture (browsers block audio until then). */
   start() {
@@ -20,87 +94,210 @@ export class EngineSound {
     if (!AC) return;
     const ctx = new AC();
     this.ctx = ctx;
-    this.gain = ctx.createGain();
-    this.gain.gain.value = 0;
-    this.filter = ctx.createBiquadFilter();
-    this.filter.type = 'lowpass';
-    this.filter.frequency.value = 400;
-    this.osc1 = ctx.createOscillator();
-    this.osc1.type = 'sawtooth';
-    this.osc2 = ctx.createOscillator();
-    this.osc2.type = 'triangle';
-    this.osc1.connect(this.filter);
-    this.osc2.connect(this.filter);
-    this.filter.connect(this.gain);
-    this.gain.connect(ctx.destination);
-    this.osc1.start();
-    this.osc2.start();
+    this.out = ctx.createGain();
+    this.out.connect(ctx.destination);
+    // Everything from outside the car goes through the "cabin" filter
+    this.cabin = ctx.createBiquadFilter();
+    this.cabin.type = 'lowpass';
+    this.cabin.frequency.value = 20000;
+    this.cabin.connect(this.out);
 
-    // Wind: filtered noise
-    const len = ctx.sampleRate * 2;
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    const noise = ctx.createBufferSource();
-    noise.buffer = buf;
-    noise.loop = true;
-    this.windFilter = ctx.createBiquadFilter();
-    this.windFilter.type = 'bandpass';
-    this.windFilter.frequency.value = 600;
-    this.windFilter.Q.value = 0.6;
-    this.wind = ctx.createGain();
-    this.wind.gain.value = 0;
-    noise.connect(this.windFilter);
-    this.windFilter.connect(this.wind);
-    this.wind.connect(ctx.destination);
-    noise.start();
-  }
+    // Engine
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.Q.value = 1.2;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    const beatGain = ctx.createGain();
+    const main = ctx.createOscillator();
+    const sub = ctx.createOscillator();
+    const whine = ctx.createOscillator();
+    whine.type = 'sine';
+    const whineGain = ctx.createGain();
+    whineGain.gain.value = 0.25;
+    const beat = ctx.createOscillator();
+    beat.type = 'sine';
+    const beatDepth = ctx.createGain();
+    beatDepth.gain.value = 0;
+    beat.connect(beatDepth).connect(beatGain.gain);
+    main.connect(filter);
+    sub.connect(filter);
+    whine.connect(whineGain).connect(filter);
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = noiseBuffer(ctx);
+    noiseSrc.loop = true;
+    const noiseBand = ctx.createBiquadFilter();
+    noiseBand.type = 'bandpass';
+    noiseBand.frequency.value = 1800;
+    const noise = ctx.createGain();
+    noise.gain.value = 0;
+    noiseSrc.connect(noiseBand).connect(noise).connect(filter);
+    filter.connect(beatGain).connect(gain).connect(this.out);
+    for (const o of [main, sub, whine, beat]) o.start();
+    noiseSrc.start();
+    this.eng = { main, sub, whine, filter, gain, beat, beatGain, noise };
+    (this.eng as unknown as { beatDepth: GainNode }).beatDepth = beatDepth;
+    this.setProfile(Object.keys(PROFILES).find((k) => PROFILES[k as Engine] === this.profile) as Engine);
 
-  /** A rumble of thunder. */
-  thunder(strength = 1) {
-    const ctx = this.ctx;
-    if (!ctx) return;
-    const len = ctx.sampleRate * 4;
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < len; i++) {
-      last = last * 0.985 + (Math.random() * 2 - 1) * 0.15;
-      d[i] = last * Math.pow(1 - i / len, 2) * (1 + 0.6 * Math.sin(i / 3000));
-    }
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 180;
-    const g = ctx.createGain();
-    g.gain.value = 2.2 * strength * Math.max(this.volume, 0.3);
-    src.connect(lp).connect(g).connect(ctx.destination);
-    src.start();
+    // Wind past the car
+    const wsrc = ctx.createBufferSource();
+    wsrc.buffer = noiseBuffer(ctx);
+    wsrc.loop = true;
+    const wf = ctx.createBiquadFilter();
+    wf.type = 'bandpass';
+    wf.Q.value = 0.6;
+    const wg = ctx.createGain();
+    wg.gain.value = 0;
+    wsrc.connect(wf).connect(wg).connect(this.cabin);
+    wsrc.start();
+    this.wind = { gain: wg, filter: wf };
+
+    // Ambient beds
+    const bed = (type: BiquadFilterType, freq: number, q: number, brown = false, lfo = 0, lfoDepth = 0) => {
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuffer(ctx, 3, brown);
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      const shape = ctx.createGain();
+      shape.gain.value = 1;
+      if (lfo) {
+        const o = ctx.createOscillator();
+        o.frequency.value = lfo;
+        const d = ctx.createGain();
+        d.gain.value = lfoDepth;
+        o.connect(d).connect(shape.gain);
+        o.start();
+      }
+      src.connect(f).connect(shape).connect(g).connect(this.cabin);
+      src.start();
+      return g;
+    };
+    this.amb = {
+      waves: bed('lowpass', 500, 0.7, true, 0.09, 0.8),
+      birds: ctx.createGain(),
+      insects: bed('bandpass', 5200, 8, false, 7, 0.6),
+      wind: bed('bandpass', 380, 0.8, true, 0.13, 0.6),
+      city: bed('lowpass', 220, 0.6, true, 0.05, 0.2),
+      crickets: ctx.createGain(),
+      rain: bed('highpass', 1200, 0.5),
+    };
+    this.amb.birds.gain.value = 0;
+    this.amb.crickets.gain.value = 0;
+    this.amb.birds.connect(this.cabin);
+    this.amb.crickets.connect(this.cabin);
   }
 
   suspend() {
     void this.ctx?.suspend();
   }
 
+  /** A rumble of thunder. */
+  thunder(strength = 1) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(ctx, 4, true);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 220;
+    const g = ctx.createGain();
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(1.6 * strength * Math.max(this.volume, 0.35), t + 0.15);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 4);
+    src.connect(lp).connect(g).connect(this.cabin);
+    src.start();
+  }
+
+  /** A short chirp from a bird (or a cricket). */
+  private chirp(dest: GainNode, base: number, sweep: number, dur: number, n: number) {
+    const ctx = this.ctx!;
+    const t0 = ctx.currentTime;
+    for (let i = 0; i < n; i++) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      const g = ctx.createGain();
+      const t = t0 + i * dur * 1.3;
+      o.frequency.setValueAtTime(base, t);
+      o.frequency.exponentialRampToValueAtTime(base * sweep, t + dur);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.12, t + dur * 0.2);
+      g.gain.linearRampToValueAtTime(0, t + dur);
+      o.connect(g).connect(dest);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    }
+  }
+
   /** speed in m/s, throttle 0..1, vmax in m/s. */
-  update(speed: number, throttle: number, vmax: number, running: boolean) {
+  update(speed: number, throttle: number, vmax: number, running: boolean, dt = 1 / 60, mix: AmbientMix | null = null) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
+    const p = this.profile;
     const s = Math.abs(speed);
-    // Fake gears: rpm climbs within each gear then drops
-    const gears = 5;
-    const gearSpan = vmax / gears;
-    const gear = Math.min(gears - 1, Math.floor(s / gearSpan));
-    const within = (s - gear * gearSpan) / gearSpan;
-    const rpm = 0.25 + within * 0.6 + gear * 0.04;
-    const f = 38 + rpm * 90;
-    this.osc1.frequency.setTargetAtTime(f, t, 0.08);
-    this.osc2.frequency.setTargetAtTime(f * 0.5, t, 0.08);
-    this.filter.frequency.setTargetAtTime(260 + throttle * 500 + rpm * 300, t, 0.1);
-    const v = running ? this.volume : 0;
-    this.gain.gain.setTargetAtTime(v * (0.05 + throttle * 0.05 + rpm * 0.03), t, 0.15);
-    this.wind.gain.setTargetAtTime(v * Math.min(0.12, (s / 40) ** 2 * 0.1), t, 0.3);
-    this.windFilter.frequency.setTargetAtTime(400 + s * 15, t, 0.3);
+    const v = (running ? this.volume : 0) * this.duck;
+    const e = this.eng;
+    if (p.electric) {
+      const f = 180 + (s / vmax) * 1500;
+      e.whine.frequency.setTargetAtTime(f, t, 0.1);
+      e.main.frequency.setTargetAtTime(f * 0.5, t, 0.1);
+      e.sub.frequency.setTargetAtTime(f * 0.25, t, 0.1);
+      e.filter.frequency.setTargetAtTime(2400, t, 0.1);
+      e.gain.gain.setTargetAtTime(v * (0.012 + throttle * 0.02 + (s / vmax) * 0.02) * p.loud, t, 0.15);
+      e.noise.gain.setTargetAtTime(0, t, 0.1);
+    } else {
+      // Gears: revs climb within each gear, drop on a shift
+      const gearSpan = vmax / p.gears;
+      const gear = Math.min(p.gears - 1, Math.floor(s / gearSpan));
+      if (gear !== this.lastGear) {
+        this.gearShift = 0.18;
+        this.lastGear = gear;
+      }
+      this.gearShift = Math.max(0, this.gearShift - dt);
+      const within = (s - gear * gearSpan) / gearSpan;
+      const rpm = Math.min(1, 0.18 + within * 0.7 + gear * 0.03);
+      const f = p.idle + (p.red - p.idle) * rpm;
+      e.main.frequency.setTargetAtTime(f, t, 0.06);
+      e.sub.frequency.setTargetAtTime(f * 0.5, t, 0.06);
+      e.whine.frequency.setTargetAtTime(f * 6, t, 0.06);
+      e.beat.frequency.setTargetAtTime(f * p.beat || 0.01, t, 0.06);
+      (e as unknown as { beatDepth: GainNode }).beatDepth.gain.setTargetAtTime(p.beatDepth, t, 0.1);
+      e.filter.frequency.setTargetAtTime((220 + throttle * 600 + rpm * 500) * p.bright, t, 0.08);
+      const load = this.gearShift > 0 ? 0.3 : 1;
+      e.gain.gain.setTargetAtTime(v * (0.045 + throttle * 0.06 * load + rpm * 0.03) * p.loud, t, 0.1);
+      e.noise.gain.setTargetAtTime(p.noise * (0.6 + throttle), t, 0.1);
+    }
+    // Wind grows with speed, and much louder with the windows open
+    const open = this.sealed ? 0.35 : 1;
+    this.wind.gain.gain.setTargetAtTime(v * Math.min(0.16, (s / 40) ** 2 * 0.12) * open, t, 0.3);
+    this.wind.filter.frequency.setTargetAtTime(400 + s * 15, t, 0.3);
+    this.cabin.frequency.setTargetAtTime(this.sealed ? 900 : 18000, t, 0.2);
+
+    // The world around you
+    if (mix) {
+      const a = (running || true ? 1 : 0) * Math.max(this.volume, 0.25) * this.duck;
+      const set = (k: keyof AmbientMix, level: number) => this.amb[k].gain.setTargetAtTime(mix[k] * level * a, t, 0.8);
+      set('waves', 0.35);
+      set('insects', 0.04);
+      set('wind', 0.25);
+      set('city', 0.3);
+      set('rain', 0.22);
+      this.amb.birds.gain.setTargetAtTime(mix.birds * 0.5 * a, t, 0.8);
+      this.amb.crickets.gain.setTargetAtTime(mix.crickets * 0.35 * a, t, 0.8);
+      this.birdTimer -= dt;
+      if (this.birdTimer <= 0) {
+        this.birdTimer = 0.6 + Math.random() * 2.5;
+        if (mix.birds > 0.05 && Math.random() < mix.birds) {
+          const base = 2200 + Math.random() * 2400;
+          this.chirp(this.amb.birds, base, 0.7 + Math.random() * 0.8, 0.06 + Math.random() * 0.08, 1 + Math.floor(Math.random() * 4));
+        }
+        if (mix.crickets > 0.05) this.chirp(this.amb.crickets, 4300, 1.02, 0.03, 3);
+      }
+    }
   }
 }

@@ -247,3 +247,19 @@ body.driver-view .speedo { opacity: 0; }
 .custom-btn { margin-top: 8px; }
 .sheet h3 small { text-transform: none; letter-spacing: 0; font-weight: 400; opacity: .8; }
 #cu-reset { margin-top: 14px; }
+
+/* Driver's-seat buttons */
+.cabin-btns { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(14px + var(--safe-b)); display: none; gap: 8px; pointer-events: auto; }
+body.driver-view .cabin-btns { display: flex; }
+.cabin-btns .pad { width: 64px; height: 56px; font-size: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.cabin-btns .pad span { font-size: 10px; color: var(--text); margin-top: 3px; }
+body.zen .cabin-btns { opacity: 0; pointer-events: none; }
+@media (orientation: portrait) { .cabin-btns { bottom: calc(150px + var(--safe-b)); } }
+/* Stats */
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.stat-grid div { background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.stat-grid b { display: block; font-size: 20px; }
+.stat-grid span { font-size: 12px; color: var(--muted); }
+#stats-body .stat { grid-template-columns: 130px 1fr 70px; gap: 8px; margin-bottom: 6px; }
+#stats-body .stat em { font-style: normal; text-align: right; color: var(--text); font-size: 13px; }
+#stats-reset { margin-top: 14px; }
