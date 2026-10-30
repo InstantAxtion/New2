@@ -53,6 +53,9 @@ uniform float time;
 uniform float clouds;
 uniform float cover;
 uniform float flash;
+uniform float aurora;
+uniform float rainbow;
+uniform float meteors;
 varying vec3 vDir;
 
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -87,6 +90,50 @@ void main() {
     float s = h(sp);
     col += vec3(step(0.9965, s) * night * (0.5 + 0.5 * sin(time * 2.0 + s * 90.0)));
   }
+  // Milky Way: a soft, dusty band of faint stars tilted across the sky
+  if (night > 0.01 && d.y > 0.0) {
+    vec3 axis = normalize(vec3(0.35, 0.55, -0.76));
+    float band = 1.0 - abs(dot(d, axis));
+    float core = pow(band, 9.0);
+    vec2 mp = d.xz / (d.y + 0.5) * 9.0;
+    float dust = fbm(mp * 1.3) * 0.75 + fbm(mp * 4.1) * 0.35;
+    float lane = smoothstep(0.55, 0.75, fbm(mp * 2.2 + 7.0)) * pow(band, 22.0);
+    vec3 mw = mix(vec3(0.55, 0.6, 0.85), vec3(0.95, 0.85, 0.75), pow(band, 30.0));
+    col += mw * core * dust * 0.32 * night * (1.0 - lane * 0.8) * smoothstep(0.0, 0.25, d.y);
+    vec2 sp2 = floor(d.xz / (d.y + 0.6) * 520.0);
+    col += vec3(step(0.985, h(sp2 + 3.1)) * core * night * 0.7);
+  }
+  // Shooting stars: a quick streak every so often
+  if (meteors > 0.01 && d.y > 0.12) {
+    for (int k = 0; k < 2; k++) {
+      float per = 5.5 + float(k) * 3.7;
+      float slot = floor(time / per + float(k) * 0.37);
+      float ph = fract(time / per + float(k) * 0.37);
+      float r1 = h(vec2(slot, float(k) + 1.0)), r2 = h(vec2(slot + 4.0, float(k) + 7.0)), r3 = h(vec2(slot, 13.0));
+      if (r3 > 0.55) continue;
+      vec3 start = normalize(vec3(r1 * 2.0 - 1.0, 0.45 + r2 * 0.4, 0.6 + r2));
+      vec3 dir = normalize(cross(start, vec3(r2 - 0.5, -1.0, r1 - 0.5)));
+      float life = smoothstep(0.0, 0.03, ph) * (1.0 - smoothstep(0.08, 0.14, ph));
+      vec3 head = normalize(start + dir * ph * 2.2);
+      vec3 rel = d - head;
+      float along = dot(rel, -dir);
+      float across = length(rel + dir * along);
+      float tail = smoothstep(0.12, 0.0, along) * step(0.0, along);
+      col += vec3(0.9, 0.95, 1.0) * tail * smoothstep(0.0025, 0.0, across) * life * meteors * 1.6;
+    }
+  }
+  // Northern lights: slow green curtains with violet tops, low in the sky ahead
+  if (aurora > 0.01 && d.y > 0.0) {
+    float az = atan(d.x, d.z);
+    float facing = smoothstep(1.6, 0.4, abs(az));
+    float y0 = 0.08 + n(vec2(az * 2.0, time * 0.05)) * 0.12;
+    float curtain = smoothstep(y0, y0 + 0.05, d.y) * (1.0 - smoothstep(y0 + 0.08, y0 + 0.45, d.y));
+    float rays = fbm(vec2(az * 14.0 + sin(az * 3.0 + time * 0.1) * 1.5, time * 0.08));
+    rays = pow(rays, 1.6) * 1.8;
+    float wave = 0.6 + 0.4 * sin(az * 5.0 - time * 0.3 + n(vec2(time * 0.1, az)) * 3.0);
+    vec3 ac = mix(vec3(0.15, 1.0, 0.45), vec3(0.6, 0.25, 0.9), smoothstep(y0 + 0.08, y0 + 0.35, d.y));
+    col += ac * curtain * rays * wave * facing * aurora * night * 0.7;
+  }
   // Clouds
   if (d.y > 0.02 && clouds > 0.0) {
     vec2 cp = d.xz / (d.y + 0.08) * 1.6 + vec2(time * 0.006, time * 0.002);
@@ -107,6 +154,20 @@ void main() {
   // Overcast: a grey, flatter sky
   float lum = dot(col, vec3(0.3, 0.55, 0.15));
   col = mix(col, vec3(lum) * 0.85, cover * 0.75);
+  // A rainbow after the rain, opposite the sun (nudged so it rises ahead of the road)
+  if (rainbow > 0.01 && d.y > -0.02) {
+    vec3 anti = normalize(vec3(-sunDir.x * 0.5, -0.32, 1.0));
+    float ang = acos(clamp(dot(d, anti), -1.0, 1.0));
+    float r = (ang - 0.69) / 0.035;
+    if (r > -0.2 && r < 1.2) {
+      vec3 bow = clamp(vec3(abs(r * 6.0 - 3.0) - 1.0, 2.0 - abs(r * 6.0 - 2.0), 2.0 - abs(r * 6.0 - 4.0)), 0.0, 1.0);
+      bow = bow.bgr;
+      float edge = smoothstep(-0.2, 0.15, r) * (1.0 - smoothstep(0.85, 1.2, r));
+      col += bow * edge * rainbow * 0.34 * smoothstep(-0.02, 0.1, d.y) * (1.0 - smoothstep(0.25, 0.5, d.y));
+    }
+    // Brighter sky inside the bow
+    col += vec3(0.04) * rainbow * step(ang, 0.69) * smoothstep(-0.02, 0.1, d.y);
+  }
   col += vec3(0.75, 0.8, 1.0) * flash;
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
@@ -137,6 +198,9 @@ export class Sky {
       clouds: { value: 1 },
       cover: { value: 0 },
       flash: { value: 0 },
+      aurora: { value: 0 },
+      rainbow: { value: 0 },
+      meteors: { value: 0 },
     };
     const mat = new THREE.ShaderMaterial({
       uniforms: this.uniforms,
@@ -167,6 +231,10 @@ export class Sky {
   /** Weather on the sky and lights: cloud cover (0..1) and a lightning flash. */
   cover = 0;
   flash = 0;
+  /** Night-sky extras, 0..1: northern lights, a rainbow, shooting stars. */
+  aurora = 0;
+  rainbow = 0;
+  meteors = 0;
 
   update(hour: number, elapsed: number, target: THREE.Vector3, pbr = false) {
     this.hour = ((hour % 24) + 24) % 24;
@@ -204,6 +272,9 @@ export class Sky {
     // Overcast skies dim the sun and grey the light; lightning lights everything up
     u.cover.value = this.cover;
     u.flash.value = this.flash;
+    u.aurora.value = this.aurora * (1 - this.cover);
+    u.rainbow.value = this.rainbow * (1 - this.night);
+    u.meteors.value = this.meteors * this.night * (1 - this.cover);
     this.sun.intensity *= 1 - this.cover * 0.8;
     this.hemi.intensity *= 1 - this.cover * 0.25;
     this.hemi.intensity += this.flash * 3;

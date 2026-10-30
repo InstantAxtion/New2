@@ -214,6 +214,52 @@ export class EngineSound {
     src.start();
   }
 
+  /** A call from an animal out in the world: an owl's hoot, a gull, an eagle's cry. */
+  call(kind: 'owl' | 'gull' | 'eagle', level = 1) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t0 = ctx.currentTime;
+    const out = ctx.createGain();
+    out.gain.value = Math.max(this.volume, 0.3) * this.duck * level;
+    out.connect(this.cabin);
+    const note = (type: OscillatorType, f0: number, f1: number, t: number, dur: number, peak: number, vib = 0) => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      if (vib) {
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = 22;
+        const d = ctx.createGain();
+        d.gain.value = vib;
+        lfo.connect(d).connect(o.frequency);
+        lfo.start(t);
+        lfo.stop(t + dur + 0.05);
+      }
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(peak, t + dur * 0.15);
+      g.gain.setValueAtTime(peak, t + dur * 0.6);
+      g.gain.linearRampToValueAtTime(0, t + dur);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = (f0 + f1) / 2;
+      bp.Q.value = type === 'sine' ? 0.5 : 2.5;
+      o.connect(bp).connect(g).connect(out);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    };
+    if (kind === 'owl') {
+      note('sine', 400, 370, t0, 0.32, 0.09);
+      note('sine', 390, 360, t0 + 0.55, 0.22, 0.06);
+      note('sine', 400, 355, t0 + 0.85, 0.6, 0.08, 4);
+    } else if (kind === 'gull') {
+      for (let i = 0; i < 3 + Math.floor(Math.random() * 3); i++) note('sawtooth', 1500, 1050, t0 + i * 0.24, 0.18, 0.03);
+    } else {
+      note('sawtooth', 2600, 1700, t0, 0.9, 0.025, 60);
+    }
+  }
+
   /** A short chirp from a bird (or a cricket). */
   private chirp(dest: GainNode, base: number, sweep: number, dur: number, n: number) {
     const ctx = this.ctx!;

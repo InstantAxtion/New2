@@ -231,7 +231,7 @@ export class World {
       this.feature(z, 5200, 411, 0.5, [500, 1100], (c) => {
         const b = this.dominant(c).id;
         return ['flatlands', 'desert', 'forest', 'autumn', 'rainforest', 'hills', 'canyon'].includes(b) && this.highwayAt(c) < 0.01 && this.bridgeRaw(c) < 0.01;
-      }),
+      }) * (1 - smoothstep(0, 0.2, this.urban(z))),
     );
   }
 

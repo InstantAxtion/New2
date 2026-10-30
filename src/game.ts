@@ -11,6 +11,7 @@ import { Pedestrians } from './peds';
 import { nightGlow } from './special';
 import { Weather } from './weather';
 import { Effects } from './effects';
+import { Life } from './life';
 import type { AmbientMix } from './audio';
 import { drawNav } from './map';
 import { TripStats } from './stats';
@@ -39,7 +40,11 @@ export class Game {
   readonly peds: Pedestrians;
   readonly weather: Weather;
   readonly effects = new Effects();
+  readonly life: Life;
   private puffTimer = 0;
+  /** Seconds of rainbow left after a shower clears. */
+  private rainbowTime = 0;
+  private wasRaining = false;
   readonly stats = new TripStats();
   private lastOdo = 0;
   private wipePhase = 0;
@@ -132,6 +137,8 @@ export class Game {
     this.weather.onThunder = (s) => this.engine.thunder?.(s);
     this.scene.add(this.weather.group);
     this.scene.add(this.effects.group);
+    this.life = new Life(this.world, this.effects);
+    this.scene.add(this.life.group);
 
     this.rig = new CameraRig(this.camera, this.world);
     this.rig.mode = settings.cam;
@@ -240,6 +247,7 @@ export class Game {
     this.vehicle.world = this.world;
     this.traffic.world = this.world;
     this.peds.world = this.world;
+    this.life.reset(this.world);
     this.rig.world = this.world;
     this.traffic.clear();
     this.vehicle.place(z);
@@ -355,6 +363,13 @@ export class Game {
         this.effects.emit(pos, vel, v.gravel || v.offroad ? 'dust' : 'spray');
       }
     }
+    this.life.update(dt, this.elapsed, { x: v.x, z: v.z, v: v.v }, this.camera.position, {
+      night: this.sky.night, hour: this.sky.hour, cover: this.weather.look.cover, rain: this.weather.look.rain, fog: this.weather.look.fog,
+    });
+    if (this.life.call) {
+      if (this.phase === 'drive') this.engine.call(this.life.call.kind, this.life.call.level);
+      this.life.call = null;
+    }
     this.effects.update(dt);
     if (this.phase === 'drive') {
       const moved = v.odometer - this.lastOdo;
@@ -411,6 +426,18 @@ export class Game {
     wx.update(dt, this.elapsed, this.camera.position);
     this.sky.cover = wx.look.cover;
     this.sky.flash = wx.flash;
+    // Night-sky extras: shooting stars anywhere it's clear, northern lights up north,
+    // and a rainbow for a minute or two when a shower clears
+    this.sky.meteors = 1 - this.world.urban(v.z);
+    let north = 0;
+    for (const { biome, w } of this.world.weights(v.z)) if (biome.id === 'winter' || biome.id === 'alpine') north += w * (biome.id === 'winter' ? 1 : 0.6);
+    this.sky.aurora = north;
+    const raining = wx.kind === 'rain' || wx.kind === 'storm';
+    if (this.wasRaining && !raining) this.rainbowTime = 120;
+    this.wasRaining = raining;
+    this.rainbowTime = Math.max(0, this.rainbowTime - dt);
+    const bow = Math.min(1, this.rainbowTime / 20) * Math.min(1, (120 - this.rainbowTime) / 15) * (1 - wx.look.rain * 1.4);
+    this.sky.rainbow = Math.max(0, bow);
     this.chunks.setWet(wx.look.wet);
     shared.snow.value = wx.snowCover;
     this.sky.setFogFar(QUALITY[this.settings.quality].fogFar * this.fogScale * wx.look.fog);
@@ -538,7 +565,10 @@ export class Game {
   stopFor(): number | null {
     const w = this.world as unknown as { stopFor?: (z: number, dir: number, t: number) => number | null };
     const v = this.vehicle;
-    return w.stopFor ? w.stopFor(v.z, Math.cos(v.heading) >= 0 ? 1 : -1, this.elapsed) : null;
+    const ped = w.stopFor ? w.stopFor(v.z, Math.cos(v.heading) >= 0 ? 1 : -1, this.elapsed) : null;
+    const deer = this.life.stopIn(v.z);
+    if (ped === null) return deer;
+    return deer === null ? ped : Math.min(ped, deer);
   }
 
   /** Render what the rear-view and side mirrors see (only from the driver's seat). */
