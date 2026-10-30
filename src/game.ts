@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { World, SEGMENT, LANE, type Stop } from './world/world';
+import { World, SEGMENT, LANE, STOP_INFO, type Stop } from './world/world';
 import { BIOMES, type Biome, type BiomeId } from './world/biomes';
 import { ChunkManager, QUALITY } from './chunks';
 import { Sky, TIME_PRESETS } from './sky';
@@ -71,7 +71,7 @@ export class Game {
   private wasRaining = false;
   readonly stats = new TripStats();
   private lastOdo = 0;
-  private wipePhase = 0;
+  private wipePhase = -Math.PI / 2;
   /** How much of the night the current place forces (the neon city). */
   private nightLock = 0;
   private fogScale = 1;
@@ -222,6 +222,10 @@ export class Game {
 
   private flareOn = false;
   private parkedTime = 0;
+  private leafLevel = 0;
+  private petalLevel = 0;
+  /** Sun visors flipped down. */
+  visorDown = false;
   private filmTimer = 0;
   private passPrev = new Map<THREE.Vector3, number>();
   /** Where the sun is on screen: for the lens flare, the sun shafts and the heat haze. */
@@ -448,6 +452,7 @@ export class Game {
       this.car.group.rotation.y = this.showroom.angle;
     }
     this.car.openings.update(dt);
+    this.car.cabinTick(dt, v.steer * v.v * 0.35, this.visorDown);
     // Stopped for a few seconds (or in the garage): pop the camper roof / open the roof tent
     this.parkedTime = Math.abs(v.v) < 0.3 ? this.parkedTime + dt : 0;
     this.car.setParked(garage || this.parkedTime > 4, dt);
@@ -491,6 +496,7 @@ export class Game {
     }
     this.lastOdo = v.odometer;
 
+    this.rig.calm = this.settings.reduceMotion;
     if (this.phase === 'garage') this.rig.orbit(v, dt, this.elapsed, false);
     else {
       this.rig.clearOffset();
@@ -557,6 +563,11 @@ export class Game {
     const bow = Math.min(1, this.rainbowTime / 20) * Math.min(1, (120 - this.rainbowTime) / 15) * (1 - wx.look.rain * 1.4);
     this.sky.rainbow = Math.max(0, bow);
     this.chunks.setWet(wx.look.wet);
+    // The car gets wet in the rain (drying off slowly) and snowy in the snow (it blows off at speed)
+    const carWetT = this.world.tunnelAt(v.z) > 0.45 ? shared.carWet.value : Math.max(wx.look.rain, (wx.look.hail ?? 0) * 0.8);
+    shared.carWet.value += (carWetT - shared.carWet.value) * (1 - Math.exp(-dt * (carWetT > shared.carWet.value ? 0.6 : 0.05)));
+    const snowing = wx.look.snow > 0.3 && wx.kind === 'snow';
+    shared.carSnow.value = Math.min(0.9, Math.max(0, shared.carSnow.value + dt * (snowing ? 0.01 : -0.004) - dt * Math.max(0, Math.abs(v.v) - 25) * 0.0008));
     this.chunks.setReflections(wx.look.wet * this.sky.night * (this.tier === 'pbr' ? 1 : 0));
     // Spray thrown up by other traffic on a wet road
     if (wx.look.wet > 0.6 && wx.look.rain > 0.3 && this.phase === 'drive' && Math.random() < dt * 12) {
@@ -592,8 +603,8 @@ export class Game {
     const wa = this.elapsed * 0.01 + 0.8;
     const ws = 1.5 + shared.wind.value * 2.5;
     this.drift.update(this.elapsed, this.camera.position, {
-      petals: petals * (1 - wx.look.rain) * (1 - wx.look.snow),
-      leaves: leaves * (0.4 + (shared.wind.value - 1) * 0.4) * (1 - wx.look.snow),
+      petals: (this.petalLevel = petals * (1 - wx.look.rain) * (1 - wx.look.snow)),
+      leaves: (this.leafLevel = leaves * (0.4 + (shared.wind.value - 1) * 0.4) * (1 - wx.look.snow)),
       sand: this.sand,
       wind: new THREE.Vector2(Math.cos(wa) * ws, Math.sin(wa) * ws),
     });
@@ -622,6 +633,10 @@ export class Game {
         night: this.sky.night,
         open: this.windowsOpen,
         dash: this.car.custom.ambient || 0xffa050,
+        leaves: this.leafLevel,
+        petals: this.petalLevel,
+        bugs: wx.look.rain < 0.1 && this.sky.night < 0.5 && this.settings.season !== 'winter' ? 1 : 0,
+        speed: Math.abs(v.v),
       });
     }
     for (const g of nightGlow) g.m.emissiveIntensity = g.day + (g.night - g.day) * this.sky.night;
@@ -927,6 +942,20 @@ export class Game {
       const { ctx, tex } = this.car.screenCanvas;
       drawNav(ctx, this.world, this.vehicle, mph, clock, this.nowPlaying || '🎵 Tap 📺 for music videos');
       tex.needsUpdate = true;
+    }
+    // Head-up display
+    {
+      const v = this.vehicle;
+      const lim = this.speedLimit(v.z);
+      const limit = lim < 1000 ? Math.round(lim * 3.6 * (mph ? 0.621371 : 1) / 5) * 5 : null;
+      let note = '';
+      const st = this.world.nextStop(v.z, 3000);
+      if (this.fuel < 0.25 && st) note = `${STOP_INFO[st.kind].icon} ${STOP_INFO[st.kind].name} · ${mph ? ((st.z - v.z) / 1609).toFixed(1) + ' mi' : ((st.z - v.z) / 1000).toFixed(1) + ' km'}`;
+      else {
+        for (let d = 40; d < 400; d += 20) if (Math.abs(this.world.curvature(v.z + d)) > 0.012) { note = `↪ Bend in ${mph ? Math.round(d * 1.094 / 10) * 10 + ' yd' : d + ' m'}`; break; }
+        if (!note && this.region) note = `${this.region.emoji} ${this.region.name}`;
+      }
+      this.car.drawHud(this.settings.hud, sp, mph ? 'mph' : 'km/h', limit, note);
     }
     const v = this.vehicle;
     const within = (Math.abs(v.v) % (v.vmax / 5)) / (v.vmax / 5);

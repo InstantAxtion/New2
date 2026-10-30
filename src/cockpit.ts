@@ -19,6 +19,12 @@ export interface Cockpit {
   sunroofPanel: THREE.Object3D | null;
   mirrorRear: THREE.Mesh | null;
   mirrorSides: THREE.Mesh[];
+  /** An air freshener hanging from the mirror (swings in the bends). */
+  freshener?: THREE.Object3D | null;
+  /** Sun visors that flip down. */
+  visors?: THREE.Object3D[];
+  /** A head-up display projected on the windscreen (modern cars). */
+  hud?: { ctx: CanvasRenderingContext2D; tex: THREE.CanvasTexture; mesh: THREE.Mesh } | null;
 }
 
 function woodTexture(): THREE.Texture {
@@ -373,7 +379,97 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   const eyeY = Math.min(yT + 0.2, (s.open ? 1.4 : P.top(eyeZ)) - 0.12);
   eye.position.set(driverX, eyeY, eyeZ);
   I.add(eye);
-  return { steering, screen, screenWidth, screenCtx, screenTex, clusterCtx, clusterTex, cluster, ambient, sunroofPanel, mirrorRear, mirrorSides };
+
+  // ---- Little things: an air freshener, a phone on a mount, cup holders, sun visors ----
+  let freshener: THREE.Object3D | null = null;
+  const visors: THREE.Object3D[] = [];
+  if (!s.open) {
+    const my = P.top(s.B) - 0.16;
+    freshener = new THREE.Group();
+    freshener.position.set(0.02, my - 0.04, s.B - 0.1);
+    const string = new THREE.Mesh(new THREE.CylinderGeometry(0.0015, 0.0015, 0.08, 4).translate(0, -0.04, 0), std(0xeeeeee, 0.8));
+    const tree = new THREE.Shape();
+    tree.moveTo(0, 0);
+    tree.lineTo(0.03, -0.035); tree.lineTo(0.015, -0.035); tree.lineTo(0.04, -0.07); tree.lineTo(0.02, -0.07);
+    tree.lineTo(0.045, -0.105); tree.lineTo(0.006, -0.105); tree.lineTo(0.006, -0.12); tree.lineTo(-0.006, -0.12); tree.lineTo(-0.006, -0.105);
+    tree.lineTo(-0.045, -0.105); tree.lineTo(-0.02, -0.07); tree.lineTo(-0.04, -0.07); tree.lineTo(-0.015, -0.035); tree.lineTo(-0.03, -0.035);
+    tree.closePath();
+    const card = new THREE.Mesh(new THREE.ShapeGeometry(tree).translate(0, -0.08, 0), std([0x2f9a4a, 0xd4a52a, 0xd8475a][Math.floor(Math.abs(c.color) % 3)], 0.8));
+    freshener.add(string, card);
+    I.add(freshener);
+    // Sun visors, hinged at the top of the windscreen
+    for (const sd of [-1, 1]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(sd * Math.abs(driverX), P.top(s.B) - 0.05, s.B - 0.04);
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.015, 0.16).translate(0, -0.005, -0.08), lining);
+      pivot.add(visor);
+      I.add(pivot);
+      visors.push(pivot);
+    }
+  }
+  if (style !== 'classic') {
+    // Phone in a vent mount, by the driver, showing the time
+    const pc = document.createElement('canvas');
+    pc.width = 96; pc.height = 192;
+    const pg = pc.getContext('2d')!;
+    const grad = pg.createLinearGradient(0, 0, 96, 192);
+    grad.addColorStop(0, '#3a2a6a');
+    grad.addColorStop(1, '#d0607a');
+    pg.fillStyle = grad;
+    pg.fillRect(0, 0, 96, 192);
+    pg.fillStyle = '#fff';
+    pg.font = '600 26px Inter, system-ui, sans-serif';
+    pg.textAlign = 'center';
+    pg.fillText('♪', 48, 104);
+    const pt = new THREE.CanvasTexture(pc);
+    pt.colorSpace = THREE.SRGBColorSpace;
+    const phone = new THREE.Group();
+    phone.add(new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.15, 0.009), trimDark));
+    const ps = new THREE.Mesh(new THREE.PlaneGeometry(0.068, 0.14), new THREE.MeshBasicMaterial({ map: pt, toneMapped: false }));
+    ps.position.z = -0.005;
+    ps.rotation.y = Math.PI;
+    phone.add(ps);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.05), trimDark);
+    arm.position.z = 0.03;
+    phone.add(arm);
+    const side = Math.sign(driverX) || 1;
+    phone.position.set(driverX + side * 0.26, yT - 0.08, zF - 0.05);
+    phone.rotation.set(-0.15, side * -0.35, 0, 'YXZ');
+    I.add(phone);
+  }
+  if (style !== 'van') {
+    // Cup holders in the console, one with a coffee in it
+    for (const dz of [0, 0.1]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.038, 0.006, 6, 16).rotateX(Math.PI / 2), trimDark);
+      ring.position.set(0, floorY + 0.19, zF - 0.62 - dz);
+      I.add(ring);
+    }
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.03, 0.12, 14), std(0xf3efe6, 0.6));
+    cup.position.set(0, floorY + 0.24, zF - 0.62);
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.012, 14), std(0x222222, 0.5));
+    lid.position.set(0, floorY + 0.306, zF - 0.62);
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.0375, 0.034, 0.045, 14), std(0x9a6a3e, 0.9));
+    sleeve.position.set(0, floorY + 0.24, zF - 0.62);
+    I.add(cup, lid, sleeve);
+  }
+  // Head-up display: speed and what's ahead, floating on the glass in front of the driver
+  let hud: Cockpit['hud'] = null;
+  if (!s.open && (style === 'sport' || style === 'luxury' || style === 'ev' || style === 'comfort' || style === 'utility')) {
+    const hc = document.createElement('canvas');
+    hc.width = 256; hc.height = 96;
+    const tex = new THREE.CanvasTexture(hc);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.3, 0.1125),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+    );
+    const hz = (A + zF) / 2 + 0.12;
+    mesh.position.set(driverX, eyeY - 0.06, hz);
+    mesh.lookAt(new THREE.Vector3(driverX, eyeY, eyeZ));
+    I.add(mesh);
+    hud = { ctx: hc.getContext('2d')!, tex, mesh };
+  }
+  return { steering, screen, screenWidth, screenCtx, screenTex, clusterCtx, clusterTex, cluster, ambient, sunroofPanel, mirrorRear, mirrorSides, freshener, visors, hud };
 }
 
 /** Draw the instrument cluster: digital speed with a rev bar, or two round dials. */

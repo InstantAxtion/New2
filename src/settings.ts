@@ -51,6 +51,10 @@ export interface Settings {
   tripMeter: number;
   /** Season: each region's own look, or the whole world in one season. */
   season: 'regions' | 'spring' | 'summer' | 'autumn' | 'winter';
+  /** Calmer cameras for motion-sensitive players. */
+  reduceMotion: boolean;
+  /** Head-up display on the windscreen (cars that have one). */
+  hud: boolean;
 }
 
 export interface SavedDrive {
@@ -110,6 +114,8 @@ export const DEFAULTS: Settings = {
   favourites: [],
   tripMeter: 0,
   season: 'regions',
+  reduceMotion: false,
+  hud: true,
 };
 
 export function loadSettings(): Settings {

@@ -45,9 +45,14 @@ export class CameraRig {
 
   drag(dx: number, dy: number) {
     this.yaw -= dx * 0.006;
-    this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.004, -0.3, 0.9);
+    // From the driver's seat you can look right round the cabin, and down at the console
+    if (this.mode === 'hood') this.yaw = THREE.MathUtils.clamp(this.yaw, -2.6, 2.6);
+    this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.004, this.mode === 'hood' ? -0.85 : -0.3, this.mode === 'hood' ? 0.6 : 0.9);
     this.idle = 0;
   }
+
+  /** Reduce motion: no sway from the car's body in the driver's view, softer chase cameras. */
+  calm = false;
 
   /** Where on screen (px) the garage should show the car, so the menus don't cover it. */
   focus: { x: number; y: number; size: number } | null = null;
@@ -97,7 +102,7 @@ export class CameraRig {
     }
     if (!this.dragging) {
       this.idle += dt;
-      if (this.idle > 1.5) {
+      if (this.idle > (this.mode === 'hood' ? 4 : 1.5)) {
         const k = 1 - Math.exp(-dt * 2);
         this.yaw *= 1 - k;
         this.pitch *= 1 - k;
@@ -118,7 +123,7 @@ export class CameraRig {
         const a = v.heading + Math.PI + this.yaw;
         desired.set(v.x + Math.sin(a) * d, v.y + h, v.z + Math.cos(a) * d);
         target.set(v.x + fx * 4, v.y + (far ? 0.5 : 1.1), v.z + fz * 4);
-        stiff = far ? 3 : 6;
+        stiff = (far ? 3 : 6) * (this.calm ? 0.6 : 1);
         break;
       }
       case 'hood': {
@@ -126,10 +131,14 @@ export class CameraRig {
         if (!this.car) break;
         this.car.body.updateWorldMatrix(true, false);
         this.car.eye.updateWorldMatrix(true, false);
-        const q = this.car.body.getWorldQuaternion(new THREE.Quaternion());
+        const q = this.calm
+          ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), v.heading)
+          : this.car.body.getWorldQuaternion(new THREE.Quaternion());
         // On a tall screen sit nearer the middle and look a touch towards the dashboard screen
         const tall = this.cam.aspect < 1;
-        const eye = this.car.eye.localToWorld(new THREE.Vector3(tall ? -0.2 : 0, tall ? -0.04 : 0, tall ? -0.05 : 0));
+        // Lean a little to the side when looking over your shoulder
+        const lean = Math.sin(this.yaw) * 0.12;
+        const eye = this.car.eye.localToWorld(new THREE.Vector3((tall ? -0.2 : 0) + lean, tall ? -0.04 : 0, tall ? -0.05 : 0));
         const yaw = this.yaw + (tall ? -0.08 : 0);
         const dir = new THREE.Vector3(Math.sin(yaw), (tall ? -0.1 : -0.06) + this.pitch * 0.6, Math.cos(yaw)).applyQuaternion(q).normalize();
         if (this.focusT > 0.001) {

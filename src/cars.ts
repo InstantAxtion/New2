@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { addDecals, buildOpenings, type Openings } from './carextras';
-import type { Tier } from './materials';
+import { weatherPaint, type Tier } from './materials';
 import { bodyGeometry, profile } from './carbody';
 import { CARS, COLORS, defaultCustom, type CarSpec, type Custom } from './carspecs';
 import { buildExterior, buildWheel, type PartMats } from './carparts';
@@ -71,6 +71,7 @@ export class CarModel {
     const P = profile(s);
 
     this.paint = paintMaterial(c.color, c.finish, pbr) as THREE.MeshPhysicalMaterial;
+    if (pbr) weatherPaint(this.paint);
     const second = paintMaterial(c.color2, c.finish === 'pearl' ? 'metallic' : c.finish, pbr);
     const roofM = c.twoTone ? second : this.paint;
     const glass = pbr
@@ -281,6 +282,55 @@ export class CarModel {
       lid.position.y = 0.04 + k * h;
       walls.scale.y = Math.max(0.001, k * h);
     }
+  }
+
+  private swing = 0;
+  private swingV = 0;
+  private visorA = 0;
+  /** Cabin bits: the air freshener swings with the bends; the sun visors flip down. */
+  cabinTick(dt: number, lateral: number, visorDown: boolean) {
+    const f = this.cockpit.freshener;
+    if (f) {
+      this.swingV += (-lateral * 0.06 - this.swing * 22 - this.swingV * 1.6) * dt;
+      this.swing += this.swingV * dt;
+      f.rotation.z = this.swing;
+      f.rotation.x = Math.sin(this.swing * 3) * 0.1;
+    }
+    this.visorA += ((visorDown ? 1 : 0) - this.visorA) * (1 - Math.exp(-dt * 6));
+    for (const v of this.cockpit.visors ?? []) v.rotation.x = -this.visorA * 1.35;
+  }
+
+  /** The windscreen head-up display: speed, the limit, and what's coming up. */
+  drawHud(on: boolean, speed: number, unit: string, limit: number | null, note: string) {
+    const h = this.cockpit.hud;
+    if (!h) return;
+    h.mesh.visible = on;
+    if (!on) return;
+    const g = h.ctx;
+    g.clearRect(0, 0, 256, 96);
+    g.fillStyle = 'rgba(150,230,255,0.95)';
+    g.font = '700 46px Inter, system-ui, sans-serif';
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    const sw = g.measureText(String(speed)).width;
+    g.fillText(String(speed), 70, 40);
+    g.font = '600 15px Inter, system-ui, sans-serif';
+    g.fillText(unit, 76 + sw, 52);
+    if (limit) {
+      g.strokeStyle = 'rgba(255,120,110,0.95)';
+      g.lineWidth = 5;
+      g.beginPath();
+      g.arc(34, 40, 24, 0, Math.PI * 2);
+      g.stroke();
+      g.font = '700 20px Inter, system-ui, sans-serif';
+      g.textAlign = 'center';
+      g.fillText(String(limit), 34, 41);
+    }
+    g.textAlign = 'left';
+    g.font = '500 16px Inter, system-ui, sans-serif';
+    g.fillStyle = 'rgba(190,240,255,0.85)';
+    g.fillText(note, 70, 82);
+    h.tex.needsUpdate = true;
   }
 
   /** Sweep the wipers (phase in radians). */

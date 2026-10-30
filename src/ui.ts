@@ -207,6 +207,7 @@ export class UI {
     <button class="pad small" id="win-btn" aria-label="Windows">🪟<span>Windows</span></button>
     <button class="pad small" id="roof-btn" aria-label="Sunroof">☀️<span id="roof-lbl">Sunroof</span></button>
     <button class="pad small" id="demist-btn" aria-label="Demister">🌬️<span>Demist</span></button>
+    <button class="pad small" id="visor-btn" aria-label="Sun visors">🕶️<span>Visor</span></button>
   </div>
   <div class="toast" id="toast"></div>
   <div class="sleep-cover" id="sleep-cover"><div><b>Good night 🌙</b><span>Pulled over and stopped. The music has faded out.</span>
@@ -348,6 +349,8 @@ export class UI {
     <div class="chips" data-set="orientation"><button class="chip" data-v="auto">🔄 Auto-rotate</button><button class="chip" data-v="landscape">▭ Landscape</button><button class="chip" data-v="portrait">▯ Vertical</button></div>
     <div class="chips" data-set="minimalHud"><button class="chip" data-v="false">Full HUD</button><button class="chip" data-v="true">Minimal HUD</button></div>
     <div class="chips" data-set="compass"><button class="chip" data-v="true">🧭 Compass &amp; altitude</button><button class="chip" data-v="false">Hide</button></div>
+    <div class="chips" data-set="reduceMotion"><button class="chip" data-v="false">Normal motion</button><button class="chip" data-v="true">🫧 Reduce motion</button></div>
+    <div class="chips" data-set="hud"><button class="chip" data-v="true">Windscreen head-up display</button><button class="chip" data-v="false">No HUD on the glass</button></div>
     <div class="chips" data-set="dashScreen"><button class="chip" data-v="map">🗺️ Dash shows the map</button><button class="chip" data-v="visualizer">🎶 Dash shows a visualizer</button></div>
     <h3>Time of day</h3>
     <div class="chips">${timeChips}</div>
@@ -788,6 +791,10 @@ export class UI {
       const g = this.game;
       g.setOpenings(!g.windowsOpen, g.sunroofOpen, g.roofUp);
       this.refreshCabin();
+    };
+    $('#visor-btn', r).onclick = () => {
+      this.game.visorDown = !this.game.visorDown;
+      $('#visor-btn').classList.toggle('on', this.game.visorDown);
     };
     $('#demist-btn', r).onclick = () => {
       const gl = this.game.glass;

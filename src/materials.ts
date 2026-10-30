@@ -8,7 +8,7 @@ export type Tier = 'basic' | 'pbr';
 
 /** Shared, animated shader inputs. */
 /** Uniforms shared by every material: time, snow cover, and wind strength (1 = a breeze). */
-export const shared = { time: { value: 0 }, snow: { value: 0 }, wind: { value: 1 }, wet: { value: 0 }, season: { value: new THREE.Color(1, 1, 1) } };
+export const shared = { time: { value: 0 }, snow: { value: 0 }, wind: { value: 1 }, wet: { value: 0 }, season: { value: new THREE.Color(1, 1, 1) }, carWet: { value: 0 }, carSnow: { value: 0 } };
 
 /** Tint ground and leaves for the chosen season (spring fresh, summer dry, autumn golden). */
 function seasonal(sh: THREE.WebGLProgramParametersWithUniforms) {
@@ -262,4 +262,41 @@ export function addPuddles(m: THREE.MeshStandardMaterial, muddy = false) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.02, puddle);');
   };
   m.customProgramCacheKey = () => 'puddles' + (muddy ? 'm' : '');
+}
+
+/** Car paint in the weather: raindrops bead on it, and snow settles on the roof and bonnet. */
+export function weatherPaint(m: THREE.Material) {
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uCarWet = shared.carWet;
+    sh.uniforms.uCarSnow = shared.carSnow;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCarPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCarPos = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCarPos;\nuniform float uCarWet;\nuniform float uCarSnow;')
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        {
+          vec3 wN = inverseTransformDirection(normal, viewMatrix);
+          // Beads of water: a scatter of little lenses over the paint
+          vec2 dp = vCarPos.xz * 26.0 + vec2(vCarPos.y * 9.0, -vCarPos.y * 5.0);
+          vec2 cell = floor(dp);
+          vec2 f = fract(dp) - 0.5;
+          float h = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
+          vec2 o = f + (vec2(h, fract(h * 7.3)) - 0.5) * 0.4;
+          float r = 0.14 + 0.16 * h;
+          float drop = smoothstep(r, r * 0.55, length(o)) * step(0.3, h) * uCarWet;
+          normal = normalize(normal + vec3(o * drop * 2.0, 0.0));
+          roughnessFactor = mix(roughnessFactor, 0.02, drop);
+          // Snow on the flat tops
+          float top = smoothstep(0.45, 0.8, wN.y) * uCarSnow;
+          float flake = fract(sin(dot(floor(vCarPos.xz * 60.0), vec2(4.1, 7.7))) * 9031.7);
+          top *= smoothstep(0.15, 0.6, flake + uCarSnow * 0.6);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.97, 1.0), top);
+          roughnessFactor = mix(roughnessFactor, 0.85, top);
+        }`,
+      );
+  };
+  m.customProgramCacheKey = () => 'weather-paint';
 }
