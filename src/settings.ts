@@ -110,7 +110,7 @@ export const DEFAULTS: Settings = {
   prefer: 'video',
   pip: false,
   orientation: 'auto',
-  trafficDensity: 0.45,
+  trafficDensity: 0,
   driveStyle: 'normal',
   weather: 'clear',
   shuffle: false,
@@ -143,6 +143,9 @@ export function loadSettings(): Settings {
     // The video lives on the car's screen (or the Watch view), not floating over the outside cameras
     if (!raw.pipV2) s.pip = false;
     (s as unknown as { pipV2: boolean }).pipV2 = true;
+    // Empty roads unless you turn traffic on
+    if (!raw.trafficV2) s.trafficDensity = 0;
+    (s as unknown as { trafficV2: boolean }).trafficV2 = true;
     // Older saves only had traffic on/off
     if (raw.trafficDensity === undefined && raw.traffic === false) s.trafficDensity = 0;
     return s;

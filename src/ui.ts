@@ -180,23 +180,20 @@ export class UI {
         <div class="region-grid" id="themes">${regionTiles}</div>
       </div>
       <div class="gpage" data-page="sky">
-        <h3>Time of day</h3>
-        <div class="chips" id="times">${timeChips}</div>
-        <h3>Weather</h3>
-        <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">🌨️💧 Sleet</button></div>
-        <h3>Season</h3>
-        <div class="chips" data-set="season"><button class="chip" data-v="regions">🗺️ Each region's own</button><button class="chip" data-v="spring">🌱 Spring</button><button class="chip" data-v="summer">☀️ Summer</button><button class="chip" data-v="autumn">🍂 Autumn</button><button class="chip" data-v="winter">❄️ Winter</button></div>
+        <div class="sgroup flat">
+          <div class="srow col"><span>Time of day</span><div class="seg wrap" id="times">${timeChips}</div></div>
+          <div class="srow col"><span>Weather</span><div class="seg wrap icons" data-set="weather"><button class="chip" data-v="clear">☀️</button><button class="chip" data-v="rain">🌧️</button><button class="chip" data-v="storm">⛈️</button><button class="chip" data-v="snow">🌨️</button><button class="chip" data-v="fog">🌫️</button><button class="chip" data-v="hail">🧊</button><button class="chip" data-v="sleet">💧</button></div></div>
+          ${seg('Season', 'season', [['regions', 'Auto'], ['spring', '🌱'], ['summer', '☀️'], ['autumn', '🍂'], ['winter', '❄️']])}
+        </div>
       </div>
       <div class="gpage" data-page="road">
-        <h3>Traffic</h3>
-        <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
-        <h3>Auto-drive style</h3>
-        <div class="chips" data-set="driveStyle"><button class="chip" data-v="relaxed">🌿 Relaxed</button><button class="chip" data-v="normal">🚗 Normal</button><button class="chip" data-v="sporty">🏁 Sporty</button></div>
-        <h3>Your steering</h3>
-        <div class="chips" data-set="steering"><button class="chip" data-v="buttons">◀ ▶ Buttons</button><button class="chip" data-v="tilt">📱 Tilt phone</button></div>
-        <div class="chips gap-top" data-set="assist"><button class="chip" data-v="true">🛟 Steering assist on</button><button class="chip" data-v="false">Assist off</button></div>
-        <h3>Where to</h3>
-        <div class="chips"><button class="chip" id="new-world">🎲 A brand new road</button><button class="chip" data-open="places">📍 Saved places</button></div>
+        <div class="sgroup flat">
+          <div class="srow"><span>Traffic</span><div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div></div>
+          ${seg('Auto-drive', 'driveStyle', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['sporty', 'Sporty']])}
+          ${seg('Steering', 'steering', [['buttons', 'Buttons'], ['tilt', 'Tilt']])}
+          ${seg('Steering assist', 'assist', [['true', 'On'], ['false', 'Off']])}
+        </div>
+        <div class="tile-row"><button class="tile" id="new-world"><i>🎲</i><span>New road</span></button><button class="tile" data-open="places"><i>📍</i><span>Saved places</span></button></div>
       </div>
       <div class="go-row">
         <button class="go alt" id="go-auto">🤖 Auto-drive</button>
@@ -297,34 +294,31 @@ export class UI {
 </section>
 
 <section id="pause" class="screen modal">
-  <div class="card menu scroll">
-    <h2>Paused</h2>
-    <button class="go" id="resume">Keep driving ▶</button>
-    <button class="ghost" id="to-garage">🚗 Garage &amp; world</button>
-    <button class="ghost" data-open="stats">📊 Trips</button>
-    <h3>Time of day</h3>
-    <div class="chips center">${timeChips}</div>
-    <h3>Weather</h3>
-    <div class="chips center" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">🌨️💧 Sleet</button></div>
-    <h3>Traffic</h3>
-    <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
-    <h3>Auto-drive</h3>
-    <div class="chips center" data-set="driveStyle"><button class="chip" data-v="relaxed">🌿 Relaxed</button><button class="chip" data-v="normal">🚗 Normal</button><button class="chip" data-v="sporty">🏁 Sporty</button></div>
-    <div class="chips center" id="sleep-chips"><button class="chip" data-sleep="0">🌙 Sleep timer off</button><button class="chip" data-sleep="30">30 min</button><button class="chip" data-sleep="60">60 min</button><button class="chip" data-sleep="90">90 min</button></div>
-    <div class="menu-row">
-      <button class="ghost" data-open="music">🎵 Music</button>
-      <button class="ghost" data-open="settings">⚙️ Settings</button>
+  <div class="card menu pause-card scroll">
+    <div class="pause-head"><h2>Paused</h2><button class="go" id="resume">Keep driving ▶</button></div>
+    <div class="tile-row four">
+      <button class="tile" id="to-garage"><i>🚗</i><span>Garage</span></button>
+      <button class="tile" data-open="music"><i>🎵</i><span>Music</span></button>
+      <button class="tile" data-open="stats"><i>🛂</i><span>Passport</span></button>
+      <button class="tile" data-open="settings"><i>⚙️</i><span>Settings</span></button>
+    </div>
+    <div class="sgroup flat">
+      <div class="srow col"><span>Time of day</span><div class="seg wrap">${timeChips}</div></div>
+      <div class="srow col"><span>Weather</span><div class="seg wrap icons" data-set="weather"><button class="chip" data-v="clear">☀️</button><button class="chip" data-v="rain">🌧️</button><button class="chip" data-v="storm">⛈️</button><button class="chip" data-v="snow">🌨️</button><button class="chip" data-v="fog">🌫️</button><button class="chip" data-v="hail">🧊</button><button class="chip" data-v="sleet">💧</button></div></div>
+      <div class="srow"><span>Traffic</span><div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div></div>
+      ${seg('Auto-drive', 'driveStyle', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['sporty', 'Sporty']])}
+      <div class="srow"><span>Sleep timer</span><div class="seg" id="sleep-chips"><button class="chip" data-sleep="0">Off</button><button class="chip" data-sleep="30">30m</button><button class="chip" data-sleep="60">60m</button><button class="chip" data-sleep="90">90m</button></div></div>
     </div>
   </div>
 </section>
 
 <aside id="music" class="sheet hidden">
-  <div class="sheet-head"><h2>🎵 Music</h2><button class="icon" data-close="music" aria-label="Close">✕</button></div>
+  <div class="sheet-head"><h2>Music</h2><button class="icon" data-close="music" aria-label="Close">✕</button></div>
   <div class="tabs">
-    <button class="tab" data-mtab="spotify">🎧 Spotify player</button>
-    <button class="tab" data-mtab="videos">📺 Music videos</button>
-    <button class="tab" data-mtab="radio">📻 Radio & ambience</button>
-    <button class="tab" data-mtab="podcasts">🎙️ Talk & books</button>
+    <button class="tab" data-mtab="spotify"><i>🎧</i>Spotify</button>
+    <button class="tab" data-mtab="videos"><i>📺</i>Videos</button>
+    <button class="tab" data-mtab="radio"><i>📻</i>Radio</button>
+    <button class="tab" data-mtab="podcasts"><i>🎙️</i>Talk & books</button>
   </div>
   <div class="sheet-body">
     <div class="row"><input id="sp-input" type="url" inputmode="url" placeholder="Paste a Spotify or YouTube link" autocomplete="off" />
@@ -337,11 +331,10 @@ export class UI {
         <button class="ghost small" id="sp-logout">Log out</button>
       </div>
       <div class="row"><input id="sps-q" type="search" placeholder="Search Spotify" autocomplete="off" /><button class="go small" id="sps-go">Search</button></div>
-      <p class="hint">Opens the search in the Spotify app. Pick a playlist or album there and it plays straight away, or Share → Copy link and paste it here to play it in the car.</p>
       <div class="row"><button class="ghost small" id="sp-paste">📋 Paste</button>
         <button class="ghost small" id="sp-app" disabled>Open in Spotify app ↗</button></div>
       <div id="sp-player"><p class="hint">In Spotify, open a playlist → ⋯ → Share → <b>Copy link</b>, then paste it here.</p></div>
-      <p class="hint">Log in once and the player plays full songs (Spotify may limit free accounts to shuffle). Use your Spotify email and password, or "Log in without password" — Google and Facebook buttons don't work inside apps. You can also tap <b>Open in Spotify app</b> and come back (the music keeps playing while you drive), or switch to <b>📺 Music videos</b>.</p>
+      <details class="fix"><summary>Help with Spotify</summary><p class="hint">Log in once and the player plays full songs (free accounts may be shuffle-only). Use your Spotify email and password, or "Log in without password" — Google and Facebook buttons don't work inside apps. Or tap <b>Open in Spotify app</b> and come back: the music keeps playing while you drive.</p></details>
     </div>
     <div class="mpane" data-pane="podcasts">
       <div class="chips" id="pc-kind"><button class="chip on" data-pck="pod">🎙️ Podcasts</button><button class="chip" data-pck="book">📚 Audiobooks</button></div>
@@ -456,7 +449,7 @@ export class UI {
 </aside>
 
 <aside id="places" class="sheet hidden">
-  <div class="sheet-head"><h2>📍 Places</h2><button class="icon" data-close="places" aria-label="Close">✕</button></div>
+  <div class="sheet-head"><h2>Places</h2><button class="icon" data-close="places" aria-label="Close">✕</button></div>
   <div class="sheet-body" id="places-body"></div>
 </aside>
 

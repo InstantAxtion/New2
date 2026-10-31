@@ -145,8 +145,10 @@ export class CameraRig {
         const a = this.camHeading + Math.PI + this.yaw;
         desired.set(v.x + Math.sin(a) * d, v.y + h, v.z + Math.cos(a) * d);
         // Look at the car, a little ahead along the camera's own heading (so the view doesn't swing about)
+        // Looking at the car from another angle (dragged round): aim at the car itself so it stays centred
+        const ahead = 5 * Math.max(0, Math.cos(this.yaw));
         const cf = Math.sin(this.camHeading), cz = Math.cos(this.camHeading);
-        target.set(v.x + cf * 5, v.y + (far ? 0.5 : 1.0), v.z + cz * 5);
+        target.set(v.x + cf * ahead, v.y + (far ? 0.5 : 0.8 + 0.2 * Math.max(0, Math.cos(this.yaw))), v.z + cz * ahead);
         // A faint buzz at speed (road texture through the suspension)
         if (!this.calm && this.speedK > 0.3) {
           const t = performance.now() / 1000, k = (this.speedK - 0.3) * 0.025;
