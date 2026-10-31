@@ -168,6 +168,8 @@ export class Windscreen {
     }
     this.lastAngle = a;
     u.uRain.value = o.rain;
+    // Climate control: the demister comes on by itself once the glass starts to mist
+    if (this.fog > 0.3) this.demisting = true;
     // Mist builds up slowly with the windows shut in cold or wet weather
     if (o.open) this.fog = Math.max(0, this.fog - dt * 0.2);
     else if (this.demisting) {

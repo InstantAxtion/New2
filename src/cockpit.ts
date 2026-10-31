@@ -27,7 +27,7 @@ export interface Cockpit {
   /** A head-up display projected on the windscreen (modern cars). */
   hud?: { ctx: CanvasRenderingContext2D; tex: THREE.CanvasTexture; mesh: THREE.Mesh } | null;
   /** Where the driver sits (cabin coordinates): seat top, eye height, steering wheel centre. */
-  seat?: { x: number; top: number; z: number; eyeY: number; wheel: THREE.Vector3; rimR: number };
+  seat?: { x: number; top: number; z: number; eyeY: number; wheel: THREE.Vector3; rimR: number; pedal: THREE.Vector3; rest: THREE.Vector3 };
   /** Inside of the doors (they swing out with the doors, so hide while those are open). */
   doorPanels?: THREE.Object3D[];
 }
@@ -50,6 +50,45 @@ function woodTexture(): THREE.Texture {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+let grainTex: THREE.Texture | null = null;
+/** Fine random grain (for bump maps). */
+function grainTexture(): THREE.Texture {
+  if (grainTex) return grainTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(128, 128);
+  for (let i = 0; i < 128 * 128; i++) {
+    const v = 110 + Math.random() * 60;
+    img.data.set([v, v, v, 255], i * 4);
+  }
+  g.putImageData(img, 0, 0);
+  grainTex = new THREE.CanvasTexture(c);
+  grainTex.wrapS = grainTex.wrapT = THREE.RepeatWrapping;
+  return grainTex;
+}
+
+let carpetTex: THREE.Texture | null = null;
+/** Speckled carpet for the floor. */
+function carpetTexture(): THREE.Texture {
+  if (carpetTex) return carpetTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#8a8a8a';
+  g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 2600; i++) {
+    const v = 90 + Math.random() * 90;
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.fillRect(Math.random() * 128, Math.random() * 128, 1.5, 1.5);
+  }
+  carpetTex = new THREE.CanvasTexture(c);
+  carpetTex.wrapS = carpetTex.wrapT = THREE.RepeatWrapping;
+  carpetTex.repeat.set(6, 12);
+  carpetTex.colorSpace = THREE.SRGBColorSpace;
+  return carpetTex;
 }
 
 function carbonTexture(): THREE.Texture {
@@ -79,11 +118,25 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
       ? new THREE.MeshStandardMaterial({ color, roughness, metalness, map, side: THREE.DoubleSide })
       : new THREE.MeshLambertMaterial({ color, map, side: THREE.DoubleSide });
   const dashColor = style === 'classic' ? 0x2b2622 : style === 'ev' ? 0x34353a : 0x232428;
-  const dashM = std(dashColor, 0.8);
-  const softM = std(style === 'ev' ? 0x45464b : 0x34353a, 0.9);
+  // Surfaces get a fine grain so they read as moulded plastic, leather and carpet rather than flat colour
+  const grained = <T extends THREE.Material>(m: T, repeat: number, scale: number): T => {
+    if (pbr) {
+      const t = grainTexture().clone();
+      t.repeat.set(repeat, repeat);
+      t.needsUpdate = true;
+      (m as unknown as THREE.MeshStandardMaterial).bumpMap = t;
+      (m as unknown as THREE.MeshStandardMaterial).bumpScale = scale;
+    }
+    return m;
+  };
+  const dashM = grained(std(dashColor, 0.8), 14, 0.6);
+  const softM = grained(std(style === 'ev' ? 0x45464b : 0x34353a, 0.9), 10, 0.8);
+  const carpet = pbr
+    ? grained(new THREE.MeshStandardMaterial({ color: 0x2a2b2e, roughness: 1, map: carpetTexture() }), 30, 1.5)
+    : softM;
   const trimDark = std(0x141518, 0.45);
-  const leather = std(c.leather, 0.7);
-  const lining = std(style === 'luxury' || style === 'classic' ? 0x9a948a : 0x3e3d3b, 0.95);
+  const leather = grained(std(c.leather, 0.62), 22, 0.9);
+  const lining = grained(std(style === 'luxury' || style === 'classic' ? 0x9a948a : 0x3e3d3b, 0.95), 18, 0.5);
   const trimM =
     c.trim === 'wood' ? std(0xffffff, 0.35, 0, woodTexture())
     : c.trim === 'carbon' ? std(0xffffff, 0.3, 0.2, carbonTexture())
@@ -157,7 +210,12 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   // ---- Centre screen ----
   const tablet = style === 'ev';
   // Big screens: they're for watching music videos
-  const screenWidth = tablet ? 0.52 : style === 'classic' ? 0.28 : style === 'luxury' ? Math.min(0.46, inner(zF) * 0.55) : Math.min(0.42, inner(zF) * 0.5);
+  // Fit it between the instrument cluster and the passenger side, leaving room for the vents
+  const left = driverX - 0.22, right = -inner(zF) + 0.12;
+  const room = left - right - (tablet ? 0 : 0.3);
+  const wantW = tablet ? 0.52 : style === 'classic' ? 0.28 : style === 'luxury' ? Math.min(0.46, inner(zF) * 0.55) : Math.min(0.42, inner(zF) * 0.5);
+  const screenWidth = tablet ? wantW : Math.max(0.22, Math.min(wantW, room));
+  const screenX = tablet ? 0 : Math.min(-0.04, (left + right) / 2);
   const cv = document.createElement('canvas');
   cv.width = 512; cv.height = 288;
   const screenCtx = cv.getContext('2d')!;
@@ -179,26 +237,46 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     I.add(stand);
   } else {
     screenY = yT - 0.025 - (screenWidth * 0.5625) / 2;
-    screen.position.set(-0.08, screenY, zF - 0.06);
-    screen.rotation.set(-0.14, Math.PI - 0.16, 0, 'YXZ');
+    // Stands proud of the dash face (the face bulges out to about zF - 0.015 under the top)
+    screen.position.set(screenX, screenY, zF - 0.075);
+    screen.rotation.set(-0.12, Math.PI - 0.12, 0, 'YXZ');
+    // Air vents either side: a surround with horizontal slats
     for (const x of [-1, 1]) {
-      const vent = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.045, 0.03), trimDark);
-      vent.position.set(-0.08 + x * (screenWidth / 2 + 0.1), screenY, zF - 0.035);
-      const vring = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.055, 0.02), style === 'sport' ? trimM : chrome);
-      vring.position.copy(vent.position).add(new THREE.Vector3(0, 0, 0.005));
-      I.add(vring, vent);
+      const vx = screenX + x * (screenWidth / 2 + 0.085);
+      if (x > 0 && vx + 0.07 > left + 0.02) continue;
+      const vring = new THREE.Mesh(new RoundedBoxGeometry(0.13, 0.06, 0.025, 2, 0.01), style === 'sport' ? trimM : chrome);
+      vring.position.set(vx, screenY + 0.02, zF - 0.03);
+      const hole = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.046, 0.01), std(0x050506, 0.9));
+      hole.position.set(vx, screenY + 0.02, zF - 0.043);
+      I.add(vring, hole);
+      for (let k = 0; k < 3; k++) {
+        const slat = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.004, 0.012), trimDark);
+        slat.position.set(vx, screenY + 0.005 + k * 0.015, zF - 0.05);
+        slat.rotation.x = -0.3;
+        I.add(slat);
+      }
     }
-    for (let k = 0; k < 3; k++) {
-      const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 16).rotateX(Math.PI / 2), chrome);
-      knob.position.set(-0.08 + (k - 1) * 0.08, screenY - screenWidth * 0.29 - 0.05, zF - 0.03);
+    // Climate panel under the screen: two dials and a row of buttons
+    const panelY = screenY - screenWidth * 0.29 - 0.055;
+    const climate = new THREE.Mesh(new RoundedBoxGeometry(0.3, 0.07, 0.03, 2, 0.01), trimM);
+    climate.position.set(screenX, panelY, zF - 0.03);
+    I.add(climate);
+    for (const dx of [-0.11, 0.11]) {
+      const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.03, 20).rotateX(Math.PI / 2), chrome);
+      knob.position.set(screenX + dx, panelY, zF - 0.055);
       I.add(knob);
+    }
+    for (let k = 0; k < 4; k++) {
+      const btn = new THREE.Mesh(new RoundedBoxGeometry(0.03, 0.018, 0.012, 1, 0.005), std(0x1c1d20, 0.5));
+      btn.position.set(screenX - 0.051 + k * 0.034, panelY, zF - 0.05);
+      I.add(btn);
     }
   }
   I.add(screen);
 
   // ---- Console and gear lever ----
   const conLen = style === 'van' ? 0.4 : 0.95;
-  const con = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.16, conLen), softM);
+  const con = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.16, conLen, 3, 0.04), softM);
   con.position.set(0, floorY + 0.1, zF - conLen / 2);
   const conTrim = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.01, conLen - 0.1), trimM);
   conTrim.position.set(0, floorY + 0.185, zF - conLen / 2);
@@ -368,25 +446,49 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     I.add(belt, anchor);
   }
 
-  // Pedals in the footwell
-  const pedalZ = zF - 0.05;
-  for (const [dx, w] of [[0.1, 0.06], [-0.02, 0.11], [-0.16, 0.06]] as const) {
-    if (dx === -0.16 && (style === 'ev' || style === 'luxury')) continue;
-    const pedal = new THREE.Mesh(new THREE.BoxGeometry(w, 0.09, 0.015), std(0x2a2b2e, 0.4, 0.6));
-    pedal.position.set(driverX + dx - 0.05, floorY + 0.12, pedalZ);
-    pedal.rotation.x = -0.6;
+  // Pedals in the footwell: brushed metal with rubber grips, hung from the dash (a clutch on manual cars)
+  const pedalZ = zF - 0.1;
+  const alu = std(0xb9bdc4, 0.35, 0.9);
+  const rubber = std(0x161618, 0.8);
+  const manualBox = style === 'classic' || style === 'sport';
+  const accelX = driverX - 0.2;
+  for (const [x, w, h] of [[accelX, 0.055, 0.14], [driverX - 0.05, 0.1, 0.075], [driverX + 0.08, 0.075, 0.075]] as const) {
+    if (x === driverX + 0.08 && !manualBox) continue;
+    const pedal = new THREE.Group();
+    pedal.position.set(x, floorY + 0.13, pedalZ);
+    pedal.rotation.x = -0.55;
+    const plate = new THREE.Mesh(new RoundedBoxGeometry(w, h, 0.014, 2, 0.006), alu);
+    pedal.add(plate);
+    for (let k = -1; k <= 1; k++) {
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(w * 0.8, 0.008, 0.006), rubber);
+      grip.position.set(0, k * h * 0.28, -0.01);
+      pedal.add(grip);
+    }
+    // The arm up into the dash
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.2, 0.015), trimDark);
+    arm.position.set(0, h / 2 + 0.09, 0.03);
+    arm.rotation.x = 0.4;
+    pedal.add(arm);
     I.add(pedal);
   }
-  const footrest = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.02), std(0x2a2b2e, 0.4, 0.6));
-  footrest.position.set(driverX + 0.24, floorY + 0.1, pedalZ - 0.05);
-  footrest.rotation.x = -0.7;
+  const footrest = new THREE.Mesh(new RoundedBoxGeometry(0.075, 0.16, 0.02, 2, 0.008), alu);
+  footrest.position.set(driverX + 0.22, floorY + 0.11, pedalZ - 0.03);
+  footrest.rotation.x = -0.75;
   I.add(footrest);
+  const pedalAt = new THREE.Vector3(accelX, floorY + 0.12, pedalZ - 0.02);
+  const restAt = new THREE.Vector3(driverX + 0.22, floorY + 0.1, pedalZ - 0.05);
+  // Floor mats
+  for (const x of [driverX, -driverX]) {
+    const mat = new THREE.Mesh(new RoundedBoxGeometry(0.5, 0.012, 0.6, 2, 0.005), carpet);
+    mat.position.set(x, floorY + 0.022, pedalZ - 0.3);
+    I.add(mat);
+  }
 
   // ---- Floor, door panels ----
   // Vans are roomy all the way back
   const zBack = s.open ? zF - 1.6 : style === 'van' ? s.C + 0.05 : Math.max(s.C - 0.2, zF - 2.4);
   const floorLen = Math.max(2.4, zF - zBack + 0.2);
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(inner(zF) * 2, 0.03, floorLen), softM);
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(inner(zF) * 2, 0.03, floorLen), carpet);
   floor.position.set(0, floorY, zF + 0.1 - floorLen / 2);
   I.add(floor);
   if (style === 'van') {
@@ -421,6 +523,22 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     arm.position.set(side * (P.half(eyeZ) * 0.94 - 0.09), belt - 0.18, eyeZ + 0.15);
     I.add(arm);
     doorPanels.push(arm);
+    // Door details: handle, speaker grille, a map pocket and window switches on the armrest
+    const dx = side * (P.half(eyeZ + 0.4) * 0.94 - 0.065);
+    const handle = new THREE.Mesh(new RoundedBoxGeometry(0.02, 0.03, 0.11, 2, 0.008), chrome);
+    handle.position.set(dx, belt - 0.11, eyeZ + 0.5);
+    const grille = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.012, 24).rotateZ(Math.PI / 2), grained(std(0x1c1d20, 0.9), 6, 2));
+    grille.position.set(side * (P.half(eyeZ + 0.45) * 0.94 - 0.055), floorY + 0.2, eyeZ + 0.45);
+    const pocket = new THREE.Mesh(new RoundedBoxGeometry(0.04, 0.09, 0.4, 2, 0.015), softM);
+    pocket.position.set(side * (P.half(eyeZ + 0.1) * 0.94 - 0.07), floorY + 0.14, eyeZ + 0.05);
+    I.add(handle, grille, pocket);
+    doorPanels.push(handle, grille, pocket);
+    for (let k = 0; k < 2; k++) {
+      const sw = new THREE.Mesh(new RoundedBoxGeometry(0.03, 0.012, 0.04, 1, 0.004), trimDark);
+      sw.position.set(side * (P.half(eyeZ) * 0.94 - 0.09), belt - 0.15, eyeZ + 0.25 - k * 0.05);
+      I.add(sw);
+      doorPanels.push(sw);
+    }
     if (style === 'utility') {
       const grab = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.012, 6, 12, Math.PI), trimDark);
       grab.position.set(side * (P.half(A - 0.2) * 0.85), yT + 0.05, A - 0.25);
@@ -561,7 +679,8 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   }
   // Head-up display: speed and what's ahead, floating on the glass in front of the driver
   let hud: Cockpit['hud'] = null;
-  if (!s.open && (style === 'sport' || style === 'luxury' || style === 'ev' || style === 'comfort' || style === 'utility')) {
+  // (off: speed belongs on the instruments, not the windscreen)
+  if (false as boolean) {
     const hc = document.createElement('canvas');
     hc.width = 256; hc.height = 96;
     const tex = new THREE.CanvasTexture(hc);
@@ -577,7 +696,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     hud = { ctx: hc.getContext('2d')!, tex, mesh };
   }
   return { steering, screen, screenWidth, screenCtx, screenTex, clusterCtx, clusterTex, cluster, ambient, sunroofPanel, mirrorRear, mirrorSides, freshener, visors, hud,
-    seat: { x: driverX, top: seatTop, z: eyeZ, eyeY, wheel: wheelC.clone(), rimR }, doorPanels };
+    seat: { x: driverX, top: seatTop, z: eyeZ, eyeY, wheel: wheelC.clone(), rimR, pedal: pedalAt, rest: restAt }, doorPanels };
 }
 
 /** Draw the instrument cluster: digital speed with a rev bar, or two round dials. */
@@ -685,8 +804,9 @@ export function buildDriver(ck: Cockpit, c: Custom, pbr: boolean, I: THREE.Group
   outside.add(head, cap, neckM);
   // Legs: thighs along the cushion, shins down to the pedals (both views)
   for (const sd of [-1, 1]) {
-    const knee = new THREE.Vector3(x + sd * 0.1, st.top + 0.14, st.z + 0.42);
-    const foot = new THREE.Vector3(x + sd * 0.1 - 0.04, st.top - 0.3, st.z + 0.75);
+    // Right foot on the accelerator, left on the footrest
+    const foot = (sd < 0 ? st.pedal : st.rest).clone().add(new THREE.Vector3(0, 0.05, -0.08));
+    const knee = new THREE.Vector3((x + sd * 0.1 + foot.x) / 2, st.top + 0.16, st.z + 0.4);
     for (const g of [outside, inside]) {
       g.add(limb(new THREE.Vector3(x + sd * 0.1, hip.y, hip.z + 0.05), knee, 0.07, legs), limb(knee, foot, 0.055, legs));
       const shoe = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.08, 0.26, 2, 0.03), shoes);
@@ -710,11 +830,11 @@ export function buildDriver(ck: Cockpit, c: Custom, pbr: boolean, I: THREE.Group
     hand.rotation.z = -sd * 0.6;
     // Back of the hand on our side of the rim, fingers wrapped round behind it, thumb along the inside
     const palm = new THREE.Mesh(new RoundedBoxGeometry(0.06, 0.09, 0.04, 2, 0.018), skin);
-    const fingers = new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.06, 3, 8), skin);
-    fingers.position.set(0, 0, 0.045);
+    const fingers = new THREE.Mesh(new RoundedBoxGeometry(0.058, 0.075, 0.03, 2, 0.013), skin);
+    fingers.position.set(0, -0.005, 0.042);
     const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.011, 0.035, 3, 6), skin);
-    thumb.position.set(-sd * 0.035, 0.0, 0.01);
-    thumb.rotation.z = Math.PI / 2;
+    thumb.position.set(-sd * 0.03, -0.02, 0.012);
+    thumb.rotation.z = -sd * 0.5;
     hand.add(palm, fingers, thumb);
     wheel.add(hand);
     // Sleeves from the shoulder to the wrist (re-aimed every frame)

@@ -252,12 +252,6 @@ export class UI {
     <div class="cruise-val"><b id="cruise">80</b><span id="cruise-lbl">cruise</span></div>
     <button class="pad small" id="faster" aria-label="Faster">+</button>
   </div>
-  <div class="cabin-btns">
-    <button class="pad small" id="win-btn" aria-label="Windows">🪟<span>Windows</span></button>
-    <button class="pad small" id="roof-btn" aria-label="Sunroof">☀️<span id="roof-lbl">Sunroof</span></button>
-    <button class="pad small" id="demist-btn" aria-label="Demister">🌬️<span>Demist</span></button>
-    <button class="pad small" id="visor-btn" aria-label="Sun visors">🕶️<span>Visor</span></button>
-  </div>
   <div class="toast" id="toast"></div>
   <div class="sleep-cover" id="sleep-cover"><div><b>Good night 🌙</b><span>Pulled over and stopped. The music has faded out.</span>
     <button class="go small" id="wake">Keep driving</button></div></div>
@@ -979,26 +973,6 @@ export class UI {
     $('#faster', r).onclick = () => cruise(1);
     $('#lane-btn', r).onclick = () => (this.game.vehicle.lane *= -1);
     $('#tilt-zero', r).onclick = () => this.recentreTilt();
-    $('#win-btn', r).onclick = () => {
-      const g = this.game;
-      g.setOpenings(!g.windowsOpen, g.sunroofOpen, g.roofUp);
-      this.refreshCabin();
-    };
-    $('#visor-btn', r).onclick = () => {
-      this.game.visorDown = !this.game.visorDown;
-      $('#visor-btn').classList.toggle('on', this.game.visorDown);
-    };
-    $('#demist-btn', r).onclick = () => {
-      const gl = this.game.glass;
-      gl.demisting = !gl.demisting;
-      this.refreshCabin();
-    };
-    $('#roof-btn', r).onclick = () => {
-      const g = this.game;
-      if (g.car.hasSoftTop) g.setOpenings(g.windowsOpen, g.sunroofOpen, !g.roofUp);
-      else g.setOpenings(g.windowsOpen, !g.sunroofOpen, g.roofUp);
-      this.refreshCabin();
-    };
     for (const b of $$('[data-open="stats"]', r)) b.addEventListener('click', () => this.renderStats());
     $('#tv-btn', r).onclick = () => this.tvButton();
     // Trip meter, favourite places
@@ -1152,15 +1126,8 @@ export class UI {
   private radioVolume?: (v: number) => void;
   private radioStop?: () => void;
 
-  private refreshCabin() {
-    const g = this.game;
-    $('#win-btn').classList.toggle('on', g.windowsOpen);
-    $('#demist-btn').classList.toggle('on', g.glass.demisting);
-    const soft = g.car.hasSoftTop;
-    $('#roof-btn').style.display = soft || g.car.hasSunroof ? '' : 'none';
-    $('#roof-lbl').textContent = soft ? (g.roofUp ? 'Roof up' : 'Roof down') : 'Sunroof';
-    $('#roof-btn').classList.toggle('on', soft ? !g.roofUp : g.sunroofOpen);
-  }
+  /** (Windows, sunroof and demist work by themselves now: no buttons for them.) */
+  private refreshCabin() {}
 
   private renderStats() {
     const st = this.game.stats;
@@ -1287,7 +1254,6 @@ export class UI {
     }
     if (fuelEl.textContent !== ft) fuelEl.textContent = ft;
     fuelEl.classList.toggle('low', g.fuel < 0.2);
-    $('#demist-btn').classList.toggle('on', g.glass.demisting);
     // Compass, altitude and the trip meter
     const bearing = ((Math.atan2(Math.sin(v.heading), -Math.cos(v.heading)) * 180) / Math.PI + 360) % 360;
     const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];

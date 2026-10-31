@@ -995,8 +995,11 @@ export class Game {
       const dir = new THREE.Vector3(side * 0.25, -0.03, -1).applyQuaternion(q);
       cam.up.set(0, 1, 0).applyQuaternion(q);
       cam.lookAt(pos.clone().add(dir));
+      // The rear-view mirror looks out through the back window: your own car (and its tail lights) isn't in it
+      car.group.visible = i !== 0;
       r.setRenderTarget(this.mirrorRT[i]);
       r.render(this.scene, cam);
+      car.group.visible = true;
     }
     r.setRenderTarget(null);
     car.interior.visible = true;
