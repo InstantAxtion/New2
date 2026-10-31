@@ -28,6 +28,8 @@ export interface Cockpit {
   hud?: { ctx: CanvasRenderingContext2D; tex: THREE.CanvasTexture; mesh: THREE.Mesh } | null;
   /** Where the driver sits (cabin coordinates): seat top, eye height, steering wheel centre. */
   seat?: { x: number; top: number; z: number; eyeY: number; wheel: THREE.Vector3 };
+  /** Inside of the doors (they swing out with the doors, so hide while those are open). */
+  doorPanels?: THREE.Object3D[];
 }
 
 function woodTexture(): THREE.Texture {
@@ -332,11 +334,22 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   else for (const x of [driverX, -driverX]) seat(x, 0.5, eyeZ, { sport: sporty });
   // Rear seats, if there's room behind
   const rearZ = eyeZ - 0.88;
-  const roomBehind = !s.open && rearZ - 0.3 > (style === 'van' ? -10 : s.C - 0.5) && s.doors === 4;
+  const roomBehind = !s.open && rearZ - 0.3 > s.C - 0.5 && (s.doors === 4 || style === 'van');
   if (roomBehind) {
     const rw = inner(rearZ) * 2 - 0.16;
-    if (style === 'van') for (const x of [driverX, -driverX]) seat(x, 0.5, rearZ, { top: seatTop + 0.02 });
-    else seat(0, rw, rearZ, { bench: true, top: seatTop + 0.04 });
+    if (style === 'van') {
+      // Camper-style: two captain's chairs, then a bench across the back with a little table between
+      for (const x of [driverX, -driverX]) seat(x, 0.5, rearZ, { top: seatTop + 0.02 });
+      const benchZ = rearZ - 1.15;
+      if (benchZ - 0.3 > s.C) {
+        seat(0, inner(benchZ) * 2 - 0.16, benchZ, { bench: true, top: seatTop + 0.02 });
+        const table = new THREE.Mesh(new RoundedBoxGeometry(0.7, 0.03, 0.42, 2, 0.012), std(0xb08a5a, 0.5));
+        table.position.set(0, seatTop + 0.3, (rearZ + benchZ) / 2 + 0.05);
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, seatTop + 0.3 - floorY, 8), chrome);
+        leg.position.set(0, (seatTop + 0.3 + floorY) / 2, table.position.z);
+        I.add(table, leg);
+      }
+    } else seat(0, rw, rearZ, { bench: true, top: seatTop + 0.04 });
   }
 
   // Seat belts: from the B-pillar over the shoulder to the buckle
@@ -370,10 +383,19 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   I.add(footrest);
 
   // ---- Floor, door panels ----
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(inner(zF) * 2, 0.03, 2.4), softM);
-  floor.position.set(0, floorY, zF - 1.1);
+  // Vans are roomy all the way back
+  const zBack = s.open ? zF - 1.6 : style === 'van' ? s.C + 0.05 : Math.max(s.C - 0.2, zF - 2.4);
+  const floorLen = Math.max(2.4, zF - zBack + 0.2);
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(inner(zF) * 2, 0.03, floorLen), softM);
+  floor.position.set(0, floorY, zF + 0.1 - floorLen / 2);
   I.add(floor);
-  const zBack = s.open ? zF - 1.6 : Math.max(s.C - 0.2, zF - 2.4);
+  if (style === 'van') {
+    // The back wall, so you don't see straight out through the empty body
+    const bw = new THREE.Mesh(new THREE.PlaneGeometry(inner(zBack) * 2, P.top(zBack) - floorY), lining);
+    bw.position.set(0, (P.top(zBack) + floorY) / 2, zBack);
+    I.add(bw);
+  }
+  const doorPanels: THREE.Object3D[] = [];
   const ribbon = (side: number, yLo: (z: number) => number, yHi: (z: number) => number, inset: number, m: THREE.Material) => {
     const n = 10, pos: number[] = [], idx: number[] = [];
     for (let i = 0; i <= n; i++) {
@@ -386,7 +408,9 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setIndex(idx);
     g.computeVertexNormals();
-    I.add(new THREE.Mesh(g, m));
+    const mesh = new THREE.Mesh(g, m);
+    doorPanels.push(mesh);
+    I.add(mesh);
   };
   for (const side of [-1, 1]) {
     ribbon(side, () => floorY, (z) => P.belt(z) - 0.12, 0.05, softM);
@@ -396,6 +420,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     const arm = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 0.45), leather);
     arm.position.set(side * (P.half(eyeZ) * 0.94 - 0.09), belt - 0.18, eyeZ + 0.15);
     I.add(arm);
+    doorPanels.push(arm);
     if (style === 'utility') {
       const grab = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.012, 6, 12, Math.PI), trimDark);
       grab.position.set(side * (P.half(A - 0.2) * 0.85), yT + 0.05, A - 0.25);
@@ -407,7 +432,8 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   // ---- A-pillars, headliner, mirrors ----
   const glassTopZ = s.open ? A - 0.28 : s.B;
   const glassTopY = s.open ? belt + 0.42 : P.top(s.B) - 0.02;
-  for (const side of [-1, 1]) {
+  // (open cars have a slim chrome windscreen frame on the body instead)
+  for (const side of s.open ? [] : [-1, 1]) {
     const p0 = new THREE.Vector3(side * P.half(A) * 0.9, belt + 0.02, A);
     const p1 = new THREE.Vector3(side * (s.open ? P.half(A) * 0.86 : P.half(s.B) * (s.tumble ?? 0.78) * 0.94), glassTopY, glassTopZ);
     const len = p0.distanceTo(p1);
@@ -551,7 +577,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     hud = { ctx: hc.getContext('2d')!, tex, mesh };
   }
   return { steering, screen, screenWidth, screenCtx, screenTex, clusterCtx, clusterTex, cluster, ambient, sunroofPanel, mirrorRear, mirrorSides, freshener, visors, hud,
-    seat: { x: driverX, top: seatTop, z: eyeZ, eyeY, wheel: wheelC.clone() } };
+    seat: { x: driverX, top: seatTop, z: eyeZ, eyeY, wheel: wheelC.clone() }, doorPanels };
 }
 
 /** Draw the instrument cluster: digital speed with a rev bar, or two round dials. */

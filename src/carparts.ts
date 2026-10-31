@@ -485,6 +485,45 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
   return { glows, wipers, lampY, front, poptop };
 }
 
+let tyreTex: THREE.Texture | null = null;
+/** Rubber: tread blocks across the face, a moulded ring and lettering on the sidewalls. */
+function tyreTexture(): THREE.Texture {
+  if (tyreTex) return tyreTex;
+  const W = 512, H = 128;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d')!;
+  // v runs across the tyre: sidewall (0-0.32), tread (0.32-0.68), sidewall
+  g.fillStyle = '#17171a';
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = '#121214';
+  g.fillRect(0, H * 0.32, W, H * 0.36);
+  // Tread: blocks with zig-zag grooves
+  g.fillStyle = '#060607';
+  for (let x = 0; x < W; x += 16) {
+    g.fillRect(x, H * 0.33, 3, H * 0.34);
+    g.fillRect(x + 8, H * 0.42, 6, 2);
+    g.fillRect(x, H * 0.57, 6, 2);
+  }
+  g.fillRect(0, H * 0.49, W, 3);
+  // Sidewalls: a moulded rim line and some raised lettering
+  g.fillStyle = '#232327';
+  for (const y of [0.12, 0.88]) g.fillRect(0, H * y, W, 2);
+  g.font = 'bold 13px sans-serif';
+  g.fillStyle = '#2a2a2e';
+  for (const y of [0.22, 0.81]) {
+    for (let x = 6; x < W; x += 128) g.fillText('ENDURA  225/45 R18', x, H * y);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.repeat.set(2, 1);
+  t.anisotropy = 4;
+  tyreTex = t;
+  return t;
+}
+
 /** A wheel: rounded tyre, rim in the chosen style, brake disc and calliper. */
 export function buildWheel(s: CarSpec, c: Custom, side: number, front: boolean, pbr: boolean, M: PartMats): { wheel: THREE.Group; fixed: THREE.Object3D[] } {
   const r = s.wheel;
@@ -495,7 +534,9 @@ export function buildWheel(s: CarSpec, c: Custom, side: number, front: boolean, 
     profileTyre.push(new THREE.Vector2(r * (1 - sidewall) + Math.sin(a) * r * sidewall, -Math.cos(a) * (c.rim === 'beadlock' ? 0.16 : 0.13)));
   }
   const wheel = new THREE.Group();
-  const tyreM = pbr ? new THREE.MeshStandardMaterial({ color: 0x101012, roughness: 0.92 }) : new THREE.MeshLambertMaterial({ color: 0x1a1a1c });
+  const tyreM = pbr
+    ? new THREE.MeshStandardMaterial({ color: 0xffffff, map: tyreTexture(), bumpMap: tyreTexture(), bumpScale: 2, roughness: 0.9 })
+    : new THREE.MeshLambertMaterial({ color: 0x1a1a1c });
   const tyre = new THREE.Mesh(new THREE.LatheGeometry(profileTyre, pbr ? 28 : 14).rotateZ(Math.PI / 2), tyreM);
   tyre.castShadow = true;
   wheel.add(tyre);

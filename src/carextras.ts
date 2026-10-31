@@ -153,6 +153,10 @@ export function addDecals(shell: THREE.Mesh, s: CarSpec & BodyShape, kind: Decal
 
 export interface Openings {
   group: THREE.Group;
+  /** The door openings, for cutting out of the body (box: zFront, zBack, yLow, yHigh; sides beyond |x|). */
+  doorBox?: { zF: number; zB: number; yLo: number; yHi: number; x: number };
+  /** Called as the doors start to open (true) and once they're shut again (false). */
+  onDoor?: (open: boolean) => void;
   set(door: boolean, bonnet: boolean, boot: boolean): void;
   update(dt: number): void;
   readonly moving: boolean;
@@ -216,7 +220,8 @@ export function buildOpenings(s: CarSpec & BodyShape, paint: THREE.Material, dar
     // What you see where the door was: the dark opening into the cabin, and a sill plate
     const ap = skin.clone();
     ap.translate(hingeX - side * 0.002, 0, zF);
-    const aperture = new THREE.Mesh(ap, black);
+    // (the body is cut away behind an open door, so the opening shows the real cabin: just the sill here)
+    const aperture = new THREE.Mesh(ap, new THREE.MeshBasicMaterial({ visible: false }));
     const sill = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, Math.abs(zB - zF) - 0.1), metal);
     sill.position.set(hingeX - side * 0.03, surface(s, P, (zF + zB) / 2).bot + 0.09, (zF + zB) / 2);
     aperture.add(sill);
@@ -298,8 +303,14 @@ export function buildOpenings(s: CarSpec & BodyShape, paint: THREE.Material, dar
 
   const target = { door: 0, bonnet: 0, boot: 0 };
   const now = { door: 0, bonnet: 0, boot: 0 };
+  let doorWas = false;
   const apply = () => {
     const ease = (t: number) => t * t * (3 - 2 * t);
+    const doorOpen = now.door > 0.001;
+    if (doorOpen !== doorWas) {
+      doorWas = doorOpen;
+      result.onDoor?.(doorOpen);
+    }
     for (const d of doors) {
       const a = ease(now.door);
       // Scissor doors swing up from the front; ordinary ones swing out
@@ -315,10 +326,11 @@ export function buildOpenings(s: CarSpec & BodyShape, paint: THREE.Material, dar
     bootPivot.visible = now.boot > 0.001;
     space.visible = now.boot > 0.001;
   };
-  apply();
   let moving = false;
-  return {
+  const sfMid = surface(s, P, (zF + zB) / 2);
+  const result: Openings = {
     group,
+    doorBox: { zF: zF + 0.01, zB: zB - 0.01, yLo: sfMid.bot + 0.07, yHi: s.open ? sfMid.belt + 0.05 : sfMid.top - 0.03, x: sfMid.hw * 0.55 },
     get moving() {
       return moving;
     },
@@ -338,4 +350,6 @@ export function buildOpenings(s: CarSpec & BodyShape, paint: THREE.Material, dar
       if (moving) apply();
     },
   };
+  apply();
+  return result;
 }

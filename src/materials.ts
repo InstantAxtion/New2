@@ -294,8 +294,57 @@ export function addPuddles(m: THREE.MeshStandardMaterial, muddy = false) {
 }
 
 /** Car paint in the weather: raindrops bead on it, and snow settles on the roof and bonnet. */
+/** Cutting the door openings out of a car body while its doors are open (per material). */
+export interface DoorCut {
+  on: { value: number };
+  /** zFront, zBack, yLow, yHigh of the opening (body coordinates). */
+  box: { value: THREE.Vector4 };
+  /** Only on the sides: |x| beyond this. */
+  x: { value: number };
+}
+export const doorCuts = new WeakMap<THREE.Material, DoorCut>();
+const noCut: DoorCut = { on: { value: 0 }, box: { value: new THREE.Vector4() }, x: { value: 0 } };
+
+function applyCut(sh: THREE.WebGLProgramParametersWithUniforms, m: THREE.Material) {
+  const c = doorCuts.get(m) ?? noCut;
+  sh.uniforms.uCutOn = c.on;
+  sh.uniforms.uCutBox = c.box;
+  sh.uniforms.uCutX = c.x;
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform float uCutOn;\nuniform vec4 uCutBox;\nuniform float uCutX;')
+    .replace(
+      '#include <clipping_planes_fragment>',
+      `#include <clipping_planes_fragment>
+      if (uCutOn > 0.5 && abs(vCarPos.x) > uCutX && vCarPos.z < uCutBox.x && vCarPos.z > uCutBox.y && vCarPos.y > uCutBox.z && vCarPos.y < uCutBox.w) discard;`,
+    )
+    // Shut lines: a fine dark gap round the doors
+    .replace(
+      '#include <dithering_fragment>',
+      `#include <dithering_fragment>
+      if (uCutX > 0.0 && uCutOn < 0.5 && abs(vCarPos.x) > uCutX && vCarPos.y > uCutBox.z && vCarPos.y < uCutBox.w) {
+        float gap = min(abs(vCarPos.z - uCutBox.x), abs(vCarPos.z - uCutBox.y));
+        float bottom = abs(vCarPos.y - uCutBox.z);
+        float inZ = step(uCutBox.y, vCarPos.z) * step(vCarPos.z, uCutBox.x);
+        float line = max(1.0 - smoothstep(0.003, 0.007, gap), (1.0 - smoothstep(0.003, 0.007, bottom)) * inZ);
+        gl_FragColor.rgb *= 1.0 - 0.75 * line;
+      }`,
+    );
+}
+
+/** Glass that can have the door openings cut out of it too. */
+export function cutGlass(m: THREE.Material) {
+  m.onBeforeCompile = function (this: THREE.Material, sh) {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCarPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCarPos = position;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vCarPos;');
+    applyCut(sh, this);
+  };
+  m.customProgramCacheKey = () => 'cut-glass';
+}
+
 export function weatherPaint(m: THREE.Material, flake = 0) {
-  m.onBeforeCompile = (sh) => {
+  m.onBeforeCompile = function (this: THREE.Material, sh) {
     sh.uniforms.uFlake = { value: flake };
     sh.uniforms.uCarWet = shared.carWet;
     sh.uniforms.uCarSnow = shared.carSnow;
@@ -333,6 +382,7 @@ export function weatherPaint(m: THREE.Material, flake = 0) {
           roughnessFactor = mix(roughnessFactor, 0.85, top);
         }`,
       );
+    applyCut(sh, this);
   };
   m.customProgramCacheKey = () => 'weather-paint';
 }

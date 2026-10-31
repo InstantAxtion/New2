@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { addDecals, buildOpenings, type Openings } from './carextras';
-import { weatherPaint, type Tier } from './materials';
+import { cutGlass, doorCuts, weatherPaint, type DoorCut, type Tier } from './materials';
 import { bodyGeometry, profile } from './carbody';
 import { CARS, COLORS, defaultCustom, type CarSpec, type Custom } from './carspecs';
 import { buildExterior, buildWheel, type PartMats } from './carparts';
@@ -74,12 +74,12 @@ export class CarModel {
     if (pbr) weatherPaint(this.paint, c.finish === 'metallic' ? 1 : c.finish === 'pearl' ? 0.6 : 0);
     const second = paintMaterial(c.color2, c.finish === 'pearl' ? 'metallic' : c.finish, pbr);
     const roofM = c.twoTone ? second : this.paint;
-    // Tinted glass you can see the cabin (and the driver) through; traffic keeps it dark and simple
+    // Dark privacy tint: the cabin and driver just show through; traffic keeps it fully dark
     const clear = seeThrough && !s.bike;
     const glass = pbr
-      ? new THREE.MeshPhysicalMaterial({ color: clear ? 0x0b1218 : 0x05080b, metalness: 0, roughness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.02, envMapIntensity: 0.9,
-          transparent: clear, opacity: clear ? 0.58 : 1, depthWrite: !clear })
-      : new THREE.MeshPhongMaterial({ color: 0x1b2633, shininess: 120, specular: 0xaaaaaa, transparent: clear, opacity: clear ? 0.62 : 1, depthWrite: !clear });
+      ? new THREE.MeshPhysicalMaterial({ color: 0x04070a, metalness: 0, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.3,
+          transparent: clear, opacity: clear ? 0.95 : 1, depthWrite: !clear })
+      : new THREE.MeshPhongMaterial({ color: 0x141b24, shininess: 120, specular: 0xaaaaaa, transparent: clear, opacity: clear ? 0.88 : 1, depthWrite: !clear });
     this.sideGlass = glass.clone();
     const dark = pbr ? new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.55 }) : new THREE.MeshLambertMaterial({ color: 0x1d1e22 });
     const chrome = pbr
@@ -159,9 +159,19 @@ export class CarModel {
         const ws = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.86, 0.42), glass);
         ws.position.set(0, s.belt + 0.22, s.A - 0.08);
         ws.rotation.x = -0.6;
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(W * 0.88, 0.03, 0.03), dark);
-        frame.position.set(0, s.belt + 0.4, s.A - 0.22);
-        b.add(ws, frame);
+        // A slim frame all round the glass, lying in the same plane
+        const fr = new THREE.Group();
+        fr.position.copy(ws.position);
+        fr.rotation.copy(ws.rotation);
+        const bar = (w: number, h: number, x: number, y: number) => {
+          const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.02), chrome);
+          m.position.set(x, y, 0);
+          fr.add(m);
+        };
+        bar(W * 0.88, 0.025, 0, 0.21);
+        bar(W * 0.88, 0.02, 0, -0.21);
+        for (const sd of [-1, 1]) bar(0.025, 0.44, sd * W * 0.44, 0);
+        b.add(ws, fr);
         if (s.features.includes('softtop')) {
           const top = new THREE.Group();
           const fabric = new THREE.MeshStandardMaterial({ color: 0x1b1c1f, roughness: 0.95, side: THREE.DoubleSide });
@@ -213,6 +223,18 @@ export class CarModel {
     }
     this.interior.visible = this.seeThrough && !s.bike;
     b.add(this.interior);
+    // Open the doors and the body is cut away behind them, showing the cabin
+    const box = this.openings.doorBox;
+    if (box && !s.bike) {
+      const cut: DoorCut = { on: { value: 0 }, box: { value: new THREE.Vector4(box.zF, box.zB, box.yLo, box.yHi) }, x: { value: box.x } };
+      cutGlass(this.sideGlass);
+      doorCuts.set(this.paint, cut);
+      doorCuts.set(this.sideGlass, cut);
+      this.openings.onDoor = (open) => {
+        cut.on.value = open ? 1 : 0;
+        for (const p of this.cockpit.doorPanels ?? []) p.visible = !open;
+      };
+    }
     this.drawScreen('', '', '');
     this.drawCluster(0, 'km/h', 0);
 
