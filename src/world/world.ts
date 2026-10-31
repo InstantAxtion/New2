@@ -474,9 +474,9 @@ export class World {
       let kind: LandmarkKind | null = null;
       // Some cells hold a roadside event instead: a fair with a night market, a car meet, a balloon festival
       const ev = h(806);
-      const fairOk = !['city', 'arctic', 'canyon'].includes(b);
-      const meetOk = ['flatlands', 'desert', 'hills', 'seaside', 'lakes', 'savanna', 'autumn', 'vineyard', 'japan', 'tropical'].includes(b);
-      const balloonOk = ['vineyard', 'flatlands', 'hills', 'savanna', 'canyon', 'desert', 'blossom', 'japan', 'autumn', 'lakes'].includes(b);
+      const fairOk = !['city', 'canyon'].includes(b);
+      const meetOk = ['flatlands', 'desert', 'hills', 'seaside', 'lakes', 'autumn', 'vineyard', 'tropical'].includes(b);
+      const balloonOk = ['vineyard', 'flatlands', 'hills', 'canyon', 'desert', 'blossom', 'autumn', 'lakes'].includes(b);
       if (ev < 0.45) kind = ev < 0.17 && fairOk ? 'fair' : ev < 0.31 && meetOk ? 'carmeet' : balloonOk ? 'balloonfest' : fairOk ? 'fair' : null;
       if (kind) { /* event chosen */ }
       else if (fall && (r < 0.6 || !castle)) kind = 'waterfall';
@@ -799,10 +799,7 @@ export class World {
           else { add(0, 0.8); add(2, 0.2); }
           break;
         case 'vineyard': add(0, 0.6); add(1, 0.4); break;
-        case 'japan': add(0, 0.85); add(2, 0.15); break;
         case 'pnw': add(0, 0.4); add(2, 0.6); break;
-        case 'savanna': add(1, 0.75); add(3, 0.25); break;
-        case 'arctic': add(5, 1); break;
         case 'winter': add(5, 1); break;
         case 'city': add(4, 0.85); add(3, 0.15); break;
         case 'rainforest': add(2, 0.5); add(0, 0.5); break;

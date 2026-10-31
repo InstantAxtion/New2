@@ -1,4 +1,4 @@
-import type { BiomeId } from './world/biomes';
+import { BIOME_IDS, type BiomeId } from './world/biomes';
 import type { TimeMode } from './sky';
 import type { CamMode } from './camera';
 import type { Custom } from './carspecs';
@@ -144,6 +144,10 @@ export function loadSettings(): Settings {
     // The video shows small in a corner in 3rd person (tap it to watch big)
     if (!raw.pipV3) s.pip = true;
     (s as unknown as { pipV3: boolean }).pipV3 = true;
+    // Regions that no longer exist
+    s.themes = s.themes.filter((t) => (BIOME_IDS as string[]).includes(t));
+    if (s.saved && !s.saved.themes.every((t) => (BIOME_IDS as string[]).includes(t))) s.saved = null;
+    s.favourites = s.favourites.filter((f) => f.themes.every((t) => (BIOME_IDS as string[]).includes(t)));
     // Empty roads unless you turn traffic on
     if (!raw.trafficV2) s.trafficDensity = 0;
     (s as unknown as { trafficV2: boolean }).trafficV2 = true;

@@ -188,7 +188,7 @@ export function buildSigns(w: World, z0: number, z1: number, origin: THREE.Vecto
     const z = c * cell + 200;
     if (z < z0 || z >= z1 || hash1(c, w.seed + 701) > 0.5 || !ok(z) || w.urban(z) > 0.01) continue;
     const id = w.dominant(z).id;
-    const animal = ['forest', 'alpine', 'winter', 'autumn', 'hills', 'blossom', 'pnw', 'japan'].includes(id) ? '🦌' : id === 'savanna' ? '🦒' : id === 'arctic' ? '🦌' : null;
+    const animal = ['forest', 'alpine', 'winter', 'autumn', 'hills', 'blossom', 'pnw'].includes(id) ? '🦌' : null;
     if (animal) list.push({ z, side: 1, sign: { mat: warnFace(animal), w: 1.15, h: 1.04, y: 2.2 } });
   }
   // Chevrons on the outside of sharp bends

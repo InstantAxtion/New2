@@ -665,7 +665,7 @@ export class Game {
       }
       const sd = this.sand;
       this.sky.setHaze(r + (0.78 - r) * sd, g + (0.6 - g) * sd, bl + (0.4 - bl) * sd, a + (0.95 - a) * sd);
-      const winter = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'winter' || x.biome.id === 'arctic' ? x.w : 0), 0);
+      const winter = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'winter' ? x.w : 0), 0);
       const tropic = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'tropical' ? x.w : 0), 0);
       const wc = (this.water.material as THREE.MeshPhongMaterial).color;
       if (this.tier === 'pbr') wc.setRGB(0.02 + winter * 0.6 + tropic * 0.0, 0.18 + winter * 0.5 + tropic * 0.3, 0.26 + winter * 0.55 + tropic * 0.12);
@@ -694,7 +694,7 @@ export class Game {
     // and a rainbow for a minute or two when a shower clears
     this.sky.meteors = 1 - this.world.urban(v.z);
     let north = 0;
-    for (const { biome, w } of this.world.weights(v.z)) if (biome.id === 'winter' || biome.id === 'alpine' || biome.id === 'arctic') north += w * (biome.id === 'alpine' ? 0.6 : biome.id === 'arctic' ? 1.6 : 1);
+    for (const { biome, w } of this.world.weights(v.z)) if (biome.id === 'winter' || biome.id === 'alpine') north += w * (biome.id === 'alpine' ? 0.6 : 1);
     this.sky.aurora = north;
     const raining = wx.kind === 'rain' || wx.kind === 'storm';
     if (this.wasRaining && !raining) this.rainbowTime = 120;
@@ -764,7 +764,7 @@ export class Game {
     // Raindrops, mist and dash reflections on the windscreen (driver's view)
     {
       let cold = 0;
-      for (const { biome, w } of this.world.weights(v.z)) if (biome.id === 'winter' || biome.id === 'alpine' || biome.id === 'arctic') cold += w;
+      for (const { biome, w } of this.world.weights(v.z)) if (biome.id === 'winter' || biome.id === 'alpine') cold += w;
       const covered = this.world.tunnelAt(v.z) > 0.45;
       this.glass.update(dt, this.elapsed, this.car.body, this.car.inside && this.rig.mode === 'hood' && this.phase !== 'garage', {
         rain: covered ? 0 : Math.min(1, wx.look.rain + wx.look.snow * 0.5),
@@ -900,7 +900,7 @@ export class Game {
       if (id === 'seaside' || id === 'lakes' || id === 'tropical') m.waves += k * (id === 'lakes' ? 0.4 : 1);
       if (['forest', 'hills', 'autumn', 'rainforest', 'lakes', 'flatlands', 'blossom', 'vineyard', 'tropical'].includes(id)) m.birds += k * (1 - night) * (id === 'rainforest' ? 1 : 0.6);
       if (id === 'rainforest') m.insects += k;
-      if (['alpine', 'winter', 'canyon', 'desert', 'arctic', 'savanna'].includes(id)) m.wind += k;
+      if (['alpine', 'winter', 'canyon', 'desert'].includes(id)) m.wind += k;
       if (id === 'city') m.city += k;
       if (['hills', 'flatlands', 'autumn', 'seaside'].includes(id)) m.crickets += k * night;
     }

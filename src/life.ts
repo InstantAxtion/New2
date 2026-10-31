@@ -465,11 +465,9 @@ interface Balloon { g: THREE.Group; x: number; y: number; z: number; drift: numb
 interface Plane { g: THREE.Group; active: boolean; t: number; dur: number; from: THREE.Vector3; to: THREE.Vector3; alt: number }
 
 const FIELD: BiomeId[] = ['hills', 'flatlands', 'autumn', 'lakes', 'seaside', 'blossom', 'vineyard'];
-const SAVANNA: BiomeId[] = ['savanna'];
-const ARCTIC: BiomeId[] = ['arctic'];
-const WOODS: BiomeId[] = ['forest', 'alpine', 'autumn', 'winter', 'hills', 'rainforest', 'pnw', 'japan'];
-const GLOW_BUGS: BiomeId[] = ['japan', 'pnw', 'savanna', 'vineyard', 'tropical', 'blossom', 'forest', 'hills', 'flatlands', 'autumn', 'lakes', 'rainforest', 'seaside'];
-const BALLOON_LANDS: BiomeId[] = ['savanna', 'japan', 'vineyard', 'blossom', 'hills', 'flatlands', 'autumn', 'lakes', 'desert', 'canyon'];
+const WOODS: BiomeId[] = ['forest', 'alpine', 'autumn', 'winter', 'hills', 'rainforest', 'pnw'];
+const GLOW_BUGS: BiomeId[] = ['pnw', 'vineyard', 'tropical', 'blossom', 'forest', 'hills', 'flatlands', 'autumn', 'lakes', 'rainforest', 'seaside'];
+const BALLOON_LANDS: BiomeId[] = ['vineyard', 'blossom', 'hills', 'flatlands', 'autumn', 'lakes', 'desert', 'canyon'];
 
 export class Life {
   readonly group = new THREE.Group();
@@ -505,7 +503,7 @@ export class Life {
   private callTimer = 6;
 
   constructor(public world: World, private effects: Effects) {
-    const counts: Record<Species, number> = { cow: 12, horse: 8, deer: 8, sheep: 12, giraffe: 6, elephant: 5, zebra: 10, reindeer: 8 };
+    const counts: Record<Species, number> = { cow: 12, horse: 8, deer: 8, sheep: 12, giraffe: 0, elephant: 0, zebra: 0, reindeer: 0 };
     for (const sp of Object.keys(counts) as Species[]) {
       for (let i = 0; i < counts[sp]; i++) {
         const a = animal(sp, i);
@@ -694,9 +692,7 @@ export class Life {
     const field = weightOf(w, z, FIELD), woods = weightOf(w, z, WOODS);
     const r = hash1(c, seed + 503);
     let species: Species;
-    if (weightOf(w, z, SAVANNA) > 0.5) species = r < 0.35 ? 'zebra' : r < 0.7 ? 'giraffe' : 'elephant';
-    else if (weightOf(w, z, ARCTIC) > 0.5) species = 'reindeer';
-    else if (woods > 0.5 && r < 0.6) species = 'deer';
+    if (woods > 0.5 && r < 0.6) species = 'deer';
     else if (field > 0.5) species = r < 0.4 ? 'cow' : r < 0.7 ? 'sheep' : 'horse';
     else if (weightOf(w, z, ['alpine', 'winter']) > 0.5) species = r < 0.5 ? 'sheep' : 'deer';
     else return null;
@@ -705,7 +701,7 @@ export class Life {
     const [tx, tz] = w.tangent(z);
     const x = w.roadX(z) - tz * u;
     const zz = z + tx * u;
-    const n = species === 'deer' || species === 'elephant' ? 1 + Math.floor(r * 10) % 3 : species === 'giraffe' ? 2 + Math.floor(r * 10) % 3 : species === 'sheep' ? 4 + Math.floor(r * 17) % 6 : 2 + Math.floor(r * 13) % 4;
+    const n = species === 'deer' ? 1 + Math.floor(r * 10) % 3 : species === 'sheep' ? 4 + Math.floor(r * 17) % 6 : 2 + Math.floor(r * 13) % 4;
     return { species, x, z: zz, n, key: c };
   }
 
