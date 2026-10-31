@@ -57,6 +57,9 @@ function stampLabel(key: string): { icon: string; name: string } | null {
   return STAMPS.find((x) => x.key === key) ?? null;
 }
 
+/** Shown in Settings. */
+const APP_VERSION = '1.0';
+
 /** A settings row: a label and a segmented control. */
 const seg = (label: string, key: string, opts: [string, string][]) =>
   `<div class="srow"><span>${label}</span><div class="seg" data-set="${key}">${opts.map(([v, t]) => `<button class="chip" data-v="${v}">${t}</button>`).join('')}</div></div>`;
@@ -483,11 +486,12 @@ export class UI {
       <div class="srow col"><span>Weather</span><div class="seg wrap" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">💧 Sleet</button></div></div>
       ${seg('Clouds', 'clouds', [['true', 'On'], ['false', 'Clear skies']])}
     </section>
-    <section class="sgroup"><h3>Sound</h3>
+    <details class="sgroup advanced"><summary>Advanced: sound mixer</summary>
       <label class="srow"><span>🚗 Engine</span><input type="range" id="volume" min="0" max="1" step="0.05" /></label>
       <label class="srow"><span>🌲 World</span><input type="range" id="vol-world" min="0" max="1" step="0.05" /></label>
       <label class="srow"><span>🎵 Music</span><input type="range" id="vol-music" min="0" max="1" step="0.05" /></label>
-    </section>
+    </details>
+    <p class="hint version">Endless Drive ${APP_VERSION}</p>
     <section class="sgroup"><h3>Music videos</h3>
       ${seg('Find', 'prefer', [['video', 'Music videos'], ['lyrics', 'Lyric videos']])}
       ${seg('Synced lyrics', 'lyrics', [['true', 'On'], ['false', 'Off']])}

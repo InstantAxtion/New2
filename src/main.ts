@@ -13,3 +13,13 @@ const game = new Game(document.getElementById('view') as HTMLCanvasElement, load
 new UI(game);
 requestAnimationFrame(game.frame);
 (window as unknown as { game: Game }).game = game;
+
+// If the phone takes the graphics away (low memory, the video player starting up…), don't sit on a
+// black screen or close: reload into the garage. Settings and the drive are saved as you go.
+const canvas = document.getElementById('view') as HTMLCanvasElement;
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  setTimeout(() => location.reload(), 600);
+});
+// Keep going after a stray error in one frame rather than freezing
+window.addEventListener('error', (e) => console.warn('Recovered from', e.message));

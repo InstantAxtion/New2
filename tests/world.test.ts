@@ -140,7 +140,7 @@ describe('new worlds', () => {
 
   it('has towns with crossings and a speed limit', () => {
     const w = new World(5, ['hills', 'flatlands']);
-    const crossings = w.crossings(0, 40000);
+    const crossings = w.crossings(0, 120000); // towns are further apart now
     expect(crossings.length).toBeGreaterThan(3);
     for (const z of crossings) expect(w.speedLimit(z)).toBeLessThan(20);
   });

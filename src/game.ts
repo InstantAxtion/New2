@@ -495,7 +495,17 @@ export class Game {
     this.car.body.position.y = this.car.custom.ride + v.bounce;
   }
 
+  /** One frame. Always asks for the next one, so a stray error can't freeze the game. */
   frame = () => {
+    try {
+      this.tickFrame();
+    } catch (e) {
+      console.warn('Frame error', e);
+    }
+    requestAnimationFrame(this.frame);
+  };
+
+  private tickFrame() {
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
@@ -862,8 +872,8 @@ export class Game {
     this.placeVideo();
     this.updateCarScreen(dt);
     this.updateReflections(dt);
-    requestAnimationFrame(this.frame);
-  };
+
+  }
 
   /** Windows down (and sunroof / soft top), set from the cabin buttons. */
   /** What's playing (shown on the car's screen). */

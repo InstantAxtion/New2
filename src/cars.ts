@@ -303,10 +303,15 @@ export class CarModel {
             const a = Math.PI * (k / 18);
             const z = ax + Math.cos(a) * r;
             const y = s.wheel + Math.sin(a) * r * 0.98;
-            if (y < s.sill - 0.01) continue;
+            // Only where there's bodywork to trim (not above a low nose or past the ends of the car)
+            if (y < s.sill - 0.01 || y > P.belt(z) - 0.04 || z > P.front - 0.08 || z < P.rear + 0.08) {
+              if (pts.length > 1) break;
+              pts.length = 0;
+              continue;
+            }
             pts.push(new THREE.Vector3(side * (P.half(z) - 0.005), y, z));
           }
-          if (pts.length > 1) {
+          if (pts.length > 2) {
             const lip = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.018, 5, false), dark);
             b.add(lip);
           }
@@ -660,7 +665,15 @@ export class CarModel {
       if (m.isMesh) {
         m.geometry.dispose();
         const mats = Array.isArray(m.material) ? m.material : [m.material as THREE.Material];
-        for (const mat of mats) if (mat !== sharedShadow) mat.dispose();
+        for (const mat of mats) {
+          if (mat === sharedShadow) continue;
+          // Per-car textures (screens, plates, grain clones) go too; shared ones are cached and reused
+          for (const k of ['map', 'bumpMap', 'emissiveMap'] as const) {
+            const t = (mat as THREE.MeshStandardMaterial)[k];
+            if (t && (t as THREE.CanvasTexture).isCanvasTexture && t.userData.shared !== true) t.dispose();
+          }
+          mat.dispose();
+        }
       }
     });
   }

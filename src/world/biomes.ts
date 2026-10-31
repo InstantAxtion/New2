@@ -52,7 +52,8 @@ export function vineField(x: number, z: number, seed: number): number {
 
 /** Coastal cliffs: the seaside road climbs onto clifftops now and then (0..1). */
 export function cliffAt(z: number, seed: number): number {
-  return smoothstep(0.32, 0.5, noise2(z / 900, 4.4, seed + 161));
+  // (a gentle climb up to the clifftops: no steeper than about 1 in 12)
+  return smoothstep(0.28, 0.56, noise2(z / 1600, 4.4, seed + 161));
 }
 
 /** Gorges the canyon road bridges over (0..1). */
@@ -152,7 +153,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'umbrella', n: 3, u: [12, 30], scale: [0.9, 1.1], side: 'sea', h: [0.3, 2] },
       { type: 'boat', n: 1.6, u: [70, 320], scale: [0.9, 1.6], side: 'sea', h: [-99, -1.2], float: true },
       { type: 'lighthouse', n: 0.12, u: [30, 60], scale: [1, 1], side: 'sea', h: [0.4, 4] },
-      { type: 'house', n: 2.2, u: [14, 60], scale: [0.9, 1.2], side: 'land', cluster: 3 },
+      { type: 'house', n: 0.88, u: [14, 60], scale: [0.9, 1.2], side: 'land', cluster: 3 },
       { type: 'palm', n: 3, u: [10, 40], scale: [0.8, 1.1], side: 'land' },
       { type: 'bush', n: 8, u: [9, 120], scale: [0.7, 1.5], side: 'land' },
       { type: 'tree', n: 5, u: [30, 200], scale: [0.8, 1.3], side: 'land', cluster: 4 },
@@ -178,7 +179,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'tree', n: 16, u: [10, 260], scale: [0.8, 1.5], cluster: 5 },
       { type: 'flowers', n: 9, u: [8, 45], scale: [0.7, 1.2], cluster: 3 },
       { type: 'bush', n: 8, u: [8, 120], scale: [0.6, 1.3] },
-      { type: 'house', n: 1.2, u: [16, 120], scale: [0.9, 1.2], cluster: 2 },
+      { type: 'house', n: 0.48, u: [16, 120], scale: [0.9, 1.2], cluster: 2 },
       { type: 'turbine', n: 0.5, u: [80, 300], scale: [1, 1.2], cluster: 3 },
       { type: 'rock', n: 2, u: [10, 200], scale: [0.6, 1.6] },
     ],
@@ -206,8 +207,8 @@ export const BIOMES: Record<BiomeId, Biome> = {
     },
     props: [
       { type: 'hay', n: 6, u: [16, 200], scale: [0.9, 1.1], cluster: 5 },
-      { type: 'barn', n: 0.7, u: [25, 160], scale: [0.9, 1.2] },
-      { type: 'house', n: 0.7, u: [20, 140], scale: [0.9, 1.1] },
+      { type: 'barn', n: 0.28, u: [25, 160], scale: [0.9, 1.2] },
+      { type: 'house', n: 0.28, u: [20, 140], scale: [0.9, 1.1] },
       { type: 'windmill', n: 0.35, u: [40, 250], scale: [1, 1.2] },
       { type: 'tree', n: 3, u: [14, 300], scale: [0.9, 1.4], cluster: 6 },
       { type: 'turbine', n: 0.5, u: [120, 400], scale: [1, 1.3], cluster: 4 },
@@ -259,7 +260,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'tree', n: 8, u: [9, 160], scale: [0.8, 1.4], cluster: 4 },
       { type: 'bush', n: 10, u: [8, 60], scale: [0.6, 1.2] },
       { type: 'rock', n: 3, u: [8, 120], scale: [0.5, 1.4] },
-      { type: 'cabin', n: 0.4, u: [16, 70], scale: [1, 1.1] },
+      { type: 'cabin', n: 0.16, u: [16, 70], scale: [1, 1.1] },
     ],
     haze: [0.75, 0.85, 0.82, 0.18],
     verge: [0.45, 0.42, 0.36],
@@ -283,7 +284,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     props: [
       { type: 'pine', n: 26, u: [9, 220], scale: [0.7, 1.4], cluster: 7, h: [0.6, 90] },
       { type: 'rock', n: 6, u: [9, 260], scale: [0.6, 2.4] },
-      { type: 'cabin', n: 0.6, u: [14, 80], scale: [1, 1.1] },
+      { type: 'cabin', n: 0.24, u: [14, 80], scale: [1, 1.1] },
     ],
     haze: [0.85, 0.92, 1.0, 0.1],
     verge: [0.52, 0.5, 0.46],
@@ -302,7 +303,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     props: [
       { type: 'treeAutumn', n: 30, u: [9, 260], scale: [0.8, 1.5], cluster: 6 },
       { type: 'pine', n: 5, u: [12, 200], scale: [0.8, 1.3], cluster: 4 },
-      { type: 'house', n: 1, u: [16, 90], scale: [0.9, 1.1], cluster: 2 },
+      { type: 'house', n: 0.4, u: [16, 90], scale: [0.9, 1.1], cluster: 2 },
       { type: 'hay', n: 2, u: [16, 120], scale: [0.9, 1.1], cluster: 3 },
       { type: 'bush', n: 6, u: [8, 80], scale: [0.6, 1.2] },
     ],
@@ -324,7 +325,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     props: [
       { type: 'pineSnow', n: 34, u: [9, 280], scale: [0.7, 1.5], cluster: 7 },
       { type: 'rockSnow', n: 3, u: [9, 200], scale: [0.6, 1.6] },
-      { type: 'cabin', n: 0.6, u: [14, 70], scale: [1, 1.1] },
+      { type: 'cabin', n: 0.24, u: [14, 70], scale: [1, 1.1] },
       { type: 'snowman', n: 0.4, u: [10, 30], scale: [0.9, 1.1] },
     ],
     haze: [0.9, 0.93, 1.0, 0.3],
@@ -387,7 +388,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'tree', n: 6, u: [12, 200], scale: [0.8, 1.3], cluster: 4 },
       { type: 'boat', n: 3, u: [30, 300], scale: [0.8, 1.3], h: [-99, -1.2], float: true },
       { type: 'pier', n: 1.2, u: [20, 120], scale: [1, 1.3], h: [-2.5, 0.6], float: true },
-      { type: 'cabin', n: 1, u: [16, 90], scale: [1, 1.1] },
+      { type: 'cabin', n: 0.4, u: [16, 90], scale: [1, 1.1] },
       { type: 'lighthouse', n: 0.12, u: [30, 90], scale: [0.8, 1], h: [0.5, 4] },
     ],
     haze: [0.8, 0.9, 1.0, 0.2],
@@ -450,7 +451,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'tree', n: 4, u: [14, 260], scale: [0.8, 1.3], cluster: 3 },
       { type: 'flowers', n: 22, u: [8, 22], scale: [0.7, 1.3], cluster: 3 },
       { type: 'bush', n: 5, u: [8, 90], scale: [0.6, 1.1] },
-      { type: 'house', n: 1, u: [16, 110], scale: [0.9, 1.1], cluster: 2 },
+      { type: 'house', n: 0.4, u: [16, 110], scale: [0.9, 1.1], cluster: 2 },
       { type: 'windmill', n: 0.3, u: [40, 220], scale: [1, 1.2] },
     ],
     haze: [1.0, 0.9, 0.95, 0.14],
@@ -481,7 +482,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'palm', n: 16, u: [9, 160], scale: [0.85, 1.35], h: [0.5, 12], cluster: 4 },
       { type: 'jungleTree', n: 5, u: [20, 200], scale: [0.9, 1.4], h: [2.5, 40], cluster: 4 },
       { type: 'bush', n: 6, u: [9, 80], scale: [0.7, 1.2], h: [1.5, 40] },
-      { type: 'hut', n: 0.8, u: [16, 70], scale: [0.9, 1.1], h: [0.6, 3] },
+      { type: 'hut', n: 0.32, u: [16, 70], scale: [0.9, 1.1], h: [0.6, 3] },
       { type: 'umbrella', n: 2, u: [11, 40], scale: [0.9, 1.1], h: [0.4, 1.6] },
       { type: 'boat', n: 1.4, u: [40, 260], scale: [0.8, 1.3], h: [-99, -1.2], float: true },
     ],
@@ -509,7 +510,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     },
     props: [
       { type: 'cypress', n: 7, u: [9, 200], scale: [0.85, 1.3], cluster: 4 },
-      { type: 'farmhouse', n: 0.8, u: [20, 140], scale: [0.9, 1.15] },
+      { type: 'farmhouse', n: 0.32, u: [20, 140], scale: [0.9, 1.15] },
       { type: 'tree', n: 2, u: [14, 220], scale: [0.8, 1.2], cluster: 3 },
       { type: 'bush', n: 3, u: [9, 60], scale: [0.6, 1] },
     ],
@@ -547,7 +548,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'shrine', n: 0.25, u: [22, 60], scale: [0.9, 1.1] },
       { type: 'lantern', n: 0.8, u: [9, 14], scale: [0.9, 1.1] },
       { type: 'vending', n: 0.25, u: [9.5, 11], scale: [1, 1] },
-      { type: 'house', n: 0.6, u: [16, 90], scale: [0.8, 1], cluster: 2 },
+      { type: 'house', n: 0.24, u: [16, 90], scale: [0.8, 1], cluster: 2 },
     ],
     haze: [0.92, 0.94, 0.98, 0.16],
     verge: [0.5, 0.5, 0.44],
@@ -571,7 +572,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'pine2', n: 12, u: [9, 280], scale: [1.0, 1.6], cluster: 6 },
       { type: 'pine', n: 8, u: [12, 300], scale: [1.0, 1.5], cluster: 5 },
       { type: 'fern', n: 30, u: [8, 40], scale: [0.7, 1.3], cluster: 4 },
-      { type: 'cabin', n: 0.5, u: [18, 80], scale: [0.9, 1.1] },
+      { type: 'cabin', n: 0.2, u: [18, 80], scale: [0.9, 1.1] },
       { type: 'rock', n: 2, u: [9, 80], scale: [0.5, 1.4] },
     ],
     haze: [0.78, 0.84, 0.86, 0.3],
@@ -597,7 +598,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'acacia', n: 5, u: [12, 300], scale: [0.8, 1.4], cluster: 2 },
       { type: 'bush', n: 3, u: [9, 120], scale: [0.5, 0.9] },
       { type: 'rock', n: 1.5, u: [12, 200], scale: [1, 2.6], cluster: 3 },
-      { type: 'hut', n: 0.2, u: [30, 120], scale: [0.9, 1.1], cluster: 3 },
+      { type: 'hut', n: 0.08, u: [30, 120], scale: [0.9, 1.1], cluster: 3 },
     ],
     haze: [1.0, 0.86, 0.66, 0.18],
     verge: [0.68, 0.48, 0.32],
@@ -620,7 +621,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'pineSnow', n: 1.5, u: [14, 220], scale: [0.6, 1.0], cluster: 4 },
       { type: 'rockSnow', n: 2, u: [10, 160], scale: [0.6, 1.8], cluster: 2 },
       { type: 'igloo', n: 0.35, u: [18, 70], scale: [0.9, 1.2], cluster: 3 },
-      { type: 'cabin', n: 0.2, u: [20, 70], scale: [0.9, 1.0] },
+      { type: 'cabin', n: 0.08, u: [20, 70], scale: [0.9, 1.0] },
     ],
     haze: [0.86, 0.92, 1.0, 0.2],
     verge: [0.86, 0.88, 0.92],

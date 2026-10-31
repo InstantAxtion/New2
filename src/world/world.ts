@@ -9,7 +9,9 @@ const BRIDGE_RAMP = 90;
 /** A bridge crossing: straight from a to b, easing in over ra and out over rb metres. */
 interface Span { a: number; b: number; xa: number; xb: number; ra: number; rb: number }
 export const FLAT = 7.5; // ground is flat out to here (perpendicular metres)
-export const SEGMENT = 1400; // metres of road per region
+/** Towns: at most one in each stretch of this many metres (and only about half of them have one). */
+const TOWN_CELL = 7000;
+export const SEGMENT = 8000; // metres of road per region (about 5 miles)
 const BLEND = 220; // half-width of the blend between two regions
 
 export type StopKind = 'fuel' | 'diner' | 'viewpoint' | 'campsite' | 'harbour' | 'drivein';
@@ -445,7 +447,7 @@ export class World {
 
   /** An old walled town with cobbled streets (some towns in the old country). */
   oldTown(centre: number): boolean {
-    const c = Math.floor(centre / 2400);
+    const c = Math.floor(centre / TOWN_CELL);
     return hash1(c, this.seed + 221) < 0.45 && ['hills', 'vineyard', 'autumn', 'blossom', 'alpine', 'flatlands', 'winter'].includes(this.dominant(centre).id);
   }
 
@@ -458,7 +460,7 @@ export class World {
   /** Town centres between z0 and z1. */
   towns(z0: number, z1: number): number[] {
     const out: number[] = [];
-    for (let c = Math.floor(z0 / 2400) - 1; c <= Math.floor(z1 / 2400) + 1; c++) {
+    for (let c = Math.floor(z0 / TOWN_CELL) - 1; c <= Math.floor(z1 / TOWN_CELL) + 1; c++) {
       const t = this.townCentre(c);
       if (t !== null && t >= z0 && t < z1) out.push(t);
     }
@@ -467,7 +469,7 @@ export class World {
 
   /** A made-up name for the town centred at `centre`. */
   townName(centre: number): string {
-    const c = Math.floor(centre / 2400);
+    const c = Math.floor(centre / TOWN_CELL);
     return TOWN_A[Math.floor(hash1(c, this.seed + 211) * TOWN_A.length)] + TOWN_B[Math.floor(hash1(c, this.seed + 212) * TOWN_B.length)];
   }
 
@@ -594,7 +596,7 @@ export class World {
   }
 
   private townRaw(z: number): number {
-    const cell = Math.floor(z / 2400);
+    const cell = Math.floor(z / TOWN_CELL);
     let best = 0;
     for (const c of [cell - 1, cell, cell + 1]) {
       const centre = this.townCentre(c);
@@ -605,8 +607,8 @@ export class World {
   }
 
   private townCentre(c: number): number | null {
-    if (hash1(c, this.seed + 201) < 0.4) return null;
-    const centre = c * 2400 + 500 + hash1(c, this.seed + 202) * 1400;
+    if (hash1(c, this.seed + 201) < 0.55) return null;
+    const centre = c * TOWN_CELL + 800 + hash1(c, this.seed + 202) * (TOWN_CELL - 1600);
     const b = this.dominant(centre);
     return b.towns && this.bridge(centre) < 0.01 && this.highwayAt(centre) < 0.01 ? centre : null;
   }
@@ -641,7 +643,7 @@ export class World {
   /** Zebra crossings between z0 and z1. */
   crossings(z0: number, z1: number): number[] {
     const out: number[] = [];
-    const cell0 = Math.floor(z0 / 2400) - 1, cell1 = Math.floor(z1 / 2400) + 1;
+    const cell0 = Math.floor(z0 / TOWN_CELL) - 1, cell1 = Math.floor(z1 / TOWN_CELL) + 1;
     for (let c = cell0; c <= cell1; c++) {
       const centre = this.townCentre(c);
       if (centre === null) continue;

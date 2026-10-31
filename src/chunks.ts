@@ -831,6 +831,17 @@ export class ChunkManager {
           if (st && u * st.side > 0 && Math.abs(u) < w.roadHalf(z) + st.depth + (st.kind === 'harbour' ? 60 : 16)) continue;
           const [, tz] = w.tangent(z);
           const x = w.roadX(z) - u / tz;
+          // Nothing may reach over the road: check the real distance to the road nearby (bends can
+          // bring it closer than straight across), allowing for how wide this thing is
+          const big = spec.type === 'house' || spec.type === 'farmhouse' || spec.type === 'barn' || spec.type === 'shop' || spec.type === 'shrine' || spec.type === 'windmill';
+          const tree = spec.type.includes('tree') || spec.type.includes('Tree') || spec.type === 'pine' || spec.type === 'pine2' || spec.type === 'pineSnow' || spec.type === 'palm' || spec.type === 'redwood' || spec.type === 'acacia' || spec.type === 'cherry' || spec.type === 'maple' || spec.type === 'cypress';
+          const need = w.roadHalf(z) + (big ? 9 : tree ? 5.5 * spec.scale[1] : 2.5);
+          let near = Infinity;
+          for (let dz = -40; dz <= 40; dz += 8) {
+            const rz = z + dz;
+            near = Math.min(near, Math.hypot(x - w.roadX(rz), dz));
+          }
+          if (near < need) continue;
           const h = w.height(x, z);
           const [hmin, hmax] = spec.h ?? [0.6, Infinity];
           if (h < hmin || h > hmax) continue;

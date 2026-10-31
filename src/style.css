@@ -631,3 +631,8 @@ input[type=url], input[type=search], input[type=text] { background: rgba(255,255
 
 /* Tap the small video to watch it big */
 #video.pip { pointer-events: auto; cursor: pointer; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+@media (orientation: portrait) {
+  .sheet.stats-sheet, .sheet.dock, .sheet.settings { width: auto; left: 8px; right: 8px; }
+}
+details.advanced summary { font-size: 13px; color: var(--muted); padding: 10px 0; cursor: pointer; }
+.hint.version { text-align: center; opacity: .6; margin-top: 4px; }
