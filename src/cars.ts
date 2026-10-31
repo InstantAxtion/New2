@@ -201,6 +201,8 @@ export class CarModel {
   readonly headlight: THREE.SpotLight;
   /** Cockpit: only shown in the driver's view. */
   readonly interior = new THREE.Group();
+  /** The inside of the body shell. */
+  private liningMat: THREE.Material | null = null;
   readonly eye = new THREE.Object3D();
   readonly screen: THREE.Mesh;
   readonly screenSize: [number, number];
@@ -279,6 +281,18 @@ export class CarModel {
       this.openings = buildOpenings(s, this.paint, dark, c.leather, false, true);
     } else {
       const shell = new THREE.Mesh(bodyGeometry(s), [this.paint, glass, dark, this.sideGlass, roofM]);
+      // The inside of the body: a lining on the back faces of the shell (not over the glass), so the
+      // cabin is closed all round and no daylight shows through the joins between the trim pieces
+      if (!s.open) {
+        const lining = pbr
+          ? new THREE.MeshStandardMaterial({ color: 0x232427, roughness: 0.9, side: THREE.BackSide })
+          : new THREE.MeshLambertMaterial({ color: 0x232427, side: THREE.BackSide });
+        const none = new THREE.MeshBasicMaterial({ visible: false });
+        const inner = new THREE.Mesh(shell.geometry, [lining, none, lining, none, lining]);
+        inner.userData.noFit = true;
+        this.interior.add(inner);
+        this.liningMat = lining;
+      }
       shell.castShadow = true;
       b.add(shell);
 
@@ -430,6 +444,10 @@ export class CarModel {
       cutGlass(this.sideGlass);
       doorCuts.set(this.paint, cut);
       doorCuts.set(this.sideGlass, cut);
+      if (this.liningMat) {
+        cutGlass(this.liningMat);
+        doorCuts.set(this.liningMat, cut);
+      }
       this.openings.onDoor = (open) => {
         cut.on.value = open ? 1 : 0;
         this.doorOpen = open;

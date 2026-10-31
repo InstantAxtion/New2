@@ -636,3 +636,14 @@ input[type=url], input[type=search], input[type=text] { background: rgba(255,255
 }
 details.advanced summary { font-size: 13px; color: var(--muted); padding: 10px 0; cursor: pointer; }
 .hint.version { text-align: center; opacity: .6; margin-top: 4px; }
+
+/* Auto-drive: one big obvious button to take the wheel back */
+.take-over { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(86px + var(--safe-b)); display: none; align-items: center; gap: 8px;
+  background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(240,180,76,.55); border-radius: 999px;
+  padding: 12px 22px; font-size: 16px; font-weight: 700; pointer-events: auto; box-shadow: 0 8px 24px rgba(0,0,0,.35); transition: transform .1s; }
+.take-over:active { transform: translateX(-50%) scale(.95); }
+body.auto-mode[data-screen="hud"] .take-over { display: inline-flex; }
+body.zen .take-over, body.theatre-on .take-over, body.driver-view.auto-mode .take-over { }
+body.zen .take-over, body.theatre-on .take-over { display: none !important; }
+@media (orientation: portrait) { .take-over { bottom: calc(110px + var(--safe-b)); } }
+@media (orientation: landscape) { .take-over { left: calc(14px + var(--safe-l)); transform: none; bottom: calc(14px + var(--safe-b)); } .take-over:active { transform: scale(.95); } }

@@ -266,6 +266,7 @@ export class UI {
       <button class="pad gas" data-hold="gas" aria-label="Gas">GAS</button>
     </div>
   </div>
+  <button class="take-over" id="take-over" aria-label="Drive yourself">🕹️ <span>Drive myself</span></button>
   <div class="cruise" id="cruise-box">
     <button class="pad small" id="slower" aria-label="Slower">−</button>
     <div class="cruise-val"><b id="cruise">80</b><span id="cruise-lbl">cruise</span></div>
@@ -983,6 +984,7 @@ export class UI {
       this.toast(this.s.assist ? 'Steering assist on<b>Follows the bends, eases you into lane</b>' : 'Steering assist off<b>All yours</b>');
     };
     $('#take-wheel', r).onclick = () => this.setAuto(false);
+    $('#take-over', r).onclick = () => this.setAuto(false);
     $('#style-btn', r).onclick = () => {
       const order: Settings['driveStyle'][] = ['relaxed', 'normal', 'sporty'];
       this.s.driveStyle = order[(order.indexOf(this.s.driveStyle) + 1) % 3];
@@ -1617,6 +1619,7 @@ export class UI {
     window.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement).tagName === 'INPUT') return;
       this.keys.add(e.key.toLowerCase());
+      if (this.s.auto && this.game.phase === 'drive' && ['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(e.key.toLowerCase())) this.setAuto(false);
       if (e.key === 'c') $('#cam-btn').click();
       if (e.key === 'h') this.setZen(!this.zen);
       if (e.key === 'm') this.open('music');
