@@ -206,6 +206,17 @@ export class CarModel {
   readonly eye = new THREE.Object3D();
   readonly screen: THREE.Mesh;
   readonly screenSize: [number, number];
+
+  /** Grow or shrink the standing dash screen (1 = full size for videos). */
+  setScreenScale(k: number) {
+    const b = this.screen.userData.base as { y: number; w: number; tilt: number } | undefined;
+    if (!b) return;
+    const w = b.w * k;
+    this.screen.scale.setScalar(w);
+    // Keep the bottom edge on the dash: the centre sits half a (tilted) height above it
+    const h = w * 0.5625;
+    this.screen.position.y = b.y + (h / 2) * Math.cos(b.tilt);
+  }
   readonly cockpit: Cockpit;
   readonly custom: Custom;
   /** Side windows (hidden when they're wound down). */

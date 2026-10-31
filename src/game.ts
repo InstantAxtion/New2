@@ -871,6 +871,12 @@ export class Game {
     else this.renderer.render(stage, this.camera);
     this.placeVideo();
     this.updateCarScreen(dt);
+    // The dash screen is a small map display, and grows to full size while a video plays on it
+    {
+      const want = this.videos?.active ? 1 : 0.55;
+      this.screenK += (want - this.screenK) * (1 - Math.exp(-dt * 5));
+      this.car.setScreenScale(this.screenK);
+    }
     this.updateReflections(dt);
 
   }
@@ -1176,6 +1182,7 @@ export class Game {
   private fireworks = new Fireworks();
   /** A puddle splash just now (0..1). */
   splash = 0;
+  private screenK = 0.55;
   /** Are the headlights on right now. */
   lightsOn = false;
 
