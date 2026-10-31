@@ -31,7 +31,7 @@ function weightOf(w: World, z: number, ids: BiomeId[]): number {
 
 // ---- Animals ----
 
-type Species = 'cow' | 'horse' | 'deer' | 'sheep';
+type Species = 'cow' | 'horse' | 'deer' | 'sheep' | 'giraffe' | 'elephant' | 'zebra' | 'reindeer';
 
 interface AnimalShape {
   r: number; len: number; y: number; leg: number; legR: number;
@@ -43,7 +43,50 @@ const SHAPES: Record<Species, AnimalShape> = {
   horse: { r: 0.34, len: 1.25, y: 1.3, leg: 1.0, legR: 0.065, neck: 0.85, neckR: 0.15, neckUp: 0.95, head: 0.6, headR: 0.11 },
   deer: { r: 0.24, len: 0.8, y: 0.98, leg: 0.8, legR: 0.035, neck: 0.55, neckR: 0.08, neckUp: 1.15, head: 0.3, headR: 0.075 },
   sheep: { r: 0.36, len: 0.55, y: 0.72, leg: 0.42, legR: 0.045, neck: 0.18, neckR: 0.13, neckUp: 0.6, head: 0.26, headR: 0.09 },
+  giraffe: { r: 0.42, len: 0.95, y: 2.1, leg: 1.8, legR: 0.06, neck: 2.0, neckR: 0.13, neckUp: 3.2, head: 0.42, headR: 0.1 },
+  elephant: { r: 0.95, len: 1.5, y: 1.95, leg: 1.4, legR: 0.27, neck: 0.25, neckR: 0.6, neckUp: 0.15, head: 0.55, headR: 0.45 },
+  zebra: { r: 0.32, len: 1.1, y: 1.15, leg: 0.9, legR: 0.06, neck: 0.75, neckR: 0.14, neckUp: 0.95, head: 0.55, headR: 0.1 },
+  reindeer: { r: 0.32, len: 0.95, y: 1.1, leg: 0.85, legR: 0.05, neck: 0.55, neckR: 0.11, neckUp: 0.9, head: 0.36, headR: 0.09 },
 };
+
+/** Patterned coats: giraffe patches and zebra stripes. */
+const coatTex = new Map<string, THREE.Texture>();
+function patternCoat(kind: 'giraffe' | 'zebra'): THREE.Texture {
+  const hit = coatTex.get(kind);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const g = c.getContext('2d')!;
+  if (kind === 'giraffe') {
+    g.fillStyle = '#efdcae';
+    g.fillRect(0, 0, 256, 128);
+    g.fillStyle = '#9a5a26';
+    for (let y = 0; y < 128; y += 22) for (let x = 0; x < 256; x += 24) {
+      const ox = x + ((y / 22) % 2) * 12 + (hash1(x * 7 + y, 81) - 0.5) * 6, oy = y + (hash1(x + y * 3, 82) - 0.5) * 6;
+      g.beginPath();
+      for (let a = 0; a < 7; a++) {
+        const t = (a / 7) * Math.PI * 2, rr = 9 + hash1(x * 13 + y + a, 83) * 3;
+        g.lineTo(ox + Math.cos(t) * rr, oy + Math.sin(t) * rr * 0.85);
+      }
+      g.fill();
+    }
+  } else {
+    g.fillStyle = '#f4f2ec';
+    g.fillRect(0, 0, 256, 128);
+    g.fillStyle = '#161616';
+    for (let x = 0; x < 256; x += 14) {
+      g.beginPath();
+      g.moveTo(x, 0);
+      for (let y = 0; y <= 128; y += 8) g.lineTo(x + Math.sin(y / 18 + x) * 4 + 5, y);
+      for (let y = 128; y >= 0; y -= 8) g.lineTo(x + Math.sin(y / 18 + x) * 4, y);
+      g.fill();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  coatTex.set(kind, t);
+  return t;
+}
 
 /** Black-and-white (or brown-and-white) patches for dairy cows. */
 let patchTex: THREE.Texture[] | null = null;
@@ -96,6 +139,15 @@ function animal(species: Species, variant: number): Animal {
   } else if (species === 'deer') {
     coat = std(0x8a5e3a);
     dark = std(0x2a201a);
+  } else if (species === 'giraffe' || species === 'zebra') {
+    coat = new THREE.MeshStandardMaterial({ map: patternCoat(species), roughness: 0.85 });
+    dark = std(species === 'zebra' ? 0x141414 : 0x5a3a1e);
+  } else if (species === 'elephant') {
+    coat = std(0x7d7873, 0.95);
+    dark = std(0x4a4643);
+  } else if (species === 'reindeer') {
+    coat = std([0x8a7a66, 0x6e5e4c, 0xa49886][variant % 3]);
+    dark = std(0x3a3028);
   } else {
     coat = std(0xe8e2d4, 1);
     dark = std(0x2a2622);
@@ -152,7 +204,19 @@ function animal(species: Species, variant: number): Animal {
   if (species === 'cow' && variant % 2 === 0) {
     for (const sd of [-1, 1]) neckDark.push(new THREE.ConeGeometry(0.03, 0.18, 5).rotateZ(-sd * 1.2).translate(tip.x + sd * 0.17, tip.y + 0.12, tip.z - 0.05));
   }
-  if (species === 'deer' && variant % 2 === 0) {
+  if (species === 'elephant') {
+    // Big ears and a trunk hanging down to the ground, with tusks
+    for (const sd of [-1, 1]) {
+      headParts.push(new THREE.CircleGeometry(0.55, 12).scale(0.75, 1, 1).rotateY(sd * 1.2).translate(tip.x + sd * 0.42, tip.y - 0.05, tip.z - 0.15));
+      neckDark.push(new THREE.ConeGeometry(0.05, 0.5, 6).rotateX(-2.2).translate(tip.x + sd * 0.18, tip.y - 0.55, tip.z + 0.55));
+    }
+    headParts.push(new THREE.CylinderGeometry(0.07, 0.17, 1.5, 8).translate(0, -0.75, 0).rotateX(0.18).translate(tip.x, tip.y - 0.2, tip.z + 0.5));
+  }
+  if (species === 'giraffe') {
+    // Ossicones
+    for (const sd of [-1, 1]) neckDark.push(new THREE.CylinderGeometry(0.02, 0.025, 0.18, 5).translate(tip.x + sd * 0.05, tip.y + 0.14, tip.z - 0.05));
+  }
+  if ((species === 'deer' && variant % 2 === 0) || species === 'reindeer') {
     // Antlers: a few tines on each side
     for (const sd of [-1, 1]) {
       const base = new THREE.Vector3(tip.x + sd * 0.06, tip.y + 0.08, tip.z - 0.05);
@@ -401,13 +465,15 @@ interface Balloon { g: THREE.Group; x: number; y: number; z: number; drift: numb
 interface Plane { g: THREE.Group; active: boolean; t: number; dur: number; from: THREE.Vector3; to: THREE.Vector3; alt: number }
 
 const FIELD: BiomeId[] = ['hills', 'flatlands', 'autumn', 'lakes', 'seaside', 'blossom', 'vineyard'];
-const WOODS: BiomeId[] = ['forest', 'alpine', 'autumn', 'winter', 'hills', 'rainforest'];
-const GLOW_BUGS: BiomeId[] = ['vineyard', 'tropical', 'blossom', 'forest', 'hills', 'flatlands', 'autumn', 'lakes', 'rainforest', 'seaside'];
-const BALLOON_LANDS: BiomeId[] = ['vineyard', 'blossom', 'hills', 'flatlands', 'autumn', 'lakes', 'desert', 'canyon'];
+const SAVANNA: BiomeId[] = ['savanna'];
+const ARCTIC: BiomeId[] = ['arctic'];
+const WOODS: BiomeId[] = ['forest', 'alpine', 'autumn', 'winter', 'hills', 'rainforest', 'pnw', 'japan'];
+const GLOW_BUGS: BiomeId[] = ['japan', 'pnw', 'savanna', 'vineyard', 'tropical', 'blossom', 'forest', 'hills', 'flatlands', 'autumn', 'lakes', 'rainforest', 'seaside'];
+const BALLOON_LANDS: BiomeId[] = ['savanna', 'japan', 'vineyard', 'blossom', 'hills', 'flatlands', 'autumn', 'lakes', 'desert', 'canyon'];
 
 export class Life {
   readonly group = new THREE.Group();
-  private animals: Record<Species, Animal[]> = { cow: [], horse: [], deer: [], sheep: [] };
+  private animals: Record<Species, Animal[]> = { cow: [], horse: [], deer: [], sheep: [], giraffe: [], elephant: [], zebra: [], reindeer: [] };
   private crossers: Animal[] = [];
   private crossing: { z: number; u: number; dir: number; n: number; pause: number } | null = null;
   private nextCrossing = 40;
@@ -439,7 +505,7 @@ export class Life {
   private callTimer = 6;
 
   constructor(public world: World, private effects: Effects) {
-    const counts: Record<Species, number> = { cow: 12, horse: 8, deer: 8, sheep: 12 };
+    const counts: Record<Species, number> = { cow: 12, horse: 8, deer: 8, sheep: 12, giraffe: 6, elephant: 5, zebra: 10, reindeer: 8 };
     for (const sp of Object.keys(counts) as Species[]) {
       for (let i = 0; i < counts[sp]; i++) {
         const a = animal(sp, i);
@@ -585,7 +651,7 @@ export class Life {
   private herds(z: number, t: number, env: LifeEnv) {
     const w = this.world;
     const CELL = 130;
-    const used: Record<Species, number> = { cow: 0, horse: 0, deer: 0, sheep: 0 };
+    const used: Record<Species, number> = { cow: 0, horse: 0, deer: 0, sheep: 0, giraffe: 0, elephant: 0, zebra: 0, reindeer: 0 };
     const c0 = Math.floor((z - 120) / CELL), c1 = Math.floor((z + 420) / CELL);
     for (let c = c0; c <= c1; c++) {
       const herd = this.herdAt(c, CELL);
@@ -628,7 +694,9 @@ export class Life {
     const field = weightOf(w, z, FIELD), woods = weightOf(w, z, WOODS);
     const r = hash1(c, seed + 503);
     let species: Species;
-    if (woods > 0.5 && r < 0.6) species = 'deer';
+    if (weightOf(w, z, SAVANNA) > 0.5) species = r < 0.35 ? 'zebra' : r < 0.7 ? 'giraffe' : 'elephant';
+    else if (weightOf(w, z, ARCTIC) > 0.5) species = 'reindeer';
+    else if (woods > 0.5 && r < 0.6) species = 'deer';
     else if (field > 0.5) species = r < 0.4 ? 'cow' : r < 0.7 ? 'sheep' : 'horse';
     else if (weightOf(w, z, ['alpine', 'winter']) > 0.5) species = r < 0.5 ? 'sheep' : 'deer';
     else return null;
@@ -637,7 +705,7 @@ export class Life {
     const [tx, tz] = w.tangent(z);
     const x = w.roadX(z) - tz * u;
     const zz = z + tx * u;
-    const n = species === 'deer' ? 1 + Math.floor(r * 10) % 3 : species === 'sheep' ? 4 + Math.floor(r * 17) % 6 : 2 + Math.floor(r * 13) % 4;
+    const n = species === 'deer' || species === 'elephant' ? 1 + Math.floor(r * 10) % 3 : species === 'giraffe' ? 2 + Math.floor(r * 10) % 3 : species === 'sheep' ? 4 + Math.floor(r * 17) % 6 : 2 + Math.floor(r * 13) % 4;
     return { species, x, z: zz, n, key: c };
   }
 

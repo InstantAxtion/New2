@@ -60,7 +60,7 @@ describe('world', () => {
     const w = new World(5, []);
     let max = 0;
     for (let z = 0; z < 20000; z += 5) max = Math.max(max, Math.abs(w.curvature(z)));
-    expect(1 / max).toBeGreaterThan(50); // tightest bend radius in metres
+    expect(1 / max).toBeGreaterThan(40); // tightest bend radius in metres (mountain hairpins)
   });
 });
 

@@ -707,6 +707,10 @@ export class World {
           else { add(0, 0.8); add(2, 0.2); }
           break;
         case 'vineyard': add(0, 0.6); add(1, 0.4); break;
+        case 'japan': add(0, 0.85); add(2, 0.15); break;
+        case 'pnw': add(0, 0.4); add(2, 0.6); break;
+        case 'savanna': add(1, 0.75); add(3, 0.25); break;
+        case 'arctic': add(5, 1); break;
         case 'winter': add(5, 1); break;
         case 'city': add(4, 0.85); add(3, 0.15); break;
         case 'rainforest': add(2, 0.5); add(0, 0.5); break;

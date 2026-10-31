@@ -410,6 +410,45 @@ function build(type: PropType): THREE.BufferGeometry {
       parts.push(cone(3.2, 2.2, thatch, 4, 0, 4.6, 0));
       return merge(parts);
     }
+    case 'torii': {
+      // A vermilion shrine gate: two pillars, a curved top beam and a tie beam
+      const red = 0xc8361c, black = 0x1c1a1a;
+      const parts = [cyl(0.22, 0.26, 4.6, red, 10, -2.1, 2.3, 0), cyl(0.22, 0.26, 4.6, red, 10, 2.1, 2.3, 0),
+        box(5.4, 0.3, 0.5, red, 0, 3.7, 0), box(6.4, 0.28, 0.7, black, 0, 4.55, 0), box(5.9, 0.22, 0.6, red, 0, 4.3, 0),
+        box(0.25, 0.7, 0.25, red, 0, 4.0, 0), cyl(0.3, 0.3, 0.3, black, 10, -2.1, 0.15, 0), cyl(0.3, 0.3, 0.3, black, 10, 2.1, 0.15, 0)];
+      // Upturned ends of the top beam
+      for (const sd of [-1, 1]) parts.push(box(0.6, 0.2, 0.68, black, sd * 3.25, 4.68, 0));
+      return merge(parts);
+    }
+    case 'shrine': {
+      // A small wooden shrine with a sweeping dark tiled roof on a stone base
+      const wood = 0x8a5a34, stone = 0x9a968e, tile = 0x34383e;
+      const parts = [box(6, 0.6, 5, stone, 0, 0.3, 0), box(4.6, 2.6, 3.6, wood, 0, 1.9, 0), box(1.6, 2, 0.1, 0x3a2a1c, 0, 1.6, 1.82),
+        box(5.4, 0.2, 4.4, 0x5b3a22, 0, 3.25, 0), roof(7, 2.2, 5.6, tile, 3.3), box(7.6, 0.18, 0.4, tile, 0, 3.32, 2.7), box(7.6, 0.18, 0.4, tile, 0, 3.32, -2.7)];
+      for (const [x, z] of [[-2.2, 1.7], [2.2, 1.7], [-2.2, -1.7], [2.2, -1.7]]) parts.push(cyl(0.16, 0.16, 2.6, 0x6b4126, 8, x, 1.9, z));
+      return merge(parts);
+    }
+    case 'lantern': {
+      // A stone lantern
+      const st = 0xa8a49b;
+      return merge([box(0.9, 0.2, 0.9, st, 0, 0.1, 0), cyl(0.16, 0.2, 0.9, st, 8, 0, 0.65, 0), box(0.7, 0.15, 0.7, st, 0, 1.15, 0),
+        box(0.55, 0.45, 0.55, 0xd8c79a, 0, 1.45, 0), cone(0.62, 0.45, st, 4, 0, 1.9, 0), ball(0.1, st, 0, 2.18, 0, 0)]);
+    }
+    case 'vending':
+      // Bright vending machines by the road
+      return merge([box(1.1, 1.9, 0.8, 0xe9ecef, 0, 0.95, 0), box(0.9, 1.0, 0.05, 0x3a8ad8, 0, 1.25, 0.41), box(1.1, 1.9, 0.8, 0xd23a2a, 1.15, 0.95, 0), box(0.9, 1.0, 0.05, 0xf2e6c8, 1.15, 1.25, 0.41)]);
+    case 'igloo': {
+      const snow = 0xf4f8fc;
+      const dome = paint(new THREE.SphereGeometry(1.8, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), snow);
+      return merge([dome, paint(new THREE.CylinderGeometry(0.7, 0.7, 1.2, 10, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateY(Math.PI / 2), snow).translate(0, 0.6, 1.8),
+        box(0.8, 0.9, 0.1, 0x2a3440, 0, 0.45, 2.38)]);
+    }
+    case 'redwood':
+      return merge([cyl(0.5, 0.9, 16, 0x6b3a24, 8, 0, 8, 0), needles(3.2, 9, 0x2c4a2c, 17, 0.3), needles(2.4, 7, 0x2f5230, 21, 0.4)]);
+    case 'acacia':
+      return merge([cyl(0.18, 0.3, 3.6, 0x5a4232, 6, 0, 1.8, 0), blob(3.4, 0x6a8a3a, 0, 4.2, 0, 0.3, 0.32)]);
+    case 'maple':
+      return merge([cyl(0.15, 0.24, 2.4, 0x4a3426, 6, 0, 1.2, 0), blob(2.0, 0xc8341e, 0, 3.0, 0, 0.5, 0.7)]);
     case 'tree2':
       return build('tree');
     case 'pine2':

@@ -43,7 +43,8 @@ const REGION_LINES: Partial<Record<BiomeId, string>> = {
   desert: 'Heat, dust and endless sky', forest: 'Deep in the pines', alpine: 'High passes and snowy peaks',
   autumn: 'Gold and red, all the way down', winter: 'Snow on the ground, frost in the air', city: 'Neon after dark',
   rainforest: 'Mist, ferns and birdsong', lakes: 'Bridges over still water', canyon: 'Red rock and deep gorges',
-  blossom: 'Petals on the breeze',
+  blossom: 'Petals on the breeze', tropical: 'White sand and turquoise water', vineyard: 'Vines, lavender and long lunches',
+  japan: 'Rice paddies, shrines and quiet lanes', pnw: 'Giant trees in the mist', savanna: 'Golden grass and acacia shade', arctic: 'Ice, silence and the northern lights',
 };
 
 /** A passport stamp's icon and name. */

@@ -453,6 +453,30 @@ export function foliageParts(type: PropType): Part[] | null {
     case 'fern':
       parts = [{ geo: fern(14), mat: 'fern' }];
       break;
+    case 'redwood': {
+      // A giant: a thick red trunk and a crown of needles high up
+      const t = conifer(31);
+      t.wood.scale(2.4, 3.2, 2.4);
+      t.leaves.scale(1.6, 2.6, 1.6).translate(0, 6, 0);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'needle' }];
+      break;
+    }
+    case 'acacia': {
+      // Umbrella thorn: a wide, flat crown on a slim trunk
+      const t = broadleaf(32);
+      t.wood.scale(0.8, 1.1, 0.8);
+      t.leaves.scale(1.9, 0.38, 1.9).translate(0, 2.2, 0);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leaf' }];
+      break;
+    }
+    case 'maple': {
+      // Japanese maple: low, layered, bright red
+      const t = broadleaf(33);
+      t.wood.scale(0.75, 0.7, 0.75);
+      t.leaves.scale(1.05, 0.6, 1.05).translate(0, -0.6, 0);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leafAutumn' }];
+      break;
+    }
   }
   for (const p of parts ?? []) p.geo.computeBoundingSphere();
   cache.set(type, parts);

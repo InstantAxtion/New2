@@ -7,6 +7,7 @@ import { BIOMES, type BiomeId } from './world/biomes';
 const REGION_COLOR: Record<BiomeId, string> = {
   seaside: '#4fb3d9', hills: '#7cc46a', flatlands: '#d9c46a', desert: '#e0a060', forest: '#3f9a5a', alpine: '#b8c4d4',
   autumn: '#e0803a', winter: '#e8f0f8', city: '#c060ff', rainforest: '#2fbf6a', lakes: '#5aa0ff', canyon: '#d0603a', blossom: '#f29ab8', tropical: '#3fd6c8', vineyard: '#9a6ad0',
+  japan: '#e04a3a', pnw: '#2f7a4a', savanna: '#e0b050', arctic: '#cfe6ff',
 };
 
 export function drawNav(g: CanvasRenderingContext2D, w: World, v: Vehicle, mph: boolean, clock: string, music: string) {

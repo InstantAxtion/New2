@@ -1,12 +1,13 @@
 import { fbm2, noise2, ridged2, smoothstep, clamp, lerp } from './noise';
 
-export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon' | 'blossom' | 'tropical' | 'vineyard';
+export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon' | 'blossom' | 'tropical' | 'vineyard' | 'japan' | 'pnw' | 'savanna' | 'arctic';
 
 export type PropType =
   | 'pine' | 'pineSnow' | 'tree' | 'treeAutumn' | 'bush' | 'palm' | 'cactus' | 'rock' | 'rockSnow'
   | 'house' | 'barn' | 'windmill' | 'turbine' | 'hay' | 'sheep' | 'boat' | 'umbrella'
   | 'lighthouse' | 'deadTree' | 'cabin' | 'snowman' | 'mesaRock' | 'post'
-  | 'tower1' | 'tower2' | 'tower3' | 'billboard' | 'lamp' | 'jungleTree' | 'fern' | 'hoodoo' | 'arch' | 'pier' | 'shop' | 'cherry' | 'flowers' | 'vines' | 'lavender' | 'cypress' | 'farmhouse' | 'hut' | 'tree2' | 'pine2';
+  | 'tower1' | 'tower2' | 'tower3' | 'billboard' | 'lamp' | 'jungleTree' | 'fern' | 'hoodoo' | 'arch' | 'pier' | 'shop' | 'cherry' | 'flowers' | 'vines' | 'lavender' | 'cypress' | 'farmhouse' | 'hut' | 'tree2' | 'pine2'
+  | 'torii' | 'shrine' | 'lantern' | 'vending' | 'igloo' | 'redwood' | 'acacia' | 'maple';
 
 export interface PropSpec {
   type: PropType;
@@ -515,6 +516,114 @@ export const BIOMES: Record<BiomeId, Biome> = {
     haze: [1.0, 0.94, 0.86, 0.14],
     verge: [0.66, 0.6, 0.48],
     towns: true,
+  },
+  japan: {
+    id: 'japan', name: 'Japanese Countryside', emoji: '⛩️', roadBase: 10, roadAmp: 10,
+    height(x, z, c) {
+      // Flat terraced paddies near the road, steep forested hills behind
+      const r = ramp(c.u, 12, 120);
+      const hill = (fbm2(x / 180, z / 180, 4, 201) * 0.5 + 0.5) * 60 * smoothstep(60, 200, Math.abs(c.u));
+      const terrace = Math.floor((fbm2(x / 260, z / 260, 2, 202) * 10 + 10) * r) * 0.8;
+      return c.roadY + terrace + hill;
+    },
+    color(x, z, h, rel, c, out) {
+      set(out, 0.32, 0.5, 0.22);
+      mix(out, 0.4, 0.58, 0.24, noise2(x / 30, z / 30, 203) * 0.5 + 0.5);
+      // Rice paddies: water mirrors with green shoots, in neat plots
+      const a = Math.abs(c.u);
+      if (a > 12 && a < 110) {
+        const px = ((x / 24) % 1 + 1) % 1, pz = ((z / 30) % 1 + 1) % 1;
+        const bund = Math.min(px, pz, 1 - px, 1 - pz) < 0.05;
+        if (!bund) mix(out, 0.46, 0.6, 0.58, 0.55 * smoothstep(12, 20, a));
+        else mix(out, 0.44, 0.38, 0.26, 0.5);
+      }
+      if (h < 0.6) set(out, 0.7, 0.66, 0.5);
+    },
+    props: [
+      { type: 'pine', n: 6, u: [60, 260], scale: [0.9, 1.4], cluster: 5 },
+      { type: 'cherry', n: 4, u: [9, 70], scale: [0.7, 1.1], cluster: 2 },
+      { type: 'maple', n: 3, u: [9, 60], scale: [0.7, 1.1], cluster: 2 },
+      { type: 'torii', n: 0.25, u: [11, 18], scale: [0.9, 1.1] },
+      { type: 'shrine', n: 0.25, u: [22, 60], scale: [0.9, 1.1] },
+      { type: 'lantern', n: 0.8, u: [9, 14], scale: [0.9, 1.1] },
+      { type: 'vending', n: 0.25, u: [9.5, 11], scale: [1, 1] },
+      { type: 'house', n: 0.6, u: [16, 90], scale: [0.8, 1], cluster: 2 },
+    ],
+    haze: [0.92, 0.94, 0.98, 0.16],
+    verge: [0.5, 0.5, 0.44],
+    towns: true,
+  },
+  pnw: {
+    id: 'pnw', name: 'Pacific Northwest', emoji: '🌲', roadBase: 14, roadAmp: 12, fog: 0.6,
+    height(x, z, c) {
+      const r = ramp(c.u, 10, 150);
+      return c.roadY + (fbm2(x / 220, z / 220, 4, 211) * 0.5 + 0.5) * 70 * r + ridged2(x / 90, z / 90, 2, 212) * 8 * r;
+    },
+    color(x, z, h, rel, c, out) {
+      // Mossy, damp forest floor
+      set(out, 0.2, 0.32, 0.16);
+      mix(out, 0.3, 0.42, 0.18, noise2(x / 20, z / 20, 213) * 0.5 + 0.5);
+      mix(out, 0.28, 0.24, 0.18, smoothstep(0.3, 0.8, noise2(x / 60, z / 60, 214)) * 0.4);
+      if (h < 0.6) set(out, 0.45, 0.42, 0.36);
+    },
+    props: [
+      { type: 'redwood', n: 9, u: [10, 160], scale: [0.8, 1.3], cluster: 5 },
+      { type: 'pine2', n: 12, u: [9, 280], scale: [1.0, 1.6], cluster: 6 },
+      { type: 'pine', n: 8, u: [12, 300], scale: [1.0, 1.5], cluster: 5 },
+      { type: 'fern', n: 30, u: [8, 40], scale: [0.7, 1.3], cluster: 4 },
+      { type: 'cabin', n: 0.5, u: [18, 80], scale: [0.9, 1.1] },
+      { type: 'rock', n: 2, u: [9, 80], scale: [0.5, 1.4] },
+    ],
+    haze: [0.78, 0.84, 0.86, 0.3],
+    verge: [0.4, 0.4, 0.36],
+    towns: true,
+  },
+  savanna: {
+    id: 'savanna', name: 'Savanna', emoji: '🦒', roadBase: 8, roadAmp: 4,
+    height(x, z, c) {
+      const r = ramp(c.u, 12, 160);
+      // Gently rolling plains with the odd rocky kopje
+      const kopje = Math.max(0, ridged2(x / 70, z / 70, 2, 222) - 0.55) * 30;
+      return c.roadY + ((fbm2(x / 400, z / 400, 3, 221) * 0.5 + 0.5) * 14 + kopje) * r;
+    },
+    color(x, z, h, rel, c, out) {
+      // Golden grass, red earth showing through
+      set(out, 0.78, 0.66, 0.36);
+      mix(out, 0.7, 0.56, 0.3, noise2(x / 40, z / 40, 223) * 0.5 + 0.5);
+      mix(out, 0.66, 0.38, 0.22, smoothstep(0.4, 0.9, noise2(x / 90, z / 90, 224)) * 0.45);
+      if (rel > 6) mix(out, 0.5, 0.42, 0.36, 0.6);
+    },
+    props: [
+      { type: 'acacia', n: 5, u: [12, 300], scale: [0.8, 1.4], cluster: 2 },
+      { type: 'bush', n: 3, u: [9, 120], scale: [0.5, 0.9] },
+      { type: 'rock', n: 1.5, u: [12, 200], scale: [1, 2.6], cluster: 3 },
+      { type: 'hut', n: 0.2, u: [30, 120], scale: [0.9, 1.1], cluster: 3 },
+    ],
+    haze: [1.0, 0.86, 0.66, 0.18],
+    verge: [0.68, 0.48, 0.32],
+  },
+  arctic: {
+    id: 'arctic', name: 'Arctic', emoji: '🧊', roadBase: 6, roadAmp: 3,
+    height(x, z, c) {
+      const r = ramp(c.u, 10, 140);
+      // Flat frozen plains and lakes, with icy ridges on the horizon
+      const ridge = Math.max(0, ridged2(x / 260, z / 260, 3, 232) - 0.45) * 120 * smoothstep(120, 400, Math.abs(c.u));
+      return c.roadY + (fbm2(x / 300, z / 300, 3, 231) * 4 + 1) * r + ridge;
+    },
+    color(x, z, h, rel, c, out) {
+      set(out, 0.93, 0.95, 0.98);
+      mix(out, 0.82, 0.88, 0.95, noise2(x / 50, z / 50, 233) * 0.5 + 0.5);
+      // Blue ice where the wind has scoured the snow away
+      mix(out, 0.62, 0.78, 0.88, smoothstep(0.55, 0.85, noise2(x / 120, z / 120, 234)) * 0.6);
+    },
+    props: [
+      { type: 'pineSnow', n: 1.5, u: [14, 220], scale: [0.6, 1.0], cluster: 4 },
+      { type: 'rockSnow', n: 2, u: [10, 160], scale: [0.6, 1.8], cluster: 2 },
+      { type: 'igloo', n: 0.35, u: [18, 70], scale: [0.9, 1.2], cluster: 3 },
+      { type: 'cabin', n: 0.2, u: [20, 70], scale: [0.9, 1.0] },
+    ],
+    haze: [0.86, 0.92, 1.0, 0.2],
+    verge: [0.86, 0.88, 0.92],
   },
 };
 
