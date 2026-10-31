@@ -712,6 +712,50 @@ export class UI {
       $('#ly-next').textContent = next;
     }
     el.classList.add('on');
+    this.placeLyrics(el);
+  }
+
+  /**
+   * Put the lyrics in the first free band below everything at the top of the screen (info pills,
+   * the now-playing bar, the buttons, the small video, a toast), centred across the screen.
+   */
+  private placeLyrics(el: HTMLElement) {
+    const W = window.innerWidth;
+    let top = 12;
+    const blockers = ['.hud-tl', '.hud-tr', '#toast.on', '#region-card.on', '#hud-menu.on'];
+    for (const q of blockers) {
+      const b = document.querySelector(q) as HTMLElement | null;
+      if (!b || b.offsetParent === null) continue;
+      const r = b.getBoundingClientRect();
+      if (r.height > 0 && r.top < window.innerHeight * 0.6) top = Math.max(top, r.bottom);
+    }
+    const vid = this.videos.screen.el;
+    if (vid.classList.contains('pip') && vid.style.opacity !== '0') top = Math.max(top, vid.getBoundingClientRect().bottom);
+    if (W > window.innerHeight) {
+      // Landscape: there's no free band across the top, so use the column to the right of the
+      // left-hand stack (info and small video), under the top-right buttons
+      let left = 16, topR = 12;
+      for (const q of ['.hud-tl', '#toast.on']) {
+        const b = document.querySelector(q) as HTMLElement | null;
+        if (b && b.offsetParent !== null) left = Math.max(left, b.getBoundingClientRect().right);
+      }
+      if (vid.classList.contains('pip') && vid.style.opacity !== '0') left = Math.max(left, vid.getBoundingClientRect().right);
+      for (const q of ['.hud-tr', '#hud-menu.on']) {
+        const b = document.querySelector(q) as HTMLElement | null;
+        if (b && b.offsetParent !== null) topR = Math.max(topR, b.getBoundingClientRect().bottom);
+      }
+      const width = Math.max(200, W - left - 30);
+      el.style.left = `${Math.round(left + 16 + width / 2)}px`;
+      el.style.width = `${Math.round(width)}px`;
+      el.style.textAlign = 'right';
+      el.style.top = `${Math.round(topR + 8)}px`;
+      return;
+    }
+    el.style.left = '50%';
+    el.style.right = 'auto';
+    el.style.width = `${Math.min(W - 32, 560)}px`;
+    el.style.textAlign = 'center';
+    el.style.top = `${Math.round(top + 10)}px`;
   }
 
   /** Saved places: carry on where you stopped, or go back to a favourite spot. */

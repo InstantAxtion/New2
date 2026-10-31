@@ -664,3 +664,6 @@ body.cc-on .lyrics, body.auto-mode .lyrics { top: calc(70px + var(--safe-t)); }
   .lyrics { left: auto; right: calc(14px + var(--safe-r)); top: calc(64px + var(--safe-t)); width: min(42vw, 460px); text-align: right; transform: translateY(8px); }
   .lyrics.on { transform: none; }
 }
+/* (lyrics are placed from code under whatever is at the top) */
+.lyrics, .lyrics.on { transform: translateX(-50%); }
+@media (orientation: landscape) { .lyrics, .lyrics.on { transform: translateX(-50%); } }

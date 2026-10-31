@@ -10,7 +10,7 @@ import { loadAssets } from './assets';
 await loadAssets();
 document.getElementById('loading')?.remove();
 const game = new Game(document.getElementById('view') as HTMLCanvasElement, loadSettings());
-new UI(game);
+(window as unknown as { ui: UI }).ui = new UI(game);
 requestAnimationFrame(game.frame);
 (window as unknown as { game: Game }).game = game;
 
