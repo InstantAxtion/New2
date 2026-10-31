@@ -56,6 +56,10 @@ function stampLabel(key: string): { icon: string; name: string } | null {
   return STAMPS.find((x) => x.key === key) ?? null;
 }
 
+/** A settings row: a label and a segmented control. */
+const seg = (label: string, key: string, opts: [string, string][]) =>
+  `<div class="srow"><span>${label}</span><div class="seg" data-set="${key}">${opts.map(([v, t]) => `<button class="chip" data-v="${v}">${t}</button>`).join('')}</div></div>`;
+
 /** Car picker groups. */
 const CAR_CATS: { id: string; label: string; cars: string[] }[] = [
   { id: 'all', label: 'All', cars: [] },
@@ -224,6 +228,9 @@ export class UI {
       <button class="pad small" id="zen-btn" aria-label="Hide controls">👁️<span>Hide all</span></button>
       <button class="pad small" id="pause-btn" aria-label="Pause">⏸<span>Pause</span></button>
       <button class="pad small" id="lights-btn" aria-label="Headlights">💡<span id="lights-lbl">Auto</span></button>
+      <button class="pad small" data-open="settings" aria-label="Settings">⚙️<span>Settings</span></button>
+      <button class="pad small" data-open="stats" aria-label="Trips and passport">🛂<span>Passport</span></button>
+      <button class="pad small" id="menu-garage" aria-label="Garage">🚗<span>Garage</span></button>
     </div>
     <div class="menu-auto">
       <div class="menu-grid">
@@ -449,51 +456,47 @@ export class UI {
   <div class="sheet-body" id="places-body"></div>
 </aside>
 
-<aside id="stats" class="sheet hidden">
-  <div class="sheet-head"><h2>📊 Your drives</h2><button class="icon" data-close="stats" aria-label="Close">✕</button></div>
+<aside id="stats" class="sheet stats-sheet hidden">
+  <div class="sheet-head"><h2>Your drives</h2><button class="icon" data-close="stats" aria-label="Close">✕</button></div>
   <div class="sheet-body" id="stats-body"></div>
 </aside>
 
-<aside id="settings" class="sheet hidden">
-  <div class="sheet-head"><h2>⚙️ Settings</h2><button class="icon" data-close="settings" aria-label="Close">✕</button></div>
+<aside id="settings" class="sheet settings hidden">
+  <div class="sheet-head"><h2>Settings</h2><button class="icon" data-close="settings" aria-label="Close">✕</button></div>
   <div class="sheet-body">
-    <h3>Graphics</h3>
-    <div class="chips" data-set="quality"><button class="chip" data-v="low">Low</button><button class="chip" data-v="medium">Medium</button><button class="chip" data-v="high">High</button><button class="chip" data-v="ultra">Ultra</button></div>
-    <h3>Speed units</h3>
-    <div class="chips" data-set="units"><button class="chip" data-v="mph">mph</button><button class="chip" data-v="kmh">km/h</button></div>
-    <h3>Steering</h3>
-    <div class="chips" data-set="steering"><button class="chip" data-v="buttons">◀ ▶ Buttons</button><button class="chip" data-v="tilt">📱 Tilt phone</button></div>
-    <div class="chips" data-set="assist"><button class="chip" data-v="true">🛟 Steering assist on</button><button class="chip" data-v="false">Assist off</button></div>
-    <h3>Screen</h3>
-    <div class="chips" data-set="orientation"><button class="chip" data-v="auto">🔄 Auto-rotate</button><button class="chip" data-v="landscape">▭ Landscape</button><button class="chip" data-v="portrait">▯ Vertical</button></div>
-    <div class="chips" data-set="minimalHud"><button class="chip" data-v="false">Full HUD</button><button class="chip" data-v="true">Minimal HUD</button></div>
-    <div class="chips" data-set="compass"><button class="chip" data-v="true">🧭 Compass &amp; altitude</button><button class="chip" data-v="false">Hide</button></div>
-    <div class="chips" data-set="reduceMotion"><button class="chip" data-v="false">Normal motion</button><button class="chip" data-v="true">🫧 Reduce motion</button></div>
-    <div class="chips" data-set="hud"><button class="chip" data-v="true">Windscreen head-up display</button><button class="chip" data-v="false">No HUD on the glass</button></div>
-    <div class="chips" data-set="dashScreen"><button class="chip" data-v="map">🗺️ Dash shows the map</button><button class="chip" data-v="visualizer">🎶 Dash shows a visualizer</button></div>
-    <h3>Time of day</h3>
-    <div class="chips">${timeChips}</div>
-    <h3>Season</h3>
-    <div class="chips" data-set="season"><button class="chip" data-v="regions">🗺️ Each region's own</button><button class="chip" data-v="spring">🌱 Spring</button><button class="chip" data-v="summer">☀️ Summer</button><button class="chip" data-v="autumn">🍂 Autumn</button><button class="chip" data-v="winter">❄️ Winter</button></div>
-    <h3>Weather</h3>
-    <div class="chips" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">🌨️💧 Sleet</button></div>
-    <h3>Traffic</h3>
-    <div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div>
-    <h3>Auto-drive style</h3>
-    <div class="chips" data-set="driveStyle"><button class="chip" data-v="relaxed">🌿 Relaxed</button><button class="chip" data-v="normal">🚗 Normal</button><button class="chip" data-v="sporty">🏁 Sporty</button></div>
-    <div class="chips" data-set="clouds"><button class="chip" data-v="true">☁️ Clouds</button><button class="chip" data-v="false">Clear skies</button></div>
-    <h3>Sound mixer</h3>
-    <label class="field">🚗 Engine<input type="range" id="volume" min="0" max="1" step="0.05" /></label>
-    <label class="field">🌲 World sounds<input type="range" id="vol-world" min="0" max="1" step="0.05" /></label>
-    <label class="field">🎵 Music &amp; podcasts<input type="range" id="vol-music" min="0" max="1" step="0.05" /></label>
-    <h3>Music videos</h3>
-    <div class="chips" data-set="prefer"><button class="chip" data-v="video">🎬 Prefer music videos</button><button class="chip" data-v="lyrics">📝 Prefer lyric videos</button></div>
-    <div class="chips" data-set="pip"><button class="chip" data-v="true">Small video in other cameras</button><button class="chip" data-v="false">Only on the car screen</button></div>
-    <div class="chips" data-set="lyrics"><button class="chip" data-v="true">🎤 Show synced lyrics</button><button class="chip" data-v="false">No lyrics</button></div>
-    <label class="field">YouTube API key
-      <input id="yt-key" type="text" autocomplete="off" spellcheck="false" placeholder="AIza…" /></label>
-    <p class="hint">Used to search YouTube for each song's official video (or the best lyric video). It's free:
-      <a href="#" id="yt-help">console.cloud.google.com</a> → create a project → enable <b>YouTube Data API v3</b> → Credentials → Create API key. The key stays on this phone. About 100 new songs a day are free; songs you've played before are remembered.</p>
+    <section class="sgroup"><h3>Display</h3>
+      ${seg('Graphics', 'quality', [['low', 'Low'], ['medium', 'Med'], ['high', 'High'], ['ultra', 'Ultra']])}
+      ${seg('Screen', 'orientation', [['auto', 'Auto'], ['landscape', 'Wide'], ['portrait', 'Tall']])}
+      ${seg('Speed in', 'units', [['mph', 'mph'], ['kmh', 'km/h']])}
+      ${seg('On-screen info', 'minimalHud', [['false', 'Full'], ['true', 'Minimal']])}
+      ${seg('Compass & altitude', 'compass', [['true', 'Show'], ['false', 'Hide']])}
+      ${seg('Car screen shows', 'dashScreen', [['map', 'Map'], ['visualizer', 'Visualizer']])}
+      ${seg('Camera motion', 'reduceMotion', [['false', 'Normal'], ['true', 'Calm']])}
+    </section>
+    <section class="sgroup"><h3>Driving</h3>
+      ${seg('Steering', 'steering', [['buttons', 'Buttons'], ['tilt', 'Tilt phone']])}
+      ${seg('Steering assist', 'assist', [['true', 'On'], ['false', 'Off']])}
+      ${seg('Auto-drive style', 'driveStyle', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['sporty', 'Sporty']])}
+      <div class="srow"><span>Traffic</span><div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div></div>
+    </section>
+    <section class="sgroup"><h3>World</h3>
+      <div class="srow col"><span>Time of day</span><div class="seg wrap">${timeChips}</div></div>
+      ${seg('Season', 'season', [['regions', 'Auto'], ['spring', '🌱'], ['summer', '☀️'], ['autumn', '🍂'], ['winter', '❄️']])}
+      <div class="srow col"><span>Weather</span><div class="seg wrap" data-set="weather"><button class="chip" data-v="clear">☀️ Clear</button><button class="chip" data-v="rain">🌧️ Rain</button><button class="chip" data-v="storm">⛈️ Storm</button><button class="chip" data-v="snow">🌨️ Snow</button><button class="chip" data-v="fog">🌫️ Fog</button><button class="chip" data-v="hail">🧊 Hail</button><button class="chip" data-v="sleet">💧 Sleet</button></div></div>
+      ${seg('Clouds', 'clouds', [['true', 'On'], ['false', 'Clear skies']])}
+    </section>
+    <section class="sgroup"><h3>Sound</h3>
+      <label class="srow"><span>🚗 Engine</span><input type="range" id="volume" min="0" max="1" step="0.05" /></label>
+      <label class="srow"><span>🌲 World</span><input type="range" id="vol-world" min="0" max="1" step="0.05" /></label>
+      <label class="srow"><span>🎵 Music</span><input type="range" id="vol-music" min="0" max="1" step="0.05" /></label>
+    </section>
+    <section class="sgroup"><h3>Music videos</h3>
+      ${seg('Find', 'prefer', [['video', 'Music videos'], ['lyrics', 'Lyric videos']])}
+      ${seg('Synced lyrics', 'lyrics', [['true', 'On'], ['false', 'Off']])}
+      ${seg('Outside the car', 'pip', [['false', 'Hide video'], ['true', 'Small video']])}
+      <label class="srow col"><span>YouTube API key</span><input id="yt-key" type="text" autocomplete="off" spellcheck="false" placeholder="AIza…" /></label>
+      <p class="hint">Only needed if the built-in key runs out. Free from <a href="#" id="yt-help">console.cloud.google.com</a> → enable YouTube Data API v3 → Credentials → Create API key.</p>
+    </section>
   </div>
 </aside>`;
   }
@@ -1047,6 +1050,7 @@ export class UI {
     $('#nowbar-text', r).onclick = () => {
       if (this.videos.active) this.setTheatre(true);
     };
+    $('#menu-garage', r).onclick = () => $<HTMLElement>('#to-garage').click();
     $('#lights-btn', r).onclick = () => {
       const order: Settings['lights'][] = ['auto', 'on', 'off'];
       this.s.lights = order[(order.indexOf(this.s.lights ?? 'auto') + 1) % 3];
@@ -1279,6 +1283,8 @@ export class UI {
   /** (Windows, sunroof and demist work by themselves now: no buttons for them.) */
   private refreshCabin() {}
 
+  private statsTab = 'trips';
+
   private renderStats() {
     const st = this.game.stats;
     const d = st.data;
@@ -1289,6 +1295,8 @@ export class UI {
     const cars = Object.entries(d.perCar).sort((a, b) => b[1] - a[1]);
     const max = Math.max(1, ...regions.map((r) => r[1] ?? 0));
     $('#stats-body').innerHTML = `
+      <nav class="ptabs"><button class="ptab${this.statsTab === 'trips' ? ' on' : ''}" data-ptab="trips">📊 Trips</button><button class="ptab${this.statsTab === 'passport' ? ' on' : ''}" data-ptab="passport">🛂 Passport</button><button class="ptab${this.statsTab === 'log' ? ' on' : ''}" data-ptab="log">📔 Log</button></nav>
+      <div class="ppage${this.statsTab === 'trips' ? ' on' : ''}" data-ppage="trips">
       <div class="stat-grid">
         <div><b>${dist(st.tripM)}</b><span>This trip · ${hrs(st.tripS)}</span></div>
         <div><b>${dist(d.totalM)}</b><span>All time</span></div>
@@ -1301,19 +1309,31 @@ export class UI {
       ${regions.map(([id, m]) => `<div class="stat"><span>${BIOMES[id as BiomeId].emoji} ${BIOMES[id as BiomeId].name}</span><i><b style="width:${Math.round(((m ?? 0) / max) * 100)}%"></b></i><em>${dist(m ?? 0)}</em></div>`).join('') || '<p class="hint">Go for a drive!</p>'}
       <h3>By car</h3>
       ${cars.map(([id, m]) => `<div class="stat"><span>${CARS.find((c) => c.id === id)?.name ?? id}</span><em>${dist(m)}</em></div>`).join('')}
-      <h3>🛂 Passport <small>${Object.keys(d.stamps).length} of ${BIOME_IDS.length + STAMPS.length} stamps</small></h3>
+      </div>
+      <div class="ppage${this.statsTab === 'passport' ? ' on' : ''}" data-ppage="passport">
+      <div class="pp-head"><b>${Object.keys(d.stamps).length}</b><span>of ${BIOME_IDS.length + STAMPS.length} stamps collected</span>
+        <i><em style="width:${Math.round((Object.keys(d.stamps).length / (BIOME_IDS.length + STAMPS.length)) * 100)}%"></em></i></div>
       <div class="passport">${[...BIOME_IDS.map((id) => ({ key: 'region:' + id, icon: BIOMES[id].emoji, name: BIOMES[id].name })), ...STAMPS]
         .map((x) => {
           const t = d.stamps[x.key];
           return `<div class="stamp${t ? ' got' : ''}"><i>${x.icon}</i><span>${esc(x.name)}</span><small>${t ? new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—'}</small></div>`;
         })
         .join('')}</div>
-      <h3>📔 Journey log</h3>
+      </div>
+      <div class="ppage${this.statsTab === 'log' ? ' on' : ''}" data-ppage="log">
       ${d.journeys.length ? d.journeys.map((j, i) => `<div class="journey"><canvas width="120" height="80" data-jmap="${i}"></canvas><div>
         <b>${new Date(j.start).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} · ${new Date(j.start).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</b>
         <span>${dist(j.m)} · ${hrs(j.s)} · ${CARS.find((c) => c.id === j.car)?.name ?? j.car}</span>
         <span class="jregions">${j.regions.map((r) => BIOMES[r]?.emoji ?? '').join(' → ')}</span></div></div>`).join('') : '<p class="hint">Your trips are logged here: route, distance, time and the regions you passed through.</p>'}
+      </div>
       <button class="ghost small" id="stats-reset">Reset stats</button>`;
+    for (const b of $$('[data-ptab]', $('#stats-body'))) {
+      b.onclick = () => {
+        this.statsTab = b.dataset.ptab!;
+        for (const x of $$('[data-ptab]')) x.classList.toggle('on', x === b);
+        for (const pg of $$('[data-ppage]')) pg.classList.toggle('on', pg.dataset.ppage === this.statsTab);
+      };
+    }
     // Little route maps for the journey log
     for (const c of $$<HTMLCanvasElement>('[data-jmap]')) {
       const j = d.journeys[Number(c.dataset.jmap)];

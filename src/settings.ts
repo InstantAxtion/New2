@@ -108,7 +108,7 @@ export const DEFAULTS: Settings = {
   lights: 'auto',
   ytChannel: '',
   prefer: 'video',
-  pip: true,
+  pip: false,
   orientation: 'auto',
   trafficDensity: 0.45,
   driveStyle: 'normal',
@@ -140,6 +140,9 @@ export function loadSettings(): Settings {
     (s as unknown as { unitsV2: boolean }).unitsV2 = true;
     // Only two cameras now: behind the car, or the driver's seat
     if (s.cam !== 'hood') s.cam = 'chase';
+    // The video lives on the car's screen (or the Watch view), not floating over the outside cameras
+    if (!raw.pipV2) s.pip = false;
+    (s as unknown as { pipV2: boolean }).pipV2 = true;
     // Older saves only had traffic on/off
     if (raw.trafficDensity === undefined && raw.traffic === false) s.trafficDensity = 0;
     return s;

@@ -219,7 +219,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   const room = left - right - (tablet ? 0 : 0.3);
   const wantW = tablet ? Math.min(0.6, inner(zF) * 0.72) : style === 'classic' ? 0.28 : style === 'luxury' ? Math.min(0.46, inner(zF) * 0.55) : Math.min(0.42, inner(zF) * 0.5);
   // A standing screen must stay under the slope of the windscreen in front of it
-  const headroom = P.top(zF + 0.05) - 0.04 - (yT - 0.06);
+  const headroom = P.top(zF + 0.05) - 0.05 - (yT + 0.03);
   const screenWidth = tablet ? Math.max(0.3, Math.min(wantW, headroom / 0.5625)) : Math.max(0.22, Math.min(wantW, room));
   const screenX = tablet ? 0 : Math.min(-0.04, (left + right) / 2);
   const cv = document.createElement('canvas');
@@ -236,12 +236,12 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   let screenY: number;
   if (tablet) {
     // A landscape tablet standing on top of the dash, in the middle
-    // Mostly sunk into the dash top so it doesn't block the road, tilted back towards the driver
-    screenY = yT + (screenWidth * 0.5625) / 2 - 0.06;
-    screen.position.set(-0.02, screenY, zF + 0.05);
+    // Standing clear above the dash top (the video is drawn over it, so nothing may overlap it), tilted back towards the driver
+    screenY = yT + 0.04 + (screenWidth * 0.5625) / 2;
+    screen.position.set(-0.02, screenY, zF + 0.02);
     screen.rotation.set(-0.22, Math.PI - 0.16, 0, 'YXZ');
-    const stand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.06), trimDark);
-    stand.position.set(-0.02, yT - 0.01, zF + 0.09);
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.05), trimDark);
+    stand.position.set(-0.02, yT + 0.02, zF + 0.06);
     I.add(stand);
     // Vents in the dash face below it
     for (const vx of [-0.24, 0.0]) {

@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import * as THREE from 'three';
 import { World, SEGMENT, LANE, STOP_INFO, type Stop } from './world/world';
 import { BIOMES, type Biome, type BiomeId } from './world/biomes';
@@ -270,7 +271,9 @@ export class Game {
 
   private updateReflections(dt: number) {
     const q = this.settings.quality;
-    const on = (q === 'high' || q === 'ultra') && this.tier === 'pbr' && this.phase !== 'garage';
+    // (Off: a low-resolution capture of the nearby grass and road made the paint look blotchy and dirty;
+    // the car reflects the sky and the light instead, which reads as clean, glossy paint)
+    const on = false && (q === 'high' || q === 'ultra') && this.tier === 'pbr' && this.phase !== 'garage';
     const car = this.car;
     if (!on) {
       if (this.reflCar) {
@@ -1167,6 +1170,10 @@ export class Game {
   /** Are the headlights on right now. */
   lightsOn = false;
 
+  private prevCorners: [number, number][] | null = null;
+  /** How many frames to lead the video layer by (it lags on Android). */
+  videoLead = Capacitor.isNativePlatform() ? 1 : 0;
+
   private placeVideo() {
     const scr = this.videos?.screen;
     if (!scr) return;
@@ -1190,7 +1197,18 @@ export class Game {
           if (v.z > 1 || v.z < -1) ok = false;
           pts.push([((v.x + 1) / 2) * W, ((1 - v.y) / 2) * H]);
         }
-        if (ok) p = { kind: 'quad', corners: pts };
+        // The video layer reaches the screen a frame after the 3D view does (on Android especially),
+        // so it would trail behind as the view moves: lead it by that frame
+        const prev = this.prevCorners;
+        this.prevCorners = pts.map((q) => [q[0], q[1]] as [number, number]);
+        if (prev && ok) {
+          const jump = Math.max(...pts.map((q, i) => Math.hypot(q[0] - prev[i][0], q[1] - prev[i][1])));
+          if (jump < 80) for (let i = 0; i < 4; i++) {
+            pts[i][0] += (pts[i][0] - prev[i][0]) * this.videoLead;
+            pts[i][1] += (pts[i][1] - prev[i][1]) * this.videoLead;
+          }
+        }
+        if (ok) p = { kind: 'quad', corners: pts.map((q) => [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10] as [number, number]) };
       } else if (this.settings.pip) {
         const width = Math.min(340, W * (W > H ? 0.34 : 0.6));
         p = { kind: 'pip', x: 12, y: this.pipY, width };

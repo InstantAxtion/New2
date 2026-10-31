@@ -107,7 +107,7 @@ export class VideoScreen {
       width: VW,
       height: VH,
       playerVars: {
-        autoplay: 1, controls: 0, playsinline: 1, rel: 0, modestbranding: 1, iv_load_policy: 3, fs: 0, disablekb: 1,
+        autoplay: 1, controls: 0, playsinline: 1, vq: 'hd720', rel: 0, modestbranding: 1, iv_load_policy: 3, fs: 0, disablekb: 1,
         origin: location.origin,
       },
       events: {
@@ -122,7 +122,7 @@ export class VideoScreen {
           if (e.data === PS().PLAYING) {
             this.paused = false;
             try {
-              this.player?.setPlaybackQuality?.('hd1080');
+              this.player?.setPlaybackQuality?.('hd720');
             } catch {
               /* the player chooses */
             }
@@ -155,7 +155,8 @@ export class VideoScreen {
   play(id: string) {
     this.active = true;
     this.paused = false;
-    return this.ensure(() => this.player!.loadVideoById(id));
+    // Ask for 720p from the start
+    return this.ensure(() => (this.player as unknown as { loadVideoById(o: object): void }).loadVideoById({ videoId: id, suggestedQuality: 'hd720' }));
   }
 
   playList(list: string, index = 0) {

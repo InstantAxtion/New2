@@ -542,3 +542,43 @@ body.video-on .watch-btn { display: inline-flex; }
 }
 @media (orientation: portrait) { .tb-vol { display: none; } }
 body.theatre-on .hud-tr, body.theatre-on .hud-menu { display: none !important; }
+
+/* Settings: grouped cards of rows, each a label with a compact segmented control */
+.sheet.settings .sheet-body, .sheet.stats-sheet .sheet-body { padding-top: 2px; }
+.sgroup { background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 14px; padding: 4px 12px; margin-bottom: 12px; }
+.sgroup h3 { margin: 8px 0 2px !important; font-size: 11px !important; }
+.srow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.06); min-width: 0; }
+.sgroup h3 + .srow { border-top: 0; }
+.srow > span { font-size: 14px; flex-shrink: 1; min-width: 0; }
+.srow.col { flex-direction: column; align-items: stretch; gap: 8px; }
+.srow input[type=range] { flex: 0 1 55%; accent-color: var(--accent); touch-action: auto; padding: 0; border: 0; background: none; }
+.srow .range-row { flex: 0 1 62%; }
+.srow .range-row span { min-width: 0; font-size: 12px; }
+.srow input[type=text] { width: 100%; }
+.seg { display: inline-flex; flex-shrink: 0; background: rgba(0,0,0,.3); border-radius: 10px; padding: 2px; gap: 2px; max-width: 70%; }
+.seg .chip { background: none; border: 0; border-radius: 8px; padding: 6px 10px; font-size: 13px; white-space: nowrap; text-align: center; color: var(--muted); }
+.seg .chip.on { background: var(--accent); color: #241400; }
+.seg.wrap { display: flex; flex-wrap: wrap; max-width: none; }
+.seg.wrap .chip { flex: 1 0 auto; }
+.sheet.settings h2, .stats-sheet h2 { font-size: 20px; }
+
+/* Trips & passport: a narrower panel with tabs */
+.sheet.stats-sheet { width: min(380px, 100vw); }
+.ptabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: rgba(0,0,0,.25); border-radius: 12px; padding: 3px; margin-bottom: 10px; }
+.ptab { background: none; border-radius: 9px; padding: 8px 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ptab.on { background: rgba(255,255,255,.14); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.ppage { display: none; }
+.ppage.on { display: block; }
+.pp-head { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 8px; margin: 2px 0 12px; }
+.pp-head b { font-size: 28px; }
+.pp-head span { color: var(--muted); font-size: 13px; }
+.pp-head i { grid-column: 1 / -1; height: 6px; background: rgba(255,255,255,.1); border-radius: 6px; overflow: hidden; margin-top: 6px; }
+.pp-head i em { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.passport { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
+.stamp { padding: 7px 4px; border-radius: 10px; }
+.stamp i { font-size: 22px; }
+.stamp span { font-size: 10.5px; }
+@media (orientation: portrait) {
+  .sheet.stats-sheet { top: auto; height: 62vh; width: 100%; border-left: 0; border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; }
+  .sheet.stats-sheet.hidden { transform: translateY(110%); }
+}
