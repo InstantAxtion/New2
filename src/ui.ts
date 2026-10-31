@@ -213,7 +213,9 @@ export class UI {
       <button class="link-btn" id="trip-btn">TRIP <b id="trip">0.0</b></button>
       <button class="link-btn" id="fav-btn" aria-label="Save this place">☆</button></div>
     <div class="nowbar" id="nowbar"><span id="nowbar-text"></span>
-      <button class="icon tiny" id="nb-next" aria-label="Next song">⏭</button></div>
+      <button class="icon tiny" id="nb-next" aria-label="Next song">⏭</button>
+      <button class="icon tiny" id="nb-video" aria-label="Show or hide the video">📺</button></div>
+  <button class="pip-x" id="pip-x" aria-label="Hide the video">✕</button>
   </div>
   <div class="hud-tr">
     <button class="icon" id="top-play" aria-label="Play or pause the music">⏯</button>
@@ -1134,6 +1136,18 @@ export class UI {
       window.setTimeout(() => ($('#fav-btn').textContent = '☆'), 2500);
       this.toast(`Saved<b>★ ${esc(name)}</b>`);
     };
+    // Hide the small video (the music keeps playing); 📺 in the now-playing bar brings it back
+    const pipToggle = (on: boolean) => {
+      this.s.pip = on;
+      this.save();
+      this.refreshSettings();
+      this.toast(on ? '📺 Video shown' : 'Video hidden<b>Tap 📺 to show it again</b>');
+    };
+    $('#pip-x', r).onclick = (e) => {
+      e.stopPropagation();
+      pipToggle(false);
+    };
+    $('#nb-video', r).onclick = () => pipToggle(!this.s.pip);
     $('#nb-next', r).onclick = () => {
       const src = this.audioSource();
       if (src === 'videos') this.videos.next();
@@ -1501,6 +1515,16 @@ export class UI {
     const tpIco = !src ? '▶' : src === 'videos' ? (this.videos.screen.paused ? '▶' : '⏸') : ico;
     if (tp.textContent !== tpIco) tp.textContent = tpIco;
     $('#nb-next').style.display = src === 'spotify' ? 'none' : '';
+    $('#nb-video').style.display = src === 'videos' && this.s.cam !== 'hood' ? '' : 'none';
+    $('#nb-video').classList.toggle('on', this.s.pip);
+    // Keep the ✕ on the small video's corner
+    const vEl = this.videos.screen.el, px2 = $('#pip-x');
+    if (vEl.classList.contains('pip') && vEl.style.opacity !== '0') {
+      const rc = vEl.getBoundingClientRect();
+      px2.style.display = 'flex';
+      px2.style.left = `${Math.round(rc.right - 34)}px`;
+      px2.style.top = `${Math.round(rc.top + 6)}px`;
+    } else px2.style.display = 'none';
     if (g.struggling() && this.s.quality !== 'low') {
       this.s.quality = this.s.quality === 'ultra' ? 'high' : this.s.quality === 'high' ? 'medium' : 'low';
       g.setQuality(this.s.quality);
@@ -1574,12 +1598,32 @@ export class UI {
     // Drag on the scene to look around; tap to leave zen mode
     const canvas = $('#view') as HTMLCanvasElement;
     let px = 0, py = 0, moved = 0, dragId = -1;
+    // Two fingers: pinch to zoom in and out (and stop looking around while pinching)
+    const touches = new Map<number, { x: number; y: number }>();
+    let pinch0 = 0, zoom0 = 1;
+    const spread = () => {
+      const [a, b] = [...touches.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
     canvas.addEventListener('pointerdown', (e) => {
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size === 2) {
+        pinch0 = spread();
+        zoom0 = this.game.rig.zoom;
+        dragId = -1;
+        this.game.rig.dragging = false;
+        return;
+      }
       dragId = e.pointerId;
       px = e.clientX; py = e.clientY; moved = 0;
       this.game.rig.dragging = true;
     });
     window.addEventListener('pointermove', (e) => {
+      if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size === 2 && pinch0 > 0) {
+        this.game.rig.setZoom(zoom0 * (pinch0 / Math.max(20, spread())));
+        return;
+      }
       if (e.pointerId !== dragId) return;
       const dx = e.clientX - px, dy = e.clientY - py;
       moved += Math.abs(dx) + Math.abs(dy);
@@ -1588,6 +1632,8 @@ export class UI {
     });
     let lastTap = 0;
     const end = (e: PointerEvent) => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) pinch0 = 0;
       if (e.pointerId !== dragId) return;
       dragId = -1;
       this.game.rig.dragging = false;
@@ -1604,6 +1650,7 @@ export class UI {
         this.toast('View stays where you leave it<b>Double-tap to look ahead</b>');
       }
     };
+    canvas.addEventListener('wheel', (e) => this.game.rig.setZoom(this.game.rig.zoom * Math.exp(e.deltaY * 0.001)), { passive: true });
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', end);
 

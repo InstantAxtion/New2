@@ -647,3 +647,11 @@ body.zen .take-over, body.theatre-on .take-over, body.driver-view.auto-mode .tak
 body.zen .take-over, body.theatre-on .take-over { display: none !important; }
 @media (orientation: portrait) { .take-over { bottom: calc(110px + var(--safe-b)); } }
 @media (orientation: landscape) { .take-over { left: calc(14px + var(--safe-l)); transform: none; bottom: calc(14px + var(--safe-b)); } .take-over:active { transform: scale(.95); } }
+.pip-x { position: fixed; z-index: 3; display: none; width: 28px; height: 28px; border-radius: 50%; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.65); color: #fff; font-size: 13px; pointer-events: auto; border: 1px solid rgba(255,255,255,.25); }
+#nb-video:not(.on) { opacity: .55; }
+/* Portrait: the info and now-playing bar sit under the top buttons, never beside them */
+@media (orientation: portrait) {
+  body.auto-mode .hud-tl, .hud-tl { top: calc(64px + var(--safe-t)); }
+  .nowbar, body.auto-mode .nowbar { max-width: calc(100vw - 24px); }
+}

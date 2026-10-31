@@ -20,6 +20,11 @@ export class CameraRig {
   pitch = 0;
   dragging = false;
   private still = 0;
+  /** Pinch zoom: <1 closer, >1 further (3rd person: distance; 1st person: field of view). */
+  zoom = 1;
+  setZoom(z: number) {
+    this.zoom = Math.min(this.mode === 'hood' ? 1.3 : 3, Math.max(this.mode === 'hood' ? 0.45 : 0.5, z));
+  }
   private speedK = 0;
   /** The heading the chase camera follows (lags the car's). */
   private camHeading = 0;
@@ -76,7 +81,7 @@ export class CameraRig {
     const a = (auto ? t * 0.18 : 0.5) + this.yaw;
     // Back off so the car fits the free space on screen
     const h = window.innerHeight;
-    const r = this.focus ? THREE.MathUtils.clamp((5.2 * h) / Math.max(this.focus.size, 60), 6.5, 26) : 7.5;
+    const r = (this.focus ? THREE.MathUtils.clamp((5.2 * h) / Math.max(this.focus.size, 60), 6.5, 26) : 7.5) * this.zoom;
     const cx = v.x, cz = v.z, cy = v.y;
     this.cam.position.set(cx + Math.sin(a) * r, cy + 2.2 + this.pitch * 4, cz + Math.cos(a) * r);
     const g = this.world.floorAt(this.cam.position.x, this.cam.position.z);
@@ -105,7 +110,8 @@ export class CameraRig {
     const sp = Math.min(1, Math.max(0, (Math.abs(v.v) - 8) / 32));
     this.speedK += (sp - this.speedK) * (1 - Math.exp(-dt * 1.5));
     const kick = (this.calm ? 6 : 14) * this.speedK * this.speedK;
-    const fov = Math.round(((this.mode === 'hood' ? hoodFov + kick * 0.7 + (24 - hoodFov - kick * 0.7) * this.focusT : this.baseFov + kick)) * 20) / 20;
+    const hz = this.mode === 'hood' ? this.zoom : 1;
+    const fov = Math.round(((this.mode === 'hood' ? (hoodFov + kick * 0.7) * hz + (24 - (hoodFov + kick * 0.7) * hz) * this.focusT : this.baseFov + kick)) * 20) / 20;
     // In the cabin things are a hand's width away, so let the camera see that close
     const near = this.mode === 'hood' ? 0.03 : 0.1;
     if (this.cam.fov !== fov || this.cam.near !== near) {
@@ -131,8 +137,8 @@ export class CameraRig {
       case 'far': {
         const far = this.mode === 'far';
         // Closer and lower than before (more of the road rushing past); pulls back a touch with speed
-        const d = (far ? 15 : 5.4 + this.speedK * 1.2) * (1 + this.pitch * 0.3);
-        const h = (far ? 6.5 : 1.85 - this.speedK * 0.15) + this.pitch * 6;
+        const d = (far ? 15 : 5.4 + this.speedK * 1.2) * (1 + this.pitch * 0.3) * this.zoom;
+        const h = ((far ? 6.5 : 1.85 - this.speedK * 0.15) + this.pitch * 6) * (0.6 + 0.4 * this.zoom);
         // The camera swings round after the car rather than being bolted to it, so in a turn
         // you see the car itself rotate into the bend (and a little of its side)
         if (this.first) this.camHeading = v.heading;

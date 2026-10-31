@@ -253,7 +253,12 @@ export class World {
   /** How high the road has climbed at z (metres): grades stay under about 1 in 8. */
   elevation(z: number): number {
     const s = this.seed;
-    return this.reliefAt(z) * (150 * (noise1(z / 4500, s + 51) * 0.5 + 0.5) + 38 * (noise1(z / 1150, s + 52) * 0.5 + 0.5));
+    // Big sweeps (whole valleys), then hills, then the dips and crests you feel in your stomach
+    return this.reliefAt(z) * (
+      230 * (noise1(z / 6000, s + 51) * 0.5 + 0.5) +
+      60 * (noise1(z / 1500, s + 52) * 0.5 + 0.5) +
+      13 * (noise1(z / 420, s + 58) * 0.5 + 0.5)
+    );
   }
 
   /**
@@ -264,7 +269,7 @@ export class World {
     const s = this.seed;
     const r = this.reliefAt(z);
     if (r < 0.01) return 0;
-    const base = 150 * (fbm2(x / 4500, z / 4500, 2, s + 53) * 0.5 + 0.5) + 38 * (fbm2(x / 1150, z / 1150, 2, s + 54) * 0.5 + 0.5);
+    const base = 260 * (fbm2(x / 6000, z / 6000, 2, s + 53) * 0.5 + 0.5) + 60 * (fbm2(x / 1500, z / 1500, 2, s + 54) * 0.5 + 0.5);
     // Broad massifs with ridges on them (not needles): a smooth mask decides where the mountains rise
     const mass = smoothstep(-0.1, 0.5, fbm2(x / 2600, z / 2600, 2, s + 56));
     const ridge = ridged2(x / 1400, z / 1400, 4, s + 55);
