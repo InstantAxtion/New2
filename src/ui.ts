@@ -212,11 +212,27 @@ export class UI {
       <button class="icon tiny" id="nb-next" aria-label="Next song">⏭</button></div>
   </div>
   <div class="hud-tr">
-    <button class="icon" data-open="music" aria-label="Music">🎵</button>
-    <button class="icon" id="tv-btn" aria-label="Watch the music video on the dashboard">📺</button>
     <button class="icon wide" id="cam-btn">🎥 <span class="lbl" id="cam-label"></span></button>
-    <button class="icon" id="zen-btn" aria-label="Hide controls">👁️</button>
-    <button class="icon" id="pause-btn" aria-label="Pause">⏸</button>
+    <button class="icon" id="menu-btn" aria-label="Menu">☰</button>
+  </div>
+  <div class="hud-menu card" id="hud-menu">
+    <div class="menu-grid">
+      <button class="pad small" data-open="music" aria-label="Music">🎵<span>Music</span></button>
+      <button class="pad small" id="tv-btn" aria-label="Watch the music video on the dashboard">📺<span>Screen</span></button>
+      <button class="pad small" id="zen-btn" aria-label="Hide controls">👁️<span>Hide all</span></button>
+      <button class="pad small" id="pause-btn" aria-label="Pause">⏸<span>Pause</span></button>
+    </div>
+    <div class="menu-auto">
+      <div class="menu-grid">
+        <button class="pad small" id="take-wheel" aria-label="Take the wheel">🕹️<span>Drive</span></button>
+        <button class="pad small" id="style-btn" aria-label="Driving style"><b id="style-ico">🚗</b><span id="style-lbl">Normal</span></button>
+        <button class="pad small" id="sleep-btn" aria-label="Sleep timer">🌙<span id="sleep-lbl">Sleep</span></button>
+        <button class="pad small" id="lane-btn" aria-label="Change lane">⇆<span>Lane</span></button>
+      </div>
+      <div class="menu-cruise"><button class="pad small" id="m-slower" aria-label="Slower">−</button>
+        <div class="cruise-val"><b id="m-cruise">80</b><span>cruise</span></div>
+        <button class="pad small" id="m-faster" aria-label="Faster">+</button></div>
+    </div>
   </div>
   <div class="lyrics" id="lyrics"><b id="ly-now"></b><span id="ly-next"></span></div>
   <div class="region-card" id="region-card"><small>Welcome to</small><b id="rc-name"></b><span id="rc-sub"></span></div>
@@ -237,14 +253,6 @@ export class UI {
     <div class="pedals">
       <button class="pad brake" data-hold="brake" aria-label="Brake">BRAKE</button>
       <button class="pad gas" data-hold="gas" aria-label="Gas">GAS</button>
-    </div>
-  </div>
-  <div class="auto">
-    <div class="auto-left">
-      <button class="pad small" id="take-wheel" aria-label="Take the wheel">🕹️<span>Drive</span></button>
-      <button class="pad small" id="style-btn" aria-label="Driving style"><b id="style-ico">🚗</b><span id="style-lbl">Normal</span></button>
-      <button class="pad small" id="sleep-btn" aria-label="Sleep timer">🌙<span id="sleep-lbl">Sleep</span></button>
-      <button class="pad small" id="lane-btn" aria-label="Change lane">⇆<span>Lane</span></button>
     </div>
   </div>
   <div class="cruise" id="cruise-box">
@@ -971,6 +979,18 @@ export class UI {
     };
     $('#slower', r).onclick = () => cruise(-1);
     $('#faster', r).onclick = () => cruise(1);
+    $('#m-slower', r).onclick = () => cruise(-1);
+    $('#m-faster', r).onclick = () => cruise(1);
+    // The menu: everything that isn't speed, now playing or the camera
+    const menu = $('#hud-menu', r);
+    $('#menu-btn', r).onclick = (e) => {
+      e.stopPropagation();
+      menu.classList.toggle('on');
+    };
+    for (const b of $$('.menu-grid .pad', menu)) b.addEventListener('click', () => menu.classList.remove('on'));
+    document.addEventListener('pointerdown', (e) => {
+      if (menu.classList.contains('on') && !menu.contains(e.target as Node) && e.target !== $('#menu-btn')) menu.classList.remove('on');
+    });
     $('#lane-btn', r).onclick = () => (this.game.vehicle.lane *= -1);
     $('#tilt-zero', r).onclick = () => this.recentreTilt();
     for (const b of $$('[data-open="stats"]', r)) b.addEventListener('click', () => this.renderStats());
@@ -1223,6 +1243,7 @@ export class UI {
     $('#unit').textContent = this.s.units === 'mph' ? 'mph' : 'km/h';
     const k = this.s.units === 'mph' ? 0.621371 : 1;
     $('#cruise').textContent = String(Math.round(this.s.cruiseKmh * k));
+    $('#m-cruise').textContent = String(Math.round(this.s.cruiseKmh * k));
     document.body.classList.toggle('cc-on', this.game.ccOn && !this.s.auto);
     $('#cc-btn').classList.toggle('on', this.game.ccOn);
   }

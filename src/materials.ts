@@ -197,12 +197,18 @@ export function waterMaterial(tier: Tier): THREE.Material {
   }
   const n = waterNormals();
   n.repeat.set(5000 / 22, 5000 / 22);
-  const m = new THREE.MeshStandardMaterial({
-    color: 0x0f4f6e,
-    roughness: 0.06,
-    metalness: 0.15,
+  // Physically based water: a clear-coat sheen for sharp sun glints and sky reflections that
+  // strengthen at grazing angles, over a deep blue-green body
+  const m = new THREE.MeshPhysicalMaterial({
+    color: 0x0c4862,
+    roughness: 0.1,
+    metalness: 0.05,
+    clearcoat: 1,
+    clearcoatRoughness: 0.04,
     normalMap: n,
     normalScale: new THREE.Vector2(0.35, 0.35),
+    clearcoatNormalMap: n,
+    clearcoatNormalScale: new THREE.Vector2(0.25, 0.25),
     transparent: true,
     opacity: 0.93,
   });
@@ -215,10 +221,26 @@ export function waterMaterial(tier: Tier): THREE.Material {
         '#include <begin_vertex>',
         `#include <begin_vertex>
         vec4 wp = modelMatrix * vec4(transformed, 1.0);
-        transformed.y += sin(wp.x * 0.07 + uTime * 0.9) * 0.14 + sin(wp.z * 0.09 - uTime * 0.7) * 0.11;`,
-      );
+        float swell = sin(wp.x * 0.07 + uTime * 0.9) * 0.14 + sin(wp.z * 0.09 - uTime * 0.7) * 0.11;
+        transformed.y += swell;
+        vSwell = swell;`,
+      )
+      .replace('#include <common>', '#include <common>\nvarying float vSwell;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nvarying float vSwell;')
+      // Whitecaps on the crests of the swell, broken up by the ripples
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        {
+          float crest = smoothstep(0.16, 0.25, vSwell + (mapN.x + mapN.y) * 0.06);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85, 0.9, 0.92), crest * 0.55);
+          roughnessFactor = mix(roughnessFactor, 0.6, crest);
+          // Glassier and more opaque at grazing angles, clearer looking straight down
+          float fres = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 3.0);
+          diffuseColor.a = mix(0.82, 1.0, fres);
+        }`,
+      )
       .replace(
         '#include <normal_fragment_maps>',
         `vec3 mapN = texture2D(normalMap, vNormalMapUv).xyz * 2.0 - 1.0;

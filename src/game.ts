@@ -131,7 +131,8 @@ export class Game {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !== 'low', powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
     this.renderer.shadowMap.enabled = q.shadows > 0;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // Soft-edged shadows on the higher settings
+    this.renderer.shadowMap.type = settings.quality === 'high' || settings.quality === 'ultra' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.tier = q.tier;
@@ -255,6 +256,68 @@ export class Game {
     a.uniforms.uHeat.value = hp.z < 1 && this.phase === 'drive' ? this.heat : 0;
   }
 
+  // ---- Live reflections on the car (high and ultra): the real road, trees and sky around it ----
+  private reflCam: THREE.CubeCamera | null = null;
+  private reflTimer = 0;
+  private reflCar: CarModel | null = null;
+
+  private updateReflections(dt: number) {
+    const q = this.settings.quality;
+    const on = (q === 'high' || q === 'ultra') && this.tier === 'pbr' && this.phase !== 'garage';
+    const car = this.car;
+    if (!on) {
+      if (this.reflCar) {
+        this.applyCarEnv(this.reflCar, null);
+        this.reflCar = null;
+      }
+      return;
+    }
+    const size = q === 'ultra' ? 256 : 128;
+    if (!this.reflCam || this.reflCam.renderTarget.width !== size) {
+      this.reflCam?.renderTarget.dispose();
+      const rt = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+      this.reflCam = new THREE.CubeCamera(0.5, 450, rt);
+      this.reflCar = null;
+    }
+    this.reflTimer -= dt;
+    if (this.reflTimer > 0 && this.reflCar === car) return;
+    this.reflTimer = q === 'ultra' ? 0.25 : 0.5;
+    const cam = this.reflCam;
+    cam.position.set(car.group.position.x, car.group.position.y + 1.1, car.group.position.z);
+    // Render without the car itself (or the windscreen layer), then hand the result to the paint
+    const vis = car.group.visible, gv = this.glass.mesh.visible;
+    car.group.visible = false;
+    this.glass.mesh.visible = false;
+    const auto = this.renderer.shadowMap.autoUpdate;
+    this.renderer.shadowMap.autoUpdate = false;
+    cam.update(this.renderer, this.scene);
+    this.renderer.shadowMap.autoUpdate = auto;
+    car.group.visible = vis;
+    this.glass.mesh.visible = gv;
+    cam.renderTarget.texture.needsPMREMUpdate = true;
+    if (this.reflCar !== car) {
+      this.applyCarEnv(car, cam.renderTarget.texture);
+      this.reflCar = car;
+    }
+  }
+
+  /** Point the outside of the car (paint, glass, chrome) at a reflection map (null: the sky map again). */
+  private applyCarEnv(car: CarModel, tex: THREE.Texture | null) {
+    const inside = new Set<THREE.Object3D>();
+    car.interior.traverse((o) => inside.add(o));
+    car.body.traverse((o) => {
+      if (inside.has(o)) return;
+      const m = (o as THREE.Mesh).material;
+      for (const mat of Array.isArray(m) ? m : m ? [m] : []) {
+        const sm = mat as THREE.MeshStandardMaterial;
+        if (!sm.isMeshStandardMaterial) continue;
+        sm.envMap = tex;
+        sm.envMapIntensity = tex ? 1.15 : 1;
+        sm.needsUpdate = true;
+      }
+    });
+  }
+
   /** Re-render the sky into the reflection map (cheap enough every few seconds). */
   private updateEnvironment() {
     if (this.tier !== 'pbr') {
@@ -349,6 +412,7 @@ export class Game {
     this.sky.setFogFar(Q.fogFar);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q.pixelRatio));
     this.renderer.shadowMap.enabled = Q.shadows > 0;
+    this.renderer.shadowMap.type = q === 'high' || q === 'ultra' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     this.setupShadows(Q.shadows);
     this.showroom.setShadows(Q.shadows > 0);
     if (retier) {
@@ -713,6 +777,7 @@ export class Game {
     else this.renderer.render(stage, this.camera);
     this.placeVideo();
     this.updateCarScreen(dt);
+    this.updateReflections(dt);
     requestAnimationFrame(this.frame);
   };
 
