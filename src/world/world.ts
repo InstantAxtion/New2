@@ -1,5 +1,5 @@
 import { BIOMES, BIOME_IDS, cliffAt, type Biome, type BiomeId, type Ctx } from './biomes';
-import { hash1, noise1, rng, smoothstep } from './noise';
+import { fbm2, hash1, noise1, ridged2, rng, smoothstep } from './noise';
 
 export const ROAD_HALF = 4.2; // asphalt half-width (two lanes)
 export const LANE = 1.9; // lane centre offset from the middle line
@@ -226,8 +226,54 @@ export class World {
     return (this.roadX(z + 0.5) - this.roadX(z - 0.5));
   }
 
+  // ---- Elevation: long climbs and descents, hills and mountains ----
+
+  /** How big the land is at z (0..~1.25), smoothed over a few kilometres so climbs ease in and out of flat regions. */
+  reliefAt(z: number): number {
+    const g = 40;
+    const a = Math.floor(z / g);
+    const f = z / g - a;
+    const at = (i: number) => this.cached('r', i * g, () => {
+      let sum = 0, n = 0;
+      for (let d = -2000; d <= 2000; d += 250) {
+        const wt = 1 - Math.abs(d) / 2250;
+        for (const { biome, w } of this.weights(i * g + d)) sum += w * biome.relief * wt;
+        n += wt;
+      }
+      return sum / n;
+    });
+    return at(a) + (at(a + 1) - at(a)) * f;
+  }
+
+  /** Which side of the road (+1 right, -1 left, by lateral offset) the land falls away to a valley. */
+  valleySide(z: number): number {
+    return noise1(z / 1900, this.seed + 57) >= 0 ? 1 : -1;
+  }
+
+  /** How high the road has climbed at z (metres): grades stay under about 1 in 8. */
+  elevation(z: number): number {
+    const s = this.seed;
+    return this.reliefAt(z) * (150 * (noise1(z / 4500, s + 51) * 0.5 + 0.5) + 38 * (noise1(z / 1150, s + 52) * 0.5 + 0.5));
+  }
+
+  /**
+   * The land itself, away from the road: the same rolling rise and fall, and in mountain country
+   * ridges climbing hundreds of metres. Near the road the ground follows the road instead.
+   */
+  private landscape(x: number, z: number, a: number): number {
+    const s = this.seed;
+    const r = this.reliefAt(z);
+    if (r < 0.01) return 0;
+    const base = 150 * (fbm2(x / 4500, z / 4500, 2, s + 53) * 0.5 + 0.5) + 38 * (fbm2(x / 1150, z / 1150, 2, s + 54) * 0.5 + 0.5);
+    // Broad massifs with ridges on them (not needles): a smooth mask decides where the mountains rise
+    const mass = smoothstep(-0.1, 0.5, fbm2(x / 2600, z / 2600, 2, s + 56));
+    const ridge = ridged2(x / 1400, z / 1400, 4, s + 55);
+    const peaks = (ridge * 0.65 + 0.35) * mass * 240 * r * r * smoothstep(140, 520, a);
+    return r * base + peaks;
+  }
+
   roadY(z: number): number {
-    let y = 0;
+    let y = this.elevation(z);
     for (const { biome, w } of this.weights(z)) {
       const n = noise1(z / 520, this.seed + 7) * 0.75 + noise1(z / 190, this.seed + 8) * 0.25;
       y += w * (biome.roadBase + biome.roadAmp * (0.5 + 0.5 * n));
@@ -290,6 +336,28 @@ export class World {
       t = t + (1 - t) * bridge;
       h = ry - 0.12 + (this.natural(x, z, u, ry) - ry + 0.12) * t;
     }
+    // Far from the road the land does its own thing: valleys below you when you're high up, peaks above
+    const far = smoothstep(70, 330, a) * (1 - bridge);
+    if (far > 0) {
+      const r = this.reliefAt(z);
+      if (r > 0.01) h += far * (this.landscape(x, z, a) - this.elevation(z));
+    }
+    // A valley on one side: the road runs along a hillside, the slope falling away below the
+    // verge (deeper the higher the road has climbed) while the other side rises
+    {
+      const r = this.reliefAt(z);
+      if (r > 0.05 && bridge < 0.5) {
+        const sideN = noise1(z / 1900, this.seed + 57);
+        const side = this.valleySide(z);
+        const k = smoothstep(0.1, 0.35, Math.abs(sideN));
+        if (u * side > 0 && k > 0) {
+          const climbed = this.elevation(z) / Math.max(r, 0.05);
+          const depth = r * (25 + climbed * 0.75) * k;
+          const drop = smoothstep(flat + 4, flat + 140, a) * depth;
+          h = Math.max(h - drop, 2);
+        }
+      }
+    }
     // A level pad beside the road at stops (fuel stations, diners, campsites, viewpoints)
     const stop = this.stopNear(z, 30);
     if (stop) {
@@ -351,6 +419,8 @@ export class World {
         // The harbour is on the sea side of the road
         if (kind === 'harbour') side = this.seaSide(Math.floor(z / SEGMENT)) > 0 ? 1 : -1;
         if (highway) side = 1;
+        // A viewpoint looks out over the valley side of the road
+        if (kind === 'viewpoint' && this.reliefAt(z) > 0.05) side = this.valleySide(z);
         const depth = { fuel: 30, diner: 28, campsite: 34, viewpoint: 12, harbour: 12, drivein: 44 }[kind];
         stop = { kind, z, side, len: kind === 'viewpoint' ? 60 : kind === 'drivein' ? 100 : 90, depth };
       }
@@ -752,6 +822,15 @@ export class World {
       const t = smoothstep(0.7, 0.2, h);
       for (let i = 0; i < 6; i++) out[i] *= 1 - t;
       out[3] += t;
+    }
+    // Mountains: bare rock on the high ridges, snow on the peaks (and none of it near the road)
+    const away = smoothstep(120, 260, Math.abs(u));
+    if (away > 0 && h > 160) {
+      const rock = smoothstep(160, 230, h) * away * 0.75;
+      const snow = smoothstep(250, 320, h + noise1(x / 70, this.seed + 61) * 25) * away;
+      for (let i = 0; i < 6; i++) out[i] *= 1 - Math.min(1, rock + snow);
+      out[4] += rock * (1 - snow);
+      out[5] += snow;
     }
     // Pavement in towns
     const urb = this.urban(z);

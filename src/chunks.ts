@@ -37,14 +37,14 @@ export interface Quality {
 
 export const QUALITY: Record<'low' | 'medium' | 'high' | 'ultra', Quality> = {
   low: { reach: 380, props: 0.45, ahead: 6, behind: 3, fogFar: 330, pixelRatio: 1, shadows: 0, tier: 'basic', grass: 0, grassReach: 0 },
-  medium: { reach: 520, props: 1, ahead: 8, behind: 4, fogFar: 480, pixelRatio: 1.5, shadows: 1024, tier: 'pbr', grass: 380, grassReach: 32 },
-  high: { reach: 700, props: 1.8, ahead: 11, behind: 4, fogFar: 650, pixelRatio: 2, shadows: 2048, tier: 'pbr', grass: 900, grassReach: 55 },
-  ultra: { reach: 700, props: 2.5, ahead: 14, behind: 5, fogFar: 860, pixelRatio: 2.5, shadows: 4096, tier: 'pbr', grass: 1700, grassReach: 80 },
+  medium: { reach: 760, props: 1, ahead: 8, behind: 4, fogFar: 620, pixelRatio: 1.5, shadows: 1024, tier: 'pbr', grass: 380, grassReach: 32 },
+  high: { reach: 1090, props: 1.8, ahead: 11, behind: 4, fogFar: 900, pixelRatio: 2, shadows: 2048, tier: 'pbr', grass: 900, grassReach: 55 },
+  ultra: { reach: 1450, props: 2.5, ahead: 14, behind: 5, fogFar: 1150, pixelRatio: 2.5, shadows: 4096, tier: 'pbr', grass: 1700, grassReach: 80 },
 };
 
 /** Column offsets (x) from the road centre: fine near the road, coarse far away. */
 function columns(reach: number): number[] {
-  const half = [0, 3, 6, 9, 12.5, 17, 23, 30, 39, 50, 63, 79, 98, 120, 146, 176, 212, 255, 305, 365, 435, 515, 605, 700];
+  const half = [0, 3, 6, 9, 12.5, 17, 23, 30, 39, 50, 63, 79, 98, 120, 146, 176, 212, 255, 305, 365, 435, 515, 605, 700, 810, 940, 1090, 1260, 1450];
   const out = half.filter((v) => v <= reach);
   if (out[out.length - 1] < reach) out.push(reach);
   return [...out.slice(1).reverse().map((v) => -v), ...out];

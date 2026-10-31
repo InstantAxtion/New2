@@ -50,10 +50,23 @@ describe('world', () => {
         const [tx, tz] = w.tangent(z);
         for (const o of [-ROAD_HALF, 0, ROAD_HALF]) {
           const x = w.roadX(z) - tz * o;
-          expect(Math.abs(w.surface(x, z + tx * o) - ry)).toBeLessThan(0.3);
+          // (compare with the road's height level with the sample: on hills it rises along z)
+          expect(Math.abs(w.surface(x, z + tx * o) - w.roadY(z + tx * o))).toBeLessThan(0.3);
         }
       }
     }
+  });
+
+  it('climbs and descends, but never too steeply', () => {
+    const w = new World(7, []);
+    let maxG = 0, lo = Infinity, hi = -Infinity;
+    for (let z = 0; z < 120000; z += 10) {
+      maxG = Math.max(maxG, Math.abs(w.roadY(z + 5) - w.roadY(z - 5)) / 10);
+      lo = Math.min(lo, w.roadY(z));
+      hi = Math.max(hi, w.roadY(z));
+    }
+    expect(hi - lo).toBeGreaterThan(120);
+    expect(maxG).toBeLessThan(0.15);
   });
 
   it('has bends the autopilot can take', () => {

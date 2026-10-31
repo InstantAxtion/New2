@@ -53,7 +53,7 @@ export function vineField(x: number, z: number, seed: number): number {
 /** Coastal cliffs: the seaside road climbs onto clifftops now and then (0..1). */
 export function cliffAt(z: number, seed: number): number {
   // (a gentle climb up to the clifftops: no steeper than about 1 in 12)
-  return smoothstep(0.28, 0.56, noise2(z / 1600, 4.4, seed + 161));
+  return smoothstep(0.1, 0.7, noise2(z / 2400, 4.4, seed + 161));
 }
 
 /** Gorges the canyon road bridges over (0..1). */
@@ -94,6 +94,8 @@ export interface Biome {
   bridges?: (x: number, z: number, seed: number) => number;
   /** Rural regions get the occasional small town. */
   towns?: boolean;
+  /** How big the land is here: long climbs and descents for the road, hills and mountains around (0 = flat, at sea level). */
+  relief: number;
 }
 
 const set = (out: number[], r: number, g: number, b: number) => {
@@ -114,7 +116,7 @@ function beachAndSea(out: number[], h: number) {
 
 export const BIOMES: Record<BiomeId, Biome> = {
   seaside: {
-    id: 'seaside', name: 'Seaside', emoji: '🌊', roadBase: 4, roadAmp: 2.5,
+    id: 'seaside', name: 'Seaside', emoji: '🌊', roadBase: 4, roadAmp: 2.5, relief: 0,
     height(x, z, c) {
       const s = c.u * c.seaSide; // > 0 towards the sea
       const coast = fbm2(x / 90, z / 90, 3, 11) * 6;
@@ -163,7 +165,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     towns: true,
   },
   hills: {
-    id: 'hills', name: 'Rolling Hills', emoji: '⛰️', roadBase: 9, roadAmp: 14,
+    id: 'hills', name: 'Rolling Hills', emoji: '⛰️', roadBase: 9, roadAmp: 14, relief: 1.0,
     height(x, z, c) {
       const big = fbm2(x / 220, z / 220, 4, 21);
       const r = ramp(c.u, 10, 130);
@@ -188,7 +190,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     towns: true,
   },
   flatlands: {
-    id: 'flatlands', name: 'Flatlands', emoji: '🌾', roadBase: 5, roadAmp: 1.5,
+    id: 'flatlands', name: 'Flatlands', emoji: '🌾', roadBase: 5, roadAmp: 1.5, relief: 0.15,
     height(x, z, c) {
       return c.roadY + 0.4 + fbm2(x / 320, z / 320, 3, 31) * 3 * ramp(c.u, 10, 80);
     },
@@ -218,7 +220,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     towns: true,
   },
   desert: {
-    id: 'desert', name: 'Desert', emoji: '🏜️', roadBase: 7, roadAmp: 5,
+    id: 'desert', name: 'Desert', emoji: '🏜️', roadBase: 7, roadAmp: 5, relief: 0.55,
     height(x, z, c) {
       const r = ramp(c.u, 10, 90);
       const dunes = ridged2((x + z * 0.4) / 70, (z - x * 0.3) / 140, 3, 41) * 11 * r;
@@ -246,7 +248,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     verge: [0.86, 0.7, 0.48],
   },
   forest: {
-    id: 'forest', name: 'Forest', emoji: '🌲', roadBase: 12, roadAmp: 9,
+    id: 'forest', name: 'Forest', emoji: '🌲', roadBase: 12, roadAmp: 9, relief: 0.85,
     height(x, z, c) {
       return c.roadY + (fbm2(x / 170, z / 170, 4, 51) * 20 + 4) * ramp(c.u, 10, 110);
     },
@@ -266,7 +268,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     verge: [0.45, 0.42, 0.36],
   },
   alpine: {
-    id: 'alpine', name: 'Alpine', emoji: '🏔️', roadBase: 26, roadAmp: 18,
+    id: 'alpine', name: 'Alpine', emoji: '🏔️', roadBase: 26, roadAmp: 18, relief: 1.25,
     height(x, z, c) {
       const r = ramp(c.u, 14, 200);
       const peaks = ridged2(x / 320, z / 320, 4, 61) * 210 - 30;
@@ -290,7 +292,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     verge: [0.52, 0.5, 0.46],
   },
   autumn: {
-    id: 'autumn', name: 'Autumn Valley', emoji: '🍂', roadBase: 9, roadAmp: 10,
+    id: 'autumn', name: 'Autumn Valley', emoji: '🍂', roadBase: 9, roadAmp: 10, relief: 0.8,
     height(x, z, c) {
       const r = ramp(c.u, 10, 120);
       return c.roadY + (fbm2(x / 200, z / 200, 4, 71) * 26 + 6) * r;
@@ -312,7 +314,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     towns: true,
   },
   winter: {
-    id: 'winter', name: 'Winter', emoji: '❄️', roadBase: 14, roadAmp: 10,
+    id: 'winter', name: 'Winter', emoji: '❄️', roadBase: 14, roadAmp: 10, relief: 0.9,
     height(x, z, c) {
       const r = ramp(c.u, 10, 140);
       return c.roadY + (fbm2(x / 200, z / 200, 4, 81) * 30 + 8) * r;
@@ -332,7 +334,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     verge: [0.9, 0.92, 0.96],
   },
   city: {
-    id: 'city', name: 'Neon City', emoji: '🌃', roadBase: 6, roadAmp: 1, night: true, fog: 0.75,
+    id: 'city', name: 'Neon City', emoji: '🌃', roadBase: 6, roadAmp: 1, relief: 0, night: true, fog: 0.75,
     height(x, z, c) {
       return c.roadY + 0.2 + fbm2(x / 400, z / 400, 2, 91) * 1.5 * ramp(c.u, 60, 200);
     },
@@ -353,7 +355,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     verge: [0.46, 0.46, 0.48],
   },
   rainforest: {
-    id: 'rainforest', name: 'Rainforest', emoji: '🌴', roadBase: 9, roadAmp: 8, fog: 0.62,
+    id: 'rainforest', name: 'Rainforest', emoji: '🌴', roadBase: 9, roadAmp: 8, relief: 0.7, fog: 0.62,
     height(x, z, c) {
       return c.roadY + (fbm2(x / 140, z / 140, 4, 101) * 26 + 6) * ramp(c.u, 10, 90) + ridged2(x / 60, z / 60, 2, 102) * 6 * ramp(c.u, 14, 60);
     },
@@ -372,7 +374,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     verge: [0.36, 0.32, 0.24],
   },
   lakes: {
-    id: 'lakes', name: 'Lakes & Bridges', emoji: '🌉', roadBase: 5.5, roadAmp: 1.5, fog: 0.9,
+    id: 'lakes', name: 'Lakes & Bridges', emoji: '🌉', roadBase: 5.5, roadAmp: 1.5, relief: 0, fog: 0.9,
     height(x, z, c) {
       const lake = lakeAt(x, z, c.seed ?? 0);
       const land = c.roadY + 0.5 + (fbm2(x / 170, z / 170, 4, 111) * 14 + 4) * ramp(c.u, 10, 120);
@@ -396,7 +398,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     bridges: (x, z, seed) => lakeAt(x, z, seed, true),
   },
   canyon: {
-    id: 'canyon', name: 'Canyon', emoji: '🪨', roadBase: 22, roadAmp: 6,
+    id: 'canyon', name: 'Canyon', emoji: '🪨', roadBase: 22, roadAmp: 6, relief: 0.9,
     height(x, z, c) {
       const g = gorgeAt(z, c.seed ?? 0);
       const wall = smoothstep(14, 38, Math.abs(c.u)) * (55 + noise2(x / 160, z / 160, 121) * 35);
@@ -424,7 +426,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     bridges: (x, z, seed) => gorgeAt(z, seed),
   },
   blossom: {
-    id: 'blossom', name: 'Spring Blossom', emoji: '🌸', roadBase: 8, roadAmp: 8,
+    id: 'blossom', name: 'Spring Blossom', emoji: '🌸', roadBase: 8, roadAmp: 8, relief: 0.6,
     height(x, z, c) {
       const r = ramp(c.u, 10, 140);
       return c.roadY + (fbm2(x / 260, z / 260, 4, 131) * 22 + 5) * r;
@@ -459,7 +461,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     towns: true,
   },
   tropical: {
-    id: 'tropical', name: 'Tropical Islands', emoji: '🏝️', roadBase: 2.4, roadAmp: 0.8,
+    id: 'tropical', name: 'Tropical Islands', emoji: '🏝️', roadBase: 2.4, roadAmp: 0.8, relief: 0,
     height(x, z, c) {
       const land = islandAt(x, z, c.seed ?? 0);
       const hills = (fbm2(x / 120, z / 120, 3, 181) * 0.5 + 0.5) * 22 * ramp(c.u, 14, 110);
@@ -491,7 +493,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     bridges: (x, z, seed) => 1 - islandAt(x, z, seed, true),
   },
   vineyard: {
-    id: 'vineyard', name: 'Vineyards & Lavender', emoji: '🍇', roadBase: 10, roadAmp: 10,
+    id: 'vineyard', name: 'Vineyards & Lavender', emoji: '🍇', roadBase: 10, roadAmp: 10, relief: 0.75,
     height(x, z, c) {
       const r = ramp(c.u, 10, 130);
       return c.roadY + (fbm2(x / 300, z / 300, 4, 191) * 26 + 6) * r;
@@ -519,7 +521,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     towns: true,
   },
   japan: {
-    id: 'japan', name: 'Japanese Countryside', emoji: '⛩️', roadBase: 10, roadAmp: 10,
+    id: 'japan', name: 'Japanese Countryside', emoji: '⛩️', roadBase: 10, roadAmp: 10, relief: 0.95,
     height(x, z, c) {
       // Flat terraced paddies near the road, steep forested hills behind
       const r = ramp(c.u, 12, 120);
@@ -555,7 +557,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     towns: true,
   },
   pnw: {
-    id: 'pnw', name: 'Pacific Northwest', emoji: '🌲', roadBase: 14, roadAmp: 12, fog: 0.6,
+    id: 'pnw', name: 'Pacific Northwest', emoji: '🌲', roadBase: 14, roadAmp: 12, relief: 1.1, fog: 0.6,
     height(x, z, c) {
       const r = ramp(c.u, 10, 150);
       return c.roadY + (fbm2(x / 220, z / 220, 4, 211) * 0.5 + 0.5) * 70 * r + ridged2(x / 90, z / 90, 2, 212) * 8 * r;
@@ -580,7 +582,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     towns: true,
   },
   savanna: {
-    id: 'savanna', name: 'Savanna', emoji: '🦒', roadBase: 8, roadAmp: 4,
+    id: 'savanna', name: 'Savanna', emoji: '🦒', roadBase: 8, roadAmp: 4, relief: 0.35,
     height(x, z, c) {
       const r = ramp(c.u, 12, 160);
       // Gently rolling plains with the odd rocky kopje
@@ -604,7 +606,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     verge: [0.68, 0.48, 0.32],
   },
   arctic: {
-    id: 'arctic', name: 'Arctic', emoji: '🧊', roadBase: 6, roadAmp: 3,
+    id: 'arctic', name: 'Arctic', emoji: '🧊', roadBase: 6, roadAmp: 3, relief: 0.4,
     height(x, z, c) {
       const r = ramp(c.u, 10, 140);
       // Flat frozen plains and lakes, with icy ridges on the horizon
