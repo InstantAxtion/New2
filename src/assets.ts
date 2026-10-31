@@ -6,6 +6,8 @@ export const LAYERS = ['grass', 'dry', 'leaves', 'sand', 'rock', 'snow'] as cons
 
 export const assets = {
   ground: [] as THREE.Texture[],
+  /** Surface relief (normal maps) for each ground texture. */
+  groundNormal: [] as THREE.Texture[],
   /** Average (linear) colour of each ground texture, so vertex colours can tint them. */
   groundAvg: [] as THREE.Vector3[],
   asphalt: null as HTMLImageElement | null,
@@ -45,7 +47,7 @@ function average(im: HTMLImageElement): THREE.Vector3 {
 function tex(im: HTMLImageElement, srgb = true): THREE.Texture {
   const t = new THREE.Texture(im);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
+  t.anisotropy = 8;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   t.needsUpdate = true;
   return t;
@@ -55,6 +57,8 @@ export async function loadAssets(): Promise<void> {
   try {
     const base = './textures/';
     const ground = await Promise.all(LAYERS.map((n) => loadImage(`${base}${n}.jpg`)));
+    const normals = await Promise.all(LAYERS.map((n) => loadImage(`${base}${n}_nor.jpg`).catch(() => null)));
+    if (normals.every(Boolean)) assets.groundNormal = (normals as HTMLImageElement[]).map((im) => tex(im, false));
     const [asphalt, asphaltN, bark, gravel] = await Promise.all(['asphalt', 'asphalt_nor', 'bark', 'gravel'].map((n) => loadImage(`${base}${n}.jpg`)));
     assets.gravel = gravel;
     assets.ground = ground.map((im) => tex(im));

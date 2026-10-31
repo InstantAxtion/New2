@@ -3,3 +3,4 @@ sparse_grass (grass.jpg), withered_grass (dry.jpg), dry_decay_leaves (leaves.jpg
 rock_face_03 (rock.jpg, desaturated), snow_02 (snow.jpg), asphalt_02 (asphalt.jpg, asphalt_nor.jpg), bark_brown_02 (bark.jpg).
 Resized for the game.
 rocky_trail (gravel.jpg).
+dry_decay_leaves, sand_01, rock_face_03, snow_02 and the others above also supply the *_nor.jpg normal maps (1K).

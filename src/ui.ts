@@ -193,7 +193,6 @@ export class UI {
         <div class="sgroup flat">
           <div class="srow"><span>Traffic</span><div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div></div>
           ${seg('Auto-drive', 'driveStyle', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['sporty', 'Sporty']])}
-          ${seg('Steering', 'steering', [['buttons', 'Buttons'], ['tilt', 'Tilt']])}
           ${seg('Steering assist', 'assist', [['true', 'On'], ['false', 'Off']])}
         </div>
         <div class="tile-row"><button class="tile" id="new-world"><i>🎲</i><span>New road</span></button><button class="tile" data-open="places"><i>📍</i><span>Saved places</span></button></div>
@@ -214,7 +213,6 @@ export class UI {
       <button class="link-btn" id="trip-btn">TRIP <b id="trip">0.0</b></button>
       <button class="link-btn" id="fav-btn" aria-label="Save this place">☆</button></div>
     <div class="nowbar" id="nowbar"><span id="nowbar-text"></span>
-      <button class="icon tiny" id="nb-toggle" aria-label="Play or pause">⏯</button>
       <button class="icon tiny" id="nb-next" aria-label="Next song">⏭</button></div>
   </div>
   <div class="hud-tr">
@@ -469,14 +467,11 @@ export class UI {
     <section class="sgroup"><h3>Display</h3>
       ${seg('Graphics', 'quality', [['low', 'Low'], ['medium', 'Med'], ['high', 'High'], ['ultra', 'Ultra']])}
       ${seg('Screen', 'orientation', [['auto', 'Auto'], ['landscape', 'Wide'], ['portrait', 'Tall']])}
-      ${seg('Speed in', 'units', [['mph', 'mph'], ['kmh', 'km/h']])}
       ${seg('On-screen info', 'minimalHud', [['false', 'Full'], ['true', 'Minimal']])}
       ${seg('Compass & altitude', 'compass', [['true', 'Show'], ['false', 'Hide']])}
       ${seg('Car screen shows', 'dashScreen', [['map', 'Map'], ['visualizer', 'Visualizer']])}
-      ${seg('Camera motion', 'reduceMotion', [['false', 'Normal'], ['true', 'Calm']])}
     </section>
     <section class="sgroup"><h3>Driving</h3>
-      ${seg('Steering', 'steering', [['buttons', 'Buttons'], ['tilt', 'Tilt phone']])}
       ${seg('Steering assist', 'assist', [['true', 'On'], ['false', 'Off']])}
       ${seg('Auto-drive style', 'driveStyle', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['sporty', 'Sporty']])}
       <div class="srow"><span>Traffic</span><div class="range-row"><input type="range" class="traffic-range" min="0" max="1" step="0.05" aria-label="Traffic density" /><span class="traffic-label"></span></div></div>
@@ -1139,7 +1134,6 @@ export class UI {
       window.setTimeout(() => ($('#fav-btn').textContent = '☆'), 2500);
       this.toast(`Saved<b>★ ${esc(name)}</b>`);
     };
-    $('#nb-toggle', r).onclick = () => this.toggleAudio();
     $('#nb-next', r).onclick = () => {
       const src = this.audioSource();
       if (src === 'videos') this.videos.next();
@@ -1502,10 +1496,7 @@ export class UI {
     const tt = $('#tb-title');
     if (g.theatre && tt.textContent !== label) tt.textContent = label;
     const paused = src === 'podcasts' ? !this.podcasts.playing : src === 'radio' ? !this.radio.playing : src === 'scape' ? !this.scape.current : src === 'spotify' ? this.spotifyPaused : false;
-    const tb = $('#nb-toggle');
     const ico = paused ? '▶' : '⏸';
-    if (tb.textContent !== ico && src !== 'videos') tb.textContent = ico;
-    if (src === 'videos' && tb.textContent !== '⏯') tb.textContent = '⏯';
     const tp = $('#top-play');
     const tpIco = !src ? '▶' : src === 'videos' ? (this.videos.screen.paused ? '▶' : '⏸') : ico;
     if (tp.textContent !== tpIco) tp.textContent = tpIco;

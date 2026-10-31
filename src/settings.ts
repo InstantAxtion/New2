@@ -95,7 +95,7 @@ export const DEFAULTS: Settings = {
   time: 'cycle',
   auto: false,
   cam: 'chase',
-  quality: 'high',
+  quality: 'ultra',
   units: 'mph',
   steering: 'buttons',
   assist: true,
@@ -144,6 +144,12 @@ export function loadSettings(): Settings {
     // The video shows small in a corner in 3rd person (tap it to watch big)
     if (!raw.pipV3) s.pip = true;
     (s as unknown as { pipV3: boolean }).pipV3 = true;
+    // Options that no longer exist: buttons to steer, mph, normal camera motion; and the best graphics to start with
+    s.steering = 'buttons';
+    s.units = 'mph';
+    s.reduceMotion = false;
+    if (!raw.qualityV2) s.quality = 'ultra';
+    (s as unknown as { qualityV2: boolean }).qualityV2 = true;
     // Regions that no longer exist
     s.themes = s.themes.filter((t) => (BIOME_IDS as string[]).includes(t));
     if (s.saved && !s.saved.themes.every((t) => (BIOME_IDS as string[]).includes(t))) s.saved = null;

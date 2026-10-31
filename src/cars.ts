@@ -208,14 +208,22 @@ export class CarModel {
   readonly screenSize: [number, number];
 
   /** Grow or shrink the standing dash screen (1 = full size for videos). */
-  setScreenScale(k: number) {
-    const b = this.screen.userData.base as { y: number; w: number; tilt: number } | undefined;
+  setScreenScale(v: number) {
+    const b = this.screen.userData.base as { y: number; w: number; tilt: number; x: number; z: number; q: THREE.Quaternion } | undefined;
     if (!b) return;
-    const w = b.w * k;
+    // v: 0 = the small map display, 1 = watching a video: much bigger, a little nearer and turned to face you
+    const w = b.w * (0.55 + 0.75 * v);
     this.screen.scale.setScalar(w);
-    // Keep the bottom edge on the dash: the centre sits half a (tilted) height above it
     const h = w * 0.5625;
-    this.screen.position.y = b.y + (h / 2) * Math.cos(b.tilt);
+    const eye = this.eye.position;
+    const x = b.x + (eye.x - b.x) * 0.18 * v;
+    const z = b.z - 0.1 * v;
+    const y = b.y + (h / 2) * Math.cos(b.tilt) + 0.015 * v;
+    this.screen.position.set(x, y, z);
+    // Face the driver's eye (the plane's front looks along -z here, so aim it away from the eye)
+    const look = new THREE.Matrix4().lookAt(new THREE.Vector3(x, y, z), eye, new THREE.Vector3(0, 1, 0));
+    const faceQ = new THREE.Quaternion().setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
+    this.screen.quaternion.copy(b.q).slerp(faceQ, 0.85 * v);
   }
   readonly cockpit: Cockpit;
   readonly custom: Custom;

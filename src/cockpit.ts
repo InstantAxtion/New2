@@ -241,7 +241,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     screen.position.set(-0.02, screenY, zF + 0.02);
     screen.rotation.set(-0.22, Math.PI - 0.16, 0, 'YXZ');
     // It can shrink down to a small map display and grow for videos, standing on its bottom edge
-    screen.userData.base = { y: yT + 0.04, w: screenWidth, tilt: -0.22 };
+    screen.userData.base = { y: yT + 0.04, w: screenWidth, tilt: -0.22, x: -0.02, z: zF + 0.02, q: new THREE.Quaternion().setFromEuler(screen.rotation) };
     const stand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.05), trimDark);
     stand.position.set(-0.02, yT + 0.02, zF + 0.06);
     I.add(stand);

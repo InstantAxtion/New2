@@ -39,6 +39,9 @@ function splatMaterial(): THREE.Material {
   m.onBeforeCompile = (sh) => {
     const names = ['tGrass', 'tDry', 'tLeaves', 'tSand', 'tRock', 'tSnow'];
     names.forEach((n, i) => (sh.uniforms[n] = { value: assets.ground[i] }));
+    const hasN = assets.groundNormal.length === 6;
+    ['nGrass', 'nDry', 'nLeaves', 'nSand', 'nRock', 'nSnow'].forEach((n, i) => (sh.uniforms[n] = { value: hasN ? assets.groundNormal[i] : assets.ground[i] }));
+    sh.uniforms.uHasN = { value: hasN ? 1 : 0 };
     sh.uniforms.avg = { value: assets.groundAvg };
     seasonal(sh);
     sh.uniforms.detailMap = { value: detailTexture() };
@@ -55,6 +58,17 @@ function splatMaterial(): THREE.Material {
         '#include <common>',
         /* glsl */ `#include <common>
         uniform sampler2D tGrass, tDry, tLeaves, tSand, tRock, tSnow, detailMap;
+        uniform sampler2D nGrass, nDry, nLeaves, nSand, nRock, nSnow;
+        uniform float uHasN;
+        vec3 groundN = vec3(0.0, 0.0, 1.0);
+        float groundAO = 1.0;
+        // Rock on a steep face: sample it from the side (tri-planar) so cliffs don't smear into stripes
+        vec3 triRock(sampler2D t, vec3 wp, vec3 wn) {
+          vec3 bw = pow(abs(wn), vec3(4.0));
+          bw /= (bw.x + bw.y + bw.z);
+          vec3 x = texture2D(t, wp.zy / 6.0).rgb, y = texture2D(t, wp.xz / 6.0).rgb, z = texture2D(t, wp.xy / 6.0).rgb;
+          return x * bw.x + y * bw.y + z * bw.z;
+        }
         uniform vec3 avg[6];
         uniform float uSnow;
         uniform float uTime;
@@ -84,7 +98,7 @@ function splatMaterial(): THREE.Material {
           if (w[1] > 0.01) { tex += w[1] * layer(tDry, p, dx, dy); base += w[1] * avg[1]; }
           if (w[2] > 0.01) { tex += w[2] * layer(tLeaves, p, dx, dy); base += w[2] * avg[2]; }
           if (w[3] > 0.01) { tex += w[3] * layer(tSand, p, dx, dy); base += w[3] * avg[3]; }
-          if (w[4] > 0.01) { tex += w[4] * layer(tRock, p * 0.5, dx * 0.5, dy * 0.5); base += w[4] * avg[4]; }
+          if (w[4] > 0.01) { tex += w[4] * mix(layer(tRock, p * 0.5, dx * 0.5, dy * 0.5), triRock(tRock, vWPos, vWNrm), smoothstep(0.3, 0.7, slope)); base += w[4] * avg[4]; }
           if (w[5] > 0.01) { tex += w[5] * layer(tSnow, p, dx, dy); base += w[5] * avg[5]; }
           // The biome colour steers the hue; the photo gives the detail
           // Hue and brightness are matched separately so neither clips
@@ -94,6 +108,24 @@ function splatMaterial(): THREE.Material {
           hue = mix(hue, vec3(1.0), 0.3);
           vec3 tint = hue * clamp(lv / lb, 0.45, 2.4);
           vec3 col = tex * tint;
+          // Surface relief from the dominant layers' normal maps (close up), and crevice darkening
+          float dist0 = length(vWPos - cameraPosition);
+          if (uHasN > 0.5 && dist0 < 140.0) {
+            vec3 nn = vec3(0.0);
+            if (w[0] > 0.01) nn += w[0] * (textureGrad(nGrass, p, dx, dy).xyz * 2.0 - 1.0);
+            if (w[1] > 0.01) nn += w[1] * (textureGrad(nDry, p, dx, dy).xyz * 2.0 - 1.0);
+            if (w[2] > 0.01) nn += w[2] * (textureGrad(nLeaves, p, dx, dy).xyz * 2.0 - 1.0);
+            if (w[3] > 0.01) nn += w[3] * (textureGrad(nSand, p, dx, dy).xyz * 2.0 - 1.0);
+            if (w[4] > 0.01) nn += w[4] * (textureGrad(nRock, p * 0.5, dx * 0.5, dy * 0.5).xyz * 2.0 - 1.0);
+            if (w[5] > 0.01) nn += w[5] * (textureGrad(nSnow, p, dx, dy).xyz * 2.0 - 1.0);
+            float fade = 1.0 - smoothstep(40.0, 140.0, dist0);
+            groundN = normalize(mix(vec3(0.0, 0.0, 1.0), normalize(nn + vec3(0.0, 0.0, 0.001)), fade * 0.9));
+            groundAO = mix(1.0, 0.75 + 0.25 * groundN.z, fade);
+          }
+          col *= groundAO;
+          // Height and exposure: valley floors lusher and darker, ridgelines paler and drier
+          float alt = smoothstep(40.0, 260.0, vWPos.y);
+          col *= mix(vec3(0.94, 1.0, 0.92), vec3(1.08, 1.04, 0.98), alt);
           // Big soft patches so wide fields don't look uniform
           col *= 0.82 + dA.r * 0.36;
           float dist = length(vWPos - cameraPosition);
@@ -105,6 +137,18 @@ function splatMaterial(): THREE.Material {
           float shore = 1.0 - smoothstep(0.0, 0.45, abs(vWPos.y - 0.05 - sin(uTime * 0.8 + vWPos.x * 0.05 + vWPos.z * 0.04) * 0.12));
           float lace = smoothstep(0.45, 0.75, texture2D(detailMap, vWPos.xz * 0.09).g + sin(vWPos.x * 0.9 + uTime * 1.3) * 0.15 + sin(vWPos.z * 1.1 - uTime) * 0.15);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.96), shore * lace * 0.85 * (1.0 - smoothstep(250.0, 500.0, dist)));
+        }`,
+      )
+      // Tilt the shading normal by the ground's relief (world xz = the texture's xy on flat ground)
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        {
+          vec3 wn = normalize(vWNrm);
+          vec3 t = normalize(cross(vec3(0.0, 0.0, 1.0), wn));
+          vec3 b = normalize(cross(wn, t));
+          vec3 pw = normalize(t * groundN.x * 1.6 + b * -groundN.y * 1.6 + wn * groundN.z);
+          normal = normalize((viewMatrix * vec4(pw, 0.0)).xyz);
         }`,
       );
   };
