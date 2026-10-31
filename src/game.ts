@@ -506,6 +506,12 @@ export class Game {
   };
 
   private tickFrame() {
+    // In the floating video window there's nothing else to show: keep the video placed and rest
+    if (this.pipMode) {
+      this.last = performance.now();
+      this.placeVideo();
+      return;
+    }
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
@@ -1179,6 +1185,8 @@ export class Game {
   /** Lay the YouTube player over the dashboard screen (or in a corner). */
   /** Watch the video big, in the middle of the screen. */
   theatre = false;
+  /** The app is shrunk into Android's picture-in-picture window. */
+  pipMode = false;
   private fireworks = new Fireworks();
   /** A puddle splash just now (0..1). */
   splash = 0;
@@ -1195,7 +1203,11 @@ export class Game {
     if (!scr) return;
     let p: Placement = { kind: 'hidden' };
     const W = window.innerWidth, H = window.innerHeight;
-    if (scr.active && this.phase !== 'garage' && this.theatre) {
+    if (scr.active && this.pipMode) {
+      // In Android's floating window: the video fills it
+      const width = Math.min(W, (H * 16) / 9);
+      p = { kind: 'theatre', x: (W - width) / 2, y: (H - (width * 9) / 16) / 2, width };
+    } else if (scr.active && this.phase !== 'garage' && this.theatre) {
       // Cinema: big, flat and sharp in the middle of the screen, with room for the controls below
       // (leave room for the control panel underneath: ~150 px landscape, ~200 portrait)
       const below = W > H ? (this.videos?.songs?.length ?? 0) > 1 ? 128 : 96 : 200;

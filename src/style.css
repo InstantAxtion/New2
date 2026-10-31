@@ -667,3 +667,7 @@ body.cc-on .lyrics, body.auto-mode .lyrics { top: calc(70px + var(--safe-t)); }
 /* (lyrics are placed from code under whatever is at the top) */
 .lyrics, .lyrics.on { transform: translateX(-50%); }
 @media (orientation: landscape) { .lyrics, .lyrics.on { transform: translateX(-50%); } }
+/* Picture-in-picture window: just the video, nothing else */
+body.pip-mode #ui, body.pip-mode .pip-x { display: none !important; }
+body.pip-mode #view { visibility: hidden; }
+body.pip-mode #video { box-shadow: none; border-radius: 0 !important; }

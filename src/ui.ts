@@ -34,6 +34,7 @@ interface SpotifyLoginApi {
   addListener(e: 'loginFinished', f: (r: { loggedIn: boolean }) => void): Promise<unknown>;
 }
 const SpotifyLogin = registerPlugin<SpotifyLoginApi>('SpotifyLogin');
+const Pip = registerPlugin<{ setAllowed(o: { on: boolean }): Promise<void> }>('Pip');
 
 /** YouTube API key built into the app at build time (from .env.local or a CI secret). */
 const BUILTIN_YT_KEY: string = import.meta.env.VITE_YOUTUBE_KEY ?? '';
@@ -131,6 +132,13 @@ export class UI {
       else this.toast(ev ? 'Fully charged<b>⚡ 100%</b>' : 'Tank full<b>⛽ 100%</b>');
     };
     setInterval(() => this.tick(), 100);
+    // Leaving the app while a video plays: Android shrinks the game into a floating window showing just the video
+    window.addEventListener('pipmode', (e) => {
+      const on = !!(e as CustomEvent<boolean>).detail;
+      game.pipMode = on;
+      document.body.classList.toggle('pip-mode', on);
+      if (!on) game.engine.start?.();
+    });
     window.addEventListener('resize', () => this.frameGarage());
     requestAnimationFrame(() => this.frameGarage());
     if (Capacitor.isNativePlatform()) {
@@ -1477,11 +1485,23 @@ export class UI {
   }
 
   private unlockTimer = 0;
+  private pipWanted = false;
+
+  /** Let Android know whether leaving the app should keep the video in a floating window. */
+  private updatePip() {
+    if (!Capacitor.isNativePlatform()) return;
+    const want = this.videos.active && !this.videos.screen.paused;
+    if (want !== this.pipWanted) {
+      this.pipWanted = want;
+      void Pip.setAllowed({ on: want }).catch(() => {});
+    }
+  }
 
   private tick() {
     const g = this.game;
     const v = g.vehicle;
     if (++this.unlockTimer % 50 === 0) this.checkUnlocks();
+    this.updatePip();
     const k = this.s.units === 'mph' ? 0.621371 : 1;
     $('#speed').textContent = String(Math.round(Math.abs(v.v) * 3.6 * k));
     // Say why auto-drive is under the set speed, so cruise control never seems broken
