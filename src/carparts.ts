@@ -114,7 +114,7 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
   const lampY = Math.min(P.belt(front - 0.3) - 0.07, s.nose + 0.03);
   const tailY = Math.min(P.belt(rear + 0.25) - 0.09, s.tail - 0.06);
   const glow = (pos: THREE.Vector3, color: number, size: number, opacity: number) => {
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity }));
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true, transparent: true, opacity, toneMapped: false }));
     sp.scale.setScalar(size);
     sp.position.copy(pos);
     b.add(sp);
@@ -199,7 +199,8 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
       case 'bar':
         break;
     }
-    glow(V(hx, lampY, hz + 0.12), 0xfff1d6, 0.9, 0.7);
+    // A small, tight glow at the lamp itself (no big haze)
+    glow(V(hx, lampY, hz + 0.05), 0xfff1d6, 0.42, 0.55);
     // Tail lamps
     const tx = side * W * 0.34;
     const tz = tailZ(tx);

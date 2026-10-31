@@ -671,3 +671,5 @@ body.cc-on .lyrics, body.auto-mode .lyrics { top: calc(70px + var(--safe-t)); }
 body.pip-mode #ui, body.pip-mode .pip-x { display: none !important; }
 body.pip-mode #view { visibility: hidden; }
 body.pip-mode #video { box-shadow: none; border-radius: 0 !important; }
+/* The road-ahead screen lets a hint of the world through */
+body.driver-view #video:not(.theatre):not(.pip) { box-shadow: 0 10px 40px rgba(0,0,0,.35); }

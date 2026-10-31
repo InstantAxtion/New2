@@ -577,8 +577,10 @@ export class Game {
     this.lightsOn = this.phase !== 'garage' && (lm === 'on' || (lm === 'auto' && gloomy));
     this.car.animate(v.dist, v.steer, v.braking, this.lightsOn, v.wheelAngle);
     const dark = Math.max(this.sky.night, this.world.tunnelAt(v.z), this.weather.look.fog < 0.45 ? 0.5 : 0);
-    this.car.headlight.intensity = this.lightsOn ? 260 * (0.35 + 0.65 * dark) : 0;
-    this.car.setLights(this.lightsOn ? 0.18 + 0.5 * dark : 0);
+    // Real light on the road on the better graphics; a soft painted pool only where there's no lighting
+    const pbrLights = this.tier === 'pbr';
+    this.car.headlight.intensity = this.lightsOn ? 230 * (0.4 + 0.6 * dark) : 0;
+    this.car.setLights(this.lightsOn && !pbrLights ? 0.12 + 0.25 * dark : 0);
     this.car.setInside(this.phase !== 'garage' && this.rig.mode === 'hood');
     // Cabin mood lighting breathes gently with the music (about 120 bpm, with a little swing)
     {
@@ -772,7 +774,8 @@ export class Game {
       let cold = 0;
       for (const { biome, w } of this.world.weights(v.z)) if (biome.id === 'winter' || biome.id === 'alpine') cold += w;
       const covered = this.world.tunnelAt(v.z) > 0.45;
-      this.glass.update(dt, this.elapsed, this.car.body, this.car.inside && this.rig.mode === 'hood' && this.phase !== 'garage', {
+      // (no effects drawn on the screen: rain, mist and leaves stay outside the glass)
+      this.glass.update(dt, this.elapsed, this.car.body, false, {
         rain: covered ? 0 : Math.min(1, wx.look.rain + wx.look.snow * 0.5),
         wiper: ((Math.sin(this.wipePhase) * 0.5 + 0.5) * Math.PI),
         misty: wx.look.rain > 0.3 || wx.look.snow > 0.3 || wx.kind === 'fog' || (cold > 0.5 && this.sky.night > 0.5),
@@ -879,7 +882,7 @@ export class Game {
     this.updateCarScreen(dt);
     // The dash screen is a small map display, and grows to full size while a video plays on it
     {
-      const want = this.videos?.active ? 1 : 0;
+      const want = this.videos?.active && this.settings.fpVideo === 'dash' ? 1 : 0;
       this.screenK += (want - this.screenK) * (1 - Math.exp(-dt * 5));
       this.car.setScreenScale(this.screenK);
     }
@@ -1214,7 +1217,24 @@ export class Game {
       const width = Math.min(W - 16, ((H - below - 20) * 16) / 9, 1600);
       p = { kind: 'theatre', x: (W - width) / 2, y: Math.max(8, (H - below - (width * 9) / 16) / 2), width };
     } else if (scr.active && this.phase !== 'garage') {
-      if (this.car.inside) {
+      if (this.car.inside && this.settings.fpVideo === 'ahead') {
+        // A big screen hanging over the road ahead, fixed to the car: the road, the scenery and the
+        // sky all stay in view around and below it, and it stays put when you look around
+        const b = this.car.body;
+        b.updateWorldMatrix(true, false);
+        const e = this.car.eye.position;
+        const c = new THREE.Vector3(e.x * 0.3, e.y + 1.35, this.car.spec.length / 2 + 14);
+        const hw = 3.2, hh = hw * 0.5625;
+        const pts: [number, number][] = [];
+        let ok = true;
+        const v = new THREE.Vector3();
+        for (const [x, y] of [[hw, hh], [-hw, hh], [-hw, -hh], [hw, -hh]]) {
+          v.set(c.x + x, c.y + y, c.z).applyMatrix4(b.matrixWorld).project(this.camera);
+          if (v.z > 1 || v.z < -1) ok = false;
+          pts.push([((v.x + 1) / 2) * W, ((1 - v.y) / 2) * H]);
+        }
+        if (ok) p = { kind: 'quad', corners: pts.map((q) => [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10] as [number, number]) };
+      } else if (this.car.inside) {
         const m = this.car.screen;
         m.updateWorldMatrix(true, false);
         const v = new THREE.Vector3();
@@ -1268,7 +1288,7 @@ export class Game {
       const { ctx, tex } = this.car.screenCanvas;
       drawVisualizer(ctx, this.elapsed, this.nowPlaying, clock);
       tex.needsUpdate = true;
-    } else if (this.videos?.active) this.car.drawScreen(`${sp} ${mph ? 'mph' : 'km/h'}`, `${r} · ${clock}`, music);
+    } else if (this.videos?.active && this.settings.fpVideo === 'dash') this.car.drawScreen(`${sp} ${mph ? 'mph' : 'km/h'}`, `${r} · ${clock}`, music);
     else {
       const { ctx, tex } = this.car.screenCanvas;
       drawNav(ctx, this.world, this.vehicle, mph, clock, this.nowPlaying || '🎵 Tap 📺 for music videos');

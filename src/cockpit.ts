@@ -357,12 +357,17 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     steering.add(spoke);
   }
   tilt.add(steering);
-  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.3, 12), dashM);
-  col.position.set(0, 0, 0.16);
+  // The column runs from the wheel right into the dash, with a shroud round it
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.42, 12), dashM);
+  col.position.set(0, 0, 0.22);
+  const shroud = new THREE.Mesh(new RoundedBoxGeometry(0.13, 0.11, 0.24, 2, 0.04), trimDark);
+  shroud.position.set(0, -0.02, 0.2);
+  tilt.add(shroud);
   col.rotation.x = Math.PI / 2;
   tilt.add(col);
   I.add(tilt);
 
+  const doorPanels: THREE.Object3D[] = [];
   // ---- Seats ----
   const eyeZ = zF - (style === 'van' ? 0.9 : 1.0);
   const eyeY0 = Math.min(yT + 0.2, (s.open ? 1.4 : P.top(eyeZ)) - 0.12);
@@ -461,9 +466,22 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     belt.lookAt(buckle);
     belt.rotateX(Math.PI / 2);
     belt.translateZ(-0.12); // lie back against the seat
-    const anchor = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.02), trimDark);
-    anchor.position.copy(sh);
-    I.add(belt, anchor);
+    I.add(belt);
+  }
+  // B-pillars: trim from the shoulder line up to the roof behind the front seats, where the belts come from
+  if (!s.open) {
+    const pz = eyeZ - 0.34;
+    for (const sd of [-1, 1]) {
+      const yLo = P.belt(pz) - 0.05, yHi = P.top(pz) - 0.03;
+      // Following the glass in from the shoulder to the narrower roof
+      const a = new THREE.Vector3(sd * (P.half(pz) * 0.93), yLo, pz);
+      const b = new THREE.Vector3(sd * (P.half(pz) * (s.tumble ?? 0.8) * 0.95), yHi, pz);
+      const pillar = new THREE.Mesh(new RoundedBoxGeometry(0.06, a.distanceTo(b), 0.14, 2, 0.02), lining);
+      pillar.position.copy(a).add(b).multiplyScalar(0.5);
+      pillar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+      I.add(pillar);
+      doorPanels.push(pillar);
+    }
   }
 
   // Pedals in the footwell: brushed metal with rubber grips, hung from the dash (a clutch on manual cars)
@@ -517,7 +535,6 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     bw.position.set(0, (P.top(zBack) + floorY) / 2, zBack);
     I.add(bw);
   }
-  const doorPanels: THREE.Object3D[] = [];
   const ribbon = (side: number, yLo: (z: number) => number, yHi: (z: number) => number, inset: number, m: THREE.Material) => {
     const n = 10, pos: number[] = [], idx: number[] = [];
     for (let i = 0; i <= n; i++) {

@@ -23,7 +23,6 @@ import com.getcapacitor.PluginHandle;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        registerPlugin(SpotifyLoginPlugin.class);
         registerPlugin(BackgroundAudioPlugin.class);
         registerPlugin(PipPlugin.class);
         super.onCreate(savedInstanceState);
@@ -42,23 +41,6 @@ public class MainActivity extends BridgeActivity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
-        // When the Spotify player's own "Log in" opens, log in inside the app instead of the
-        // phone's browser (the browser's login wouldn't reach the player)
-        getBridge().setWebViewClient(new BridgeWebViewClient(getBridge()) {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                Uri url = request.getUrl();
-                String host = url.getHost() == null ? "" : url.getHost();
-                if (host.equals("accounts.spotify.com") || host.equals("challenge.spotify.com")) {
-                    PluginHandle h = getBridge().getPlugin("SpotifyLogin");
-                    if (h != null) {
-                        ((SpotifyLoginPlugin) h.getInstance()).openFromPlayer(url.toString());
-                        return true;
-                    }
-                }
-                return super.shouldOverrideUrlLoading(view, request);
-            }
-        });
 
         hideSystemBars();
     }

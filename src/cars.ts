@@ -485,9 +485,9 @@ export class CarModel {
     this.group.add(shadow);
 
     // Dipped beam: a wide pool on the road reaching ~120 m, aimed a little down
-    this.headlight = new THREE.SpotLight(0xfff3dc, 0, 140, 0.62, 0.55, 1.1);
+    this.headlight = new THREE.SpotLight(0xfff3dc, 0, 120, 0.5, 0.75, 1.3);
     this.headlight.position.set(0, lampY + 0.1, front);
-    this.headlight.target.position.set(0, 0, front + 26);
+    this.headlight.target.position.set(0, -0.6, front + 30);
     b.add(this.headlight, this.headlight.target);
     // The pool of light the beams throw on the road ahead (shows on every graphics setting)
     this.lightPool = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({

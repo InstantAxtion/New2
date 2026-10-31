@@ -32,6 +32,8 @@ export interface Settings {
   prefer: 'video' | 'lyrics';
   /** Show the video in a corner in the outside cameras too. */
   pip: boolean;
+  /** In the driver's seat, videos show on a big screen over the road ahead, or on the dashboard screen. */
+  fpVideo: 'ahead' | 'dash';
   orientation: 'auto' | 'landscape' | 'portrait';
   /** 0 = empty roads … 1 = busy. */
   trafficDensity: number;
@@ -109,6 +111,7 @@ export const DEFAULTS: Settings = {
   ytChannel: '',
   prefer: 'video',
   pip: true,
+  fpVideo: 'ahead',
   orientation: 'auto',
   trafficDensity: 0,
   driveStyle: 'normal',
