@@ -26,7 +26,7 @@ export interface Stop {
   depth: number;
 }
 
-export type LandmarkKind = 'castle' | 'ruin' | 'waterfall';
+export type LandmarkKind = 'castle' | 'ruin' | 'waterfall' | 'fair' | 'carmeet' | 'balloonfest';
 
 /** Something to look at off to the side of the road. */
 export interface Landmark {
@@ -297,6 +297,18 @@ export class World {
       const k = along * smoothstep(half - 1, half + 2, out) * (1 - smoothstep(half + stop.depth, half + stop.depth + 14, out));
       if (k > 0) h = h + (ry - 0.12 - h) * k;
     }
+    // Events (fairs, car meets, balloon festivals) sit on a level field reaching to the road
+    const ev = this.landmarkNear(z, 80);
+    if (ev && (ev.kind === 'fair' || ev.kind === 'carmeet' || ev.kind === 'balloonfest')) {
+      const R = ev.kind === 'balloonfest' ? 48 : ev.kind === 'fair' ? 36 : 22;
+      const dz = Math.abs(z - ev.z), du = u - ev.u;
+      // A disc around the centre, joined to the road by a level strip
+      const side = Math.sign(ev.u);
+      const toRoad = u * side > 0 && u * side < Math.abs(ev.u) ? 1 - smoothstep(R * 0.5, R * 0.5 + 16, dz) : 0;
+      const disc = 1 - smoothstep(R, R + 22, Math.hypot(dz, du));
+      const k = Math.max(disc, toRoad) * (a > flat - 0.5 ? 1 : 0);
+      if (k > 0) h = h + (ry - 0.14 - h) * k;
+    }
     if (tunnel > 0) {
       // A ridge across the road; the road runs through a cutting under it (the tunnel tube
       // and its roof are separate meshes), so the corridor itself stays at road level
@@ -388,13 +400,21 @@ export class World {
       const ruin = ['hills', 'winter', 'canyon', 'desert', 'flatlands', 'seaside', 'autumn'].includes(b);
       const fall = ['alpine', 'rainforest', 'forest', 'canyon', 'tropical', 'lakes'].includes(b);
       let kind: LandmarkKind | null = null;
-      if (fall && (r < 0.6 || !castle)) kind = 'waterfall';
+      // Some cells hold a roadside event instead: a fair with a night market, a car meet, a balloon festival
+      const ev = h(806);
+      const fairOk = !['city', 'arctic', 'canyon'].includes(b);
+      const meetOk = ['flatlands', 'desert', 'hills', 'seaside', 'lakes', 'savanna', 'autumn', 'vineyard', 'japan', 'tropical'].includes(b);
+      const balloonOk = ['vineyard', 'flatlands', 'hills', 'savanna', 'canyon', 'desert', 'blossom', 'japan', 'autumn', 'lakes'].includes(b);
+      if (ev < 0.45) kind = ev < 0.17 && fairOk ? 'fair' : ev < 0.31 && meetOk ? 'carmeet' : balloonOk ? 'balloonfest' : fairOk ? 'fair' : null;
+      if (kind) { /* event chosen */ }
+      else if (fall && (r < 0.6 || !castle)) kind = 'waterfall';
       else if (castle && (r < 0.75 || !ruin)) kind = 'castle';
       else if (ruin) kind = 'ruin';
       const clear = [-150, 0, 150].every((d) => this.urban(z + d) < 0.01 && this.bridgeRaw(z + d) < 0.01 && this.tunnelAt(z + d) < 0.01) && !this.stopNear(z, 120);
       if (kind && clear) {
         const side = h(804) < 0.5 ? -1 : 1;
-        const dist = kind === 'castle' ? 130 + h(805) * 70 : kind === 'ruin' ? 45 + h(805) * 40 : 52 + h(805) * 20;
+        const dist = kind === 'castle' ? 130 + h(805) * 70 : kind === 'ruin' ? 45 + h(805) * 40 : kind === 'fair' ? 42 + h(805) * 15
+          : kind === 'carmeet' ? 26 + h(805) * 8 : kind === 'balloonfest' ? 75 + h(805) * 30 : 52 + h(805) * 20;
         // Not out at sea
         if (!(b === 'seaside' && side === this.seaSide(Math.floor(z / SEGMENT)))) lm = { kind, z, u: side * (this.roadHalf(z) + dist) };
       }

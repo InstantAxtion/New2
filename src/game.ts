@@ -17,6 +17,9 @@ import { Windscreen } from './glass';
 import { Showroom } from './showroom';
 import { Thumbs } from './thumbs';
 import { Trailer } from './trailer';
+import { Fireworks } from './fireworks';
+import { puddleAt } from './materials';
+import { hash1 } from './world/noise';
 import { updateFilm } from './stops';
 import { drawVisualizer } from './map';
 import { AtmosphereShader, makeLensflare } from './post';
@@ -178,6 +181,7 @@ export class Game {
     this.scene.add(this.drift.group);
     this.scene.add(this.flare);
     this.scene.add(this.glass.mesh);
+    this.scene.add(this.fireworks.points);
     this.life = new Life(this.world, this.effects);
     this.scene.add(this.life.group);
 
@@ -556,9 +560,34 @@ export class Game {
     this.car.animate(v.dist, v.steer, v.braking, this.lightsOn, v.wheelAngle);
     this.car.headlight.intensity = this.lightsOn ? 260 * (0.35 + 0.65 * Math.max(this.sky.night, this.world.tunnelAt(v.z))) : 0;
     this.car.setInside(this.phase !== 'garage' && this.rig.mode === 'hood');
+    // Cabin mood lighting breathes gently with the music (about 120 bpm, with a little swing)
+    {
+      const amb = this.car.custom.ambient;
+      const playing = !!this.nowPlaying || !!this.videos?.active;
+      if (amb && night && this.car.inside) {
+        const t = this.elapsed;
+        const beat = playing ? Math.pow(0.5 + 0.5 * Math.cos(t * Math.PI * 4), 4) * (0.7 + 0.3 * Math.sin(t * 0.7)) : 0;
+        const k = playing ? 0.55 + 0.45 * beat : 1;
+        for (const m of this.car.cockpit.ambient) m.color.setHex(amb).multiplyScalar(k);
+      }
+    }
 
     if (this.phase === 'drive') this.traffic.update(dt, v, night, (z) => this.speedLimit(z));
     this.peds.update(v.z, this.elapsed);
+    // Driving through a puddle: a big splash out to the sides
+    if (Math.abs(v.v) > 4 && this.weather.look.wet > 0.4 && this.phase === 'drive') {
+      for (const sd of [-1, 1]) {
+        const side = new THREE.Vector3(Math.cos(v.heading), 0, -Math.sin(v.heading)).multiplyScalar(sd * v.spec.width * 0.45);
+        const wx2 = v.x + side.x, wz2 = v.z + side.z;
+        if (puddleAt(wx2, wz2, this.weather.look.wet) > 0.5 && Math.random() < dt * 30) {
+          const out = side.clone().normalize().multiplyScalar(2 + Math.abs(v.v) * 0.12).add(new THREE.Vector3(0, 1.6 + Math.abs(v.v) * 0.05, 0));
+          this.effects.emit(new THREE.Vector3(wx2, v.y + 0.25, wz2), out, 'spray', 1.6 + Math.abs(v.v) * 0.03);
+          if (this.splash < 0.2) this.engine.whoosh(0.7);
+          this.splash = Math.max(this.splash, 0.6);
+        }
+      }
+    }
+    this.splash = Math.max(0, this.splash - dt * 2);
     // Dust on gravel, spray on wet roads, thrown up by the rear wheels
     this.puffTimer -= dt;
     const wet = this.weather.look.wet > 0.6 && this.weather.look.rain > 0.3;
@@ -735,6 +764,40 @@ export class Game {
         bugs: wx.look.rain < 0.1 && this.sky.night < 0.5 && this.settings.season !== 'winter' ? 1 : 0,
         speed: Math.abs(v.v),
       });
+    }
+    // Fireworks on some nights: over a fair, a town ahead, or the lakes
+    {
+      const w = this.world;
+      const dirF = Math.cos(v.heading) >= 0 ? 1 : -1;
+      let at: THREE.Vector3 | null = null;
+      const night = this.sky.night > 0.6 && this.weather.look.rain < 0.3 && this.phase === 'drive';
+      if (night) {
+        const fairLm = w.landmarks(Math.min(v.z - 200 * dirF, v.z + 700 * dirF), Math.max(v.z - 200 * dirF, v.z + 700 * dirF)).find((l) => l.kind === 'fair');
+        let spotZ: number | null = fairLm ? fairLm.z : null;
+        let spotU = fairLm ? fairLm.u * 1.6 : 0;
+        if (spotZ === null) {
+          for (let d = 150; d < 650; d += 50) {
+            const z = v.z + d * dirF;
+            const cell = Math.floor(z / 3000);
+            if (w.urban(z) > 0.6 && hash1(cell, w.seed + 911) < 0.5) {
+              spotZ = z;
+              spotU = (hash1(cell, w.seed + 912) < 0.5 ? -1 : 1) * 90;
+              break;
+            }
+            if (w.dominant(z).id === 'lakes' && hash1(cell, w.seed + 913) < 0.4) {
+              spotZ = z;
+              spotU = (hash1(cell, w.seed + 914) < 0.5 ? -1 : 1) * 120;
+              break;
+            }
+          }
+        }
+        if (spotZ !== null) {
+          const [tx, tz] = w.tangent(spotZ);
+          const x = w.roadX(spotZ) - tz * spotU, zz = spotZ + tx * spotU;
+          at = new THREE.Vector3(x, Math.max(w.height(x, zz), 0), zz);
+        }
+      }
+      this.fireworks.update(dt, at !== null, at);
     }
     for (const g of nightGlow) g.m.emissiveIntensity = g.day + (g.night - g.day) * this.sky.night;
     this.envTimer -= dt;
@@ -947,7 +1010,7 @@ export class Game {
         this.holdT = 0;
       }
       this.holdT += dt;
-      if (dir) c = { ...c, steer: dir * Math.min(1, 0.3 + this.holdT * 1.3) };
+      if (dir) c = { ...c, steer: dir * Math.min(1, 0.45 + this.holdT * 2.2) };
     }
     if (this.ccOn) {
       if (c.brake > 0) {
@@ -1094,6 +1157,9 @@ export class Game {
   /** Lay the YouTube player over the dashboard screen (or in a corner). */
   /** Watch the video big, in the middle of the screen. */
   theatre = false;
+  private fireworks = new Fireworks();
+  /** A puddle splash just now (0..1). */
+  splash = 0;
   /** Are the headlights on right now. */
   lightsOn = false;
 

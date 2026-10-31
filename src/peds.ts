@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { World } from './world/world';
 
-// People walking over the zebra crossings in towns and the city.
+// People walking over the zebra crossings, and strolling along the pavements in towns and the city.
+import { hash1 } from './world/noise';
 
 const SKIN = [0xf1c7a5, 0xd9a07a, 0xa86d47, 0x6f4a2f, 0xe8b896];
 const CLOTHES = [0x2b4c7e, 0xb33a3a, 0x3c6e47, 0xe0c060, 0x2a2a2e, 0xe8e6e0, 0x7d4fc4, 0xd97b2b];
@@ -58,7 +59,7 @@ export class Pedestrians {
   private pool: Person[] = [];
 
   constructor(public world: World) {
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 30; i++) {
       const p = person(i);
       this.pool.push(p);
       this.group.add(p.g);
@@ -86,6 +87,42 @@ export class Pedestrians {
       p.arms[1].rotation.x = swing * 0.8;
       p.g.visible = true;
     }
-    for (let i = n; i < this.pool.length; i++) this.pool[i].g.visible = false;
+    // Pavement walkers: four endless streams (each side, each way), spaced along the street; each
+    // slot k may or may not have someone in it, so they come and go without popping in view
+    const S = 9;
+    const used = new Set<number>();
+    for (let i = 0; i < n; i++) used.add(i);
+    for (const side of [-1, 1]) {
+      for (const dir of [-1, 1]) {
+        const speed = 1.25 + (side + dir * 0.5) * 0.08;
+        const off = dir * speed * t;
+        const k0 = Math.ceil((z - 70 - off) / S), k1 = Math.floor((z + 240 - off) / S);
+        for (let k = k0; k <= k1 && n < this.pool.length; k++) {
+          const salt = (side + 2) * 31 + (dir + 2) * 7;
+          if (hash1(k, w.seed + salt) > 0.45) continue;
+          const pz = k * S + off + hash1(k, w.seed + salt + 1) * 4;
+          if (w.urban(pz) < 0.6 || w.bridge(pz) > 0.1 || w.tunnelAt(pz) > 0.1) continue;
+          const u = side * (w.roadHalf(pz) + 1.6 + hash1(k, w.seed + salt + 2) * 2.2 + (dir > 0 ? 0 : 0.9));
+          const [tx, tz] = w.tangent(pz);
+          // Same person for the same walker every frame (the pool slot comes from who they are)
+          let slot = Math.floor(hash1(k, w.seed + salt + 3) * this.pool.length);
+          while (used.has(slot)) slot = (slot + 1) % this.pool.length;
+          used.add(slot);
+          n++;
+          const p = this.pool[slot];
+          const x = w.roadX(pz) - tz * u;
+          const zz = pz + tx * u;
+          p.g.position.set(x, w.surface(x, zz), zz);
+          p.g.rotation.y = Math.atan2(tx * dir, tz * dir);
+          const swing = Math.sin(t * 6.5 * speed + k) * 0.45;
+          p.legs[0].rotation.x = swing;
+          p.legs[1].rotation.x = -swing;
+          p.arms[0].rotation.x = -swing * 0.7;
+          p.arms[1].rotation.x = swing * 0.7;
+          p.g.visible = true;
+        }
+      }
+    }
+    for (let i = 0; i < this.pool.length; i++) if (!used.has(i)) this.pool[i].g.visible = false;
   }
 }

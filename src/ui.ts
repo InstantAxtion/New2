@@ -15,7 +15,7 @@ import { MusicVideos } from './music';
 import { fetchSongs } from './tracks';
 import { KeyError, QuotaError, channelPlaylists, parseYouTube, searchYouTube, type YtResult } from './youtube';
 import { Radio, STATIONS } from './radio';
-import { PodcastPlayer, loadEpisodes, searchShows } from './podcasts';
+import { PodcastPlayer, loadEpisodes, searchBooks, searchShows } from './podcasts';
 import { fetchLyrics, lineAt, type Line } from './lyrics';
 import { STAMPS } from './stats';
 
@@ -305,7 +305,7 @@ export class UI {
     <button class="tab" data-mtab="spotify">🎧 Spotify player</button>
     <button class="tab" data-mtab="videos">📺 Music videos</button>
     <button class="tab" data-mtab="radio">📻 Radio</button>
-    <button class="tab" data-mtab="podcasts">🎙️ Podcasts</button>
+    <button class="tab" data-mtab="podcasts">🎙️ Talk & books</button>
   </div>
   <div class="sheet-body">
     <div class="row"><input id="sp-input" type="url" inputmode="url" placeholder="Paste a Spotify or YouTube link" autocomplete="off" />
@@ -325,6 +325,7 @@ export class UI {
       <p class="hint">Log in once and the player plays full songs (Spotify may limit free accounts to shuffle). Use your Spotify email and password, or "Log in without password" — Google and Facebook buttons don't work inside apps. You can also tap <b>Open in Spotify app</b> and come back (the music keeps playing while you drive), or switch to <b>📺 Music videos</b>.</p>
     </div>
     <div class="mpane" data-pane="podcasts">
+      <div class="chips" id="pc-kind"><button class="chip on" data-pck="pod">🎙️ Podcasts</button><button class="chip" data-pck="book">📚 Audiobooks</button></div>
       <div class="row"><input id="pc-q" type="search" placeholder="Search podcasts" autocomplete="off" /><button class="go small" id="pc-go">Search</button></div>
       <div class="now-card" id="pc-now" style="display:none">
         <div class="now-song" id="pc-title"></div>
@@ -1743,14 +1744,26 @@ export class UI {
       if (!seeking && d) $<HTMLInputElement>('#pc-seek').value = String(Math.round((t / d) * 1000));
       $('#pc-rate').textContent = `${pc.rate}×`;
     };
+    // Podcasts, or free classic audiobooks from LibriVox
+    let book = false;
+    for (const b of $$('[data-pck]')) {
+      b.onclick = () => {
+        book = b.dataset.pck === 'book';
+        for (const x of $$('[data-pck]')) x.classList.toggle('on', x === b);
+        $<HTMLInputElement>('#pc-q').placeholder = book ? 'Search books or authors (e.g. Sherlock, Austen)' : 'Search podcasts';
+        list.innerHTML = book
+          ? '<p class="hint">Thousands of free classic audiobooks read by volunteers (LibriVox). Search, pick a book, then a chapter. They keep playing with the screen off.</p>'
+          : '<p class="hint">Search for a show, then pick an episode. Episodes stream while you drive.</p>';
+      };
+    }
     const search = async () => {
       const q = $<HTMLInputElement>('#pc-q').value.trim();
       if (!q) return;
       list.innerHTML = '<p class="hint">Searching…</p>';
       try {
-        const shows = await searchShows(q);
+        const shows = book ? await searchBooks(q) : await searchShows(q);
         if (!shows.length) {
-          list.innerHTML = '<p class="hint">No shows found.</p>';
+          list.innerHTML = `<p class="hint">No ${book ? 'books' : 'shows'} found.</p>`;
           return;
         }
         list.innerHTML = shows.map((sh, i) => `<button class="song show" data-show="${i}"><img src="${esc(sh.art)}" alt="" /><b>${esc(sh.name)}</b><span>${esc(sh.author)}</span></button>`).join('');
@@ -1766,7 +1779,7 @@ export class UI {
               for (const eb of $$('[data-ep]', list)) {
                 eb.onclick = () => {
                   this.setMusicMode('podcasts', false);
-                  pc.play(sh, eps[Number(eb.dataset.ep)]);
+                  pc.play(sh, eps[Number(eb.dataset.ep)], eps);
                   this.applyMix();
                 };
               }

@@ -42,6 +42,8 @@ public class AudioService extends Service {
     boolean live;
     boolean prepared;
     boolean wantPlay;
+    /** The episode or chapter played to its end. */
+    boolean completed;
     String error = "";
     private float rate = 1f;
     private float volume = 1f;
@@ -88,6 +90,7 @@ public class AudioService extends Service {
         startAt = positionMs;
         prepared = false;
         wantPlay = true;
+        completed = false;
         error = "";
         player = new MediaPlayer();
         player.setAudioAttributes(new AudioAttributes.Builder()
@@ -107,7 +110,11 @@ public class AudioService extends Service {
             changed();
             return true;
         });
-        player.setOnCompletionListener(mp -> changed());
+        player.setOnCompletionListener(mp -> {
+            completed = true;
+            wantPlay = false;
+            changed();
+        });
         try {
             player.setDataSource(url);
             player.prepareAsync();

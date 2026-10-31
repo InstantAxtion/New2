@@ -23,6 +23,8 @@ interface Other {
   lane: number;
   /** Metres it has edged over towards the verge to get round someone in its lane. */
   dodge: number;
+  /** Which end of it the player was at last frame (+1 ahead, -1 behind, 0 unknown), so fast cars can't tunnel through. */
+  end: number;
 }
 
 /** Widths for collisions. */
@@ -52,7 +54,7 @@ export class Traffic {
     const add = (kind: Kind, user: RoadUser) => {
       user.group.visible = false;
       this.group.add(user.group);
-      this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0, stun: 0, lane: 1, dodge: 0 });
+      this.pool.push({ kind, user, z: 0, dir: 1, v: 20, want: 20, active: false, dist: 0, stun: 0, lane: 1, dodge: 0, end: 0 });
     };
     const specs = CARS.filter((c) => c.id !== 'van' && !c.bike);
     for (let i = 0; i < 7; i++) add('car', carUser(new CarModel(specs[(i * 3 + 1) % specs.length], { color: COLORS[(i * 5 + 2) % COLORS.length], stripes: false }, 'pbr', false)));
@@ -119,6 +121,7 @@ export class Traffic {
         c.active = true;
         c.stun = 0;
         c.dodge = 0;
+        c.end = 0;
         // On highways some cars use the fast lane
         c.lane = this.world.highwayAt(c.z) > 0.5 && c.kind === 'car' && Math.random() < 0.4 ? -1 : 1;
         if (c.lane === -1) c.want *= 1.15;
@@ -181,14 +184,19 @@ export class Traffic {
       const lat = -dx * fz + dz * fx;
       const halfL = (c.user.length + me.spec.length) / 2 - 0.2;
       const halfW = (WIDTH[c.kind] + me.spec.width) / 2 - 0.1;
-      const penA = halfL - Math.abs(along);
       const penW = halfW - Math.abs(lat);
-      if (penA > 0 && penW > 0 && Math.abs(p.y - me.y) < 2.5) {
+      // Measure from the end the player came from: at speed a whole car length can pass in one
+      // frame, and the overlap would otherwise push the player out through the far side
+      const end = c.end || Math.sign(along) || 1;
+      const penA = halfL - along * end;
+      const hit = penW > 0 && penA > 0 && penA < halfL * 2 + 4 && Math.abs(p.y - me.y) < 2.5;
+      if (!hit) c.end = Math.abs(along) > halfL - 0.05 || penW <= 0 ? Math.sign(along) || end : end;
+      if (hit) {
         me.bump = 1;
         const same = c.dir === fwd;
-        if (penA < penW) {
-          // Nose to tail (or head-on): separate along the road
-          const s2 = Math.sign(along) || 1;
+        if (penA < penW || Math.sign(along) !== end) {
+          // Nose to tail (or head-on): separate along the road, back to the side we came from
+          const s2 = end;
           me.x += fx * s2 * penA;
           me.z += fz * s2 * penA;
           if (same) {

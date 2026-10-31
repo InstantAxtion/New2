@@ -34,6 +34,7 @@ public class BackgroundAudioPlugin extends Plugin {
         o.put("position", s != null ? s.position() / 1000.0 : 0);
         o.put("duration", s != null ? s.duration() / 1000.0 : 0);
         o.put("error", s != null ? s.error : "");
+        o.put("ended", s != null && s.completed);
         return o;
     }
 

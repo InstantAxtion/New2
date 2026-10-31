@@ -413,7 +413,7 @@ function plane(): THREE.Group {
   return g;
 }
 
-function balloon(variant: number): THREE.Group {
+export function balloon(variant: number): THREE.Group {
   const g = new THREE.Group();
   // Gores: vertical stripes in two or three colours
   const palettes = [

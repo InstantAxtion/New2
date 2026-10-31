@@ -282,6 +282,29 @@ export function foliageMaterial(kind: FoliageMat): THREE.Material {
   return m;
 }
 
+/** Is there a puddle at (x, z)? (The same pattern the road shader draws, for splashing through.) */
+export function puddleAt(x: number, z: number, wet: number): number {
+  const h = (a: number, b: number) => {
+    const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  const n = (px: number, pz: number) => {
+    const ix = Math.floor(px), iz = Math.floor(pz);
+    let fx = px - ix, fz = pz - iz;
+    fx = fx * fx * (3 - 2 * fx);
+    fz = fz * fz * (3 - 2 * fz);
+    const a = h(ix, iz) + (h(ix + 1, iz) - h(ix, iz)) * fx;
+    const b = h(ix, iz + 1) + (h(ix + 1, iz + 1) - h(ix, iz + 1)) * fx;
+    return a + (b - a) * fz;
+  };
+  const pn = n(x * 0.16, z * 0.16) * 0.65 + n(x * 0.55 + 7, z * 0.55 + 7) * 0.35;
+  const ss = (e0: number, e1: number, v: number) => {
+    const t = Math.min(1, Math.max(0, (v - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+  return ss(0.6, 0.66, pn) * ss(0.4, 0.9, wet);
+}
+
 /** Puddles on a wet road: patches of dark, mirror-smooth water in the dips. */
 export function addPuddles(m: THREE.MeshStandardMaterial, muddy = false) {
   m.onBeforeCompile = (sh) => {
@@ -310,7 +333,23 @@ export function addPuddles(m: THREE.MeshStandardMaterial, muddy = false) {
         diffuseColor.rgb *= 1.0 - puddle * ${muddy ? '0.25' : '0.55'};
         ${muddy ? 'diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.32, 0.26, 0.2), puddle * 0.5);' : ''}`,
       )
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.02, puddle);');
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.02, puddle);')
+      // Rain rings spreading on the puddles
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        if (puddle > 0.01 && uWet > 0.5) {
+          vec2 cell = floor(vPud * 1.6);
+          vec2 f = fract(vPud * 1.6) - 0.5;
+          float ph = pudH(cell);
+          float t = fract(uTime * 0.9 + ph);
+          float d = length(f - (vec2(ph, fract(ph * 7.1)) - 0.5) * 0.5);
+          float ring = smoothstep(0.03, 0.0, abs(d - t * 0.45)) * (1.0 - t);
+          normal = normalize(normal + vec3(f * ring * 2.5, 0.0) * puddle);
+        }`,
+      );
+    sh.uniforms.uTime = shared.time;
+    sh.fragmentShader = sh.fragmentShader.replace('uniform float uWet;', 'uniform float uWet;\nuniform float uTime;');
   };
   m.customProgramCacheKey = () => 'puddles' + (muddy ? 'm' : '');
 }

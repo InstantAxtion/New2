@@ -76,6 +76,7 @@ export function parseFeed(xml: string): Episode[] {
 }
 
 export async function loadEpisodes(show: Show): Promise<Episode[]> {
+  if (show.feed.startsWith('archive:')) return loadChapters(show);
   return parseFeed(await getText(show.feed));
 }
 
@@ -89,8 +90,12 @@ export class PodcastPlayer {
   private vol = 1;
   onChange: () => void = () => {};
 
-  play(show: Show, ep: Episode) {
+  /** The rest of the list (chapters of a book play on one after another). */
+  private queue: Episode[] = [];
+
+  play(show: Show, ep: Episode, list: Episode[] = []) {
     this.stop();
+    this.queue = list;
     const a = openTrack(ep.url, { title: ep.title, subtitle: `🎙️ ${show.name}`, live: false });
     a.volume = this.vol;
     a.playbackRate = this.rate;
@@ -109,6 +114,12 @@ export class PodcastPlayer {
       this.onChange();
     };
     a.ontimeupdate = () => this.onChange();
+    a.onended = () => {
+      // Audiobooks carry on with the next chapter
+      if (!show.feed.startsWith('archive:')) return;
+      const i = this.queue.indexOf(ep);
+      if (i >= 0 && i + 1 < this.queue.length) this.play(show, this.queue[i + 1], this.queue);
+    };
     this.audio = a;
     this.show = show;
     this.episode = ep;
@@ -149,4 +160,41 @@ export class PodcastPlayer {
     this.playing = false;
     this.onChange();
   }
+}
+
+// ---- Audiobooks: free public-domain recordings from LibriVox (hosted on archive.org) ----
+
+/** A LibriVox audiobook, as a "show" whose chapters are its episodes. */
+export async function searchBooks(term: string): Promise<Show[]> {
+  const words = term.trim().replace(/[()":]/g, ' ');
+  const q = `collection:librivoxaudio AND (title:(${words}) OR creator:(${words}))`;
+  const p = new URLSearchParams({ q, rows: '25', output: 'json', 'sort[]': 'downloads desc' });
+  for (const f of ['identifier', 'title', 'creator']) p.append('fl[]', f);
+  const data = JSON.parse(await getText(`https://archive.org/advancedsearch.php?${p}`)) as {
+    response: { docs: { identifier: string; title: string; creator?: string | string[] }[] };
+  };
+  return data.response.docs.map((d, i) => ({
+    id: i,
+    name: d.title.replace(/\s*\(version \d+\)/i, '').trim(),
+    author: Array.isArray(d.creator) ? d.creator.join(', ') : d.creator ?? 'LibriVox',
+    art: `https://archive.org/services/img/${d.identifier}`,
+    feed: `archive:${d.identifier}`,
+  }));
+}
+
+/** A book's chapters (the 64 kbps MP3 of each section, in order). */
+export async function loadChapters(show: Show): Promise<Episode[]> {
+  const id = show.feed.replace(/^archive:/, '');
+  const data = JSON.parse(await getText(`https://archive.org/metadata/${id}`)) as {
+    files: { name: string; format?: string; title?: string; track?: string; length?: string }[];
+  };
+  return data.files
+    .filter((f) => f.format === '64Kbps MP3')
+    .sort((a, b) => Number(a.track ?? 0) - Number(b.track ?? 0) || a.name.localeCompare(b.name))
+    .map((f) => ({
+      title: f.title || f.name.replace(/_64kb\.mp3$/, ''),
+      url: `https://archive.org/download/${id}/${encodeURIComponent(f.name)}`,
+      date: '',
+      duration: parseDuration(f.length),
+    }));
 }

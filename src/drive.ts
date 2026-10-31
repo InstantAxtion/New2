@@ -41,6 +41,8 @@ export interface Controls {
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 const G = 9.81;
+/** Tyres grip a bit better than real ones, so the car turns as eagerly as it looks like it should. */
+const GRIP = 1.3;
 
 /** The player's car: a simple bicycle model rolling over the world surface. */
 export class Vehicle {
@@ -138,7 +140,7 @@ export class Vehicle {
   /** Full lock: at speed, as much as the tyres can take (so the whole range of the wheel means something). */
   private maxAngle() {
     const v2 = Math.max(this.v * this.v, 1);
-    return Math.min(0.6, Math.atan((this.spec.grip * 0.95 * this.wheelbase) / v2) * 1.08);
+    return Math.min(0.62, Math.atan((this.spec.grip * GRIP * this.wheelbase) / v2) * 1.08);
   }
 
   /** The speed the autopilot is happy with given the bends ahead. */
@@ -230,7 +232,7 @@ export class Vehicle {
       }
     }
     // Steering wheel follows the input smoothly
-    const rate = this.spec.handling?.steer ?? 3.2;
+    const rate = (this.spec.handling?.steer ?? 3.2) * 1.4;
     this.steer += clamp(steerIn - this.steer, -rate * dt, rate * dt);
 
     // Longitudinal
@@ -257,10 +259,10 @@ export class Vehicle {
     const angle = this.steer * this.maxAngle();
     this.wheelAngle = angle;
     let yaw = (this.v * Math.tan(angle)) / this.wheelbase;
-    const maxYaw = (s.grip * (this.offroad ? 0.6 : this.gravel ? 0.78 : 1)) / Math.max(Math.abs(this.v), 1);
+    const maxYaw = (s.grip * GRIP * (this.offroad ? 0.6 : this.gravel ? 0.78 : 1)) / Math.max(Math.abs(this.v), 1);
     yaw = clamp(yaw, -maxYaw, maxYaw);
     // The car's weight: the turn builds up over a moment rather than snapping on
-    this.yawRate += (yaw - this.yawRate) * (1 - Math.exp(-dt * (this.spec.handling?.steer ?? 3.2) * 2.6));
+    this.yawRate += (yaw - this.yawRate) * (1 - Math.exp(-dt * (this.spec.handling?.steer ?? 3.2) * 4));
     this.heading = wrap(this.heading - this.yawRate * dt);
     // It pivots about the rear wheels: the middle of the car travels a little into the turn (the nose leads)
     const beta = Math.atan(0.5 * Math.tan(angle)) * clamp(Math.abs(this.yawRate) / Math.max(Math.abs(yaw), 1e-3), 0, 1);

@@ -5,6 +5,7 @@ import { nightGlow } from './special';
 import { shared } from './materials';
 import { glowTexture } from './textures';
 import { rng } from './world/noise';
+import { balloonFest, carMeet, fair } from './events';
 
 // Landmarks off to the side of the road: hilltop castles, abbey ruins and waterfalls.
 // Built in local space: y up, +z along the road, facing the road along -x... any yaw is fine.
@@ -196,7 +197,8 @@ function waterfall(): THREE.Group {
 
 /** Build a landmark at its place beside the road (relative to `origin`). */
 export function buildLandmark(lm: Landmark, x: number, y: number, z: number, tangent: [number, number], origin: THREE.Vector3): THREE.Group {
-  const g = lm.kind === 'castle' ? castle() : lm.kind === 'ruin' ? ruin() : waterfall();
+  const seed = Math.round(lm.z);
+  const g = lm.kind === 'castle' ? castle() : lm.kind === 'ruin' ? ruin() : lm.kind === 'fair' ? fair() : lm.kind === 'carmeet' ? carMeet(seed) : lm.kind === 'balloonfest' ? balloonFest(seed) : waterfall();
   const [tx, tz] = tangent;
   // Local -x faces the road
   const side = Math.sign(lm.u);

@@ -86,7 +86,7 @@ export class Chunk {
 }
 
 /** How far to keep scenery away from a landmark. */
-const lmClear = (lm: { kind: string } | null) => (!lm ? 0 : lm.kind === 'castle' ? 45 : 35);
+const lmClear = (lm: { kind: string } | null) => (!lm ? 0 : lm.kind === 'castle' || lm.kind === 'balloonfest' ? 45 : lm.kind === 'fair' ? 40 : 35);
 
 export class ChunkManager {
   readonly root = new THREE.Group();
@@ -282,7 +282,7 @@ export class ChunkManager {
     for (const lm of w.landmarks(z0, z0 + CHUNK)) {
       const [tx, tz] = w.tangent(lm.z);
       const x = w.roadX(lm.z) - tz * lm.u, zz = lm.z + tx * lm.u;
-      const y = lm.kind === 'waterfall' ? Math.min(w.height(x, zz), w.roadY(lm.z) + 6) : w.height(x, zz) - 0.5;
+      const y = lm.kind === 'waterfall' ? Math.min(w.height(x, zz), w.roadY(lm.z) + 6) : lm.kind === 'castle' || lm.kind === 'ruin' ? w.height(x, zz) - 0.5 : w.height(x, zz) - 0.05;
       c.group.add(buildLandmark(lm, x, y, zz, [tx, tz], c.group.position));
     }
     const signs = buildSigns(w, z0, z0 + CHUNK, c.group.position, this.units);

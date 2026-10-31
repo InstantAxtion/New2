@@ -14,7 +14,7 @@ interface BackgroundAudioApi {
   setVolume(o: { volume: number }): Promise<void>;
   addListener(ev: 'state', f: (s: NativeState) => void): Promise<PluginListenerHandle>;
 }
-interface NativeState { active: boolean; playing: boolean; position: number; duration: number; error: string }
+interface NativeState { active: boolean; playing: boolean; position: number; duration: number; error: string; ended?: boolean }
 
 const Native = registerPlugin<BackgroundAudioApi>('BackgroundAudio');
 
@@ -32,6 +32,7 @@ export interface Track {
   onpause: (() => void) | null;
   onerror: (() => void) | null;
   ontimeupdate: (() => void) | null;
+  onended: (() => void) | null;
 }
 
 export interface TrackInfo {
@@ -65,9 +66,10 @@ class NativeTrack implements Track {
   onpause: (() => void) | null = null;
   onerror: (() => void) | null = null;
   ontimeupdate: (() => void) | null = null;
+  onended: (() => void) | null = null;
   private id = ++current;
   private started = false;
-  private state: NativeState = { active: false, playing: false, position: 0, duration: 0, error: '' };
+  private state: NativeState = { active: false, playing: false, position: 0, duration: 0, error: '', ended: false };
   private vol = 1;
   private rate = 1;
   private start = 0;
@@ -83,6 +85,7 @@ class NativeTrack implements Track {
     if (this.id !== current) return;
     const was = this.state;
     this.state = s;
+    if (s.ended && !was.ended) this.onended?.();
     if (s.error && !was.error) this.onerror?.();
     else if (s.playing && !was.playing) this.onplaying?.();
     else if (!s.playing && was.playing) this.onpause?.();
