@@ -27,7 +27,7 @@ export interface Cockpit {
   /** A head-up display projected on the windscreen (modern cars). */
   hud?: { ctx: CanvasRenderingContext2D; tex: THREE.CanvasTexture; mesh: THREE.Mesh } | null;
   /** Where the driver sits (cabin coordinates): seat top, eye height, steering wheel centre. */
-  seat?: { x: number; top: number; z: number; eyeY: number; wheel: THREE.Vector3 };
+  seat?: { x: number; top: number; z: number; eyeY: number; wheel: THREE.Vector3; rimR: number };
   /** Inside of the doors (they swing out with the doors, so hide while those are open). */
   doorPanels?: THREE.Object3D[];
 }
@@ -577,7 +577,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     hud = { ctx: hc.getContext('2d')!, tex, mesh };
   }
   return { steering, screen, screenWidth, screenCtx, screenTex, clusterCtx, clusterTex, cluster, ambient, sunroofPanel, mirrorRear, mirrorSides, freshener, visors, hud,
-    seat: { x: driverX, top: seatTop, z: eyeZ, eyeY, wheel: wheelC.clone() }, doorPanels };
+    seat: { x: driverX, top: seatTop, z: eyeZ, eyeY, wheel: wheelC.clone(), rimR }, doorPanels };
 }
 
 /** Draw the instrument cluster: digital speed with a rev bar, or two round dials. */
@@ -632,28 +632,47 @@ export function drawCluster(ck: Cockpit, speed: number, unit: string, rpm: numbe
   ck.clusterTex.needsUpdate = true;
 }
 
-/** The driver, sitting in the seat with hands on the wheel (seen from outside, through the glass). */
-export function buildDriver(ck: Cockpit, c: Custom, pbr: boolean): THREE.Group {
-  const g = new THREE.Group();
+/** The driver, sitting in the seat with hands on the wheel. */
+export interface Driver {
+  /** Head and body, seen from outside. */
+  outside: THREE.Group;
+  /** Body without a head, for your own view from the driver's seat (look down and there you are). */
+  inside: THREE.Group;
+  /** Follow the steering wheel with the hands and arms (call after turning the wheel). */
+  update(): void;
+}
+
+export function buildDriver(ck: Cockpit, c: Custom, pbr: boolean, I: THREE.Group): Driver {
+  const outside = new THREE.Group();
+  const inside = new THREE.Group();
   const st = ck.seat;
-  if (!st) return g;
+  if (!st) return { outside, inside, update() {} };
   const m = (col: number, r = 0.75) => (pbr ? new THREE.MeshStandardMaterial({ color: col, roughness: r }) : new THREE.MeshLambertMaterial({ color: col }));
   const tops = [0x2b3a55, 0x6b2f2f, 0x2f5a46, 0xd9d4c7, 0x333338, 0x8a6a3a];
   const top = m(tops[Math.abs(Math.round(c.color / 7)) % tops.length]);
   const skin = m([0xe2b48f, 0xc68e64, 0x8d5a3b, 0xf0c8a8][Math.abs(Math.round(c.color / 13)) % 4], 0.6);
   const hair = m([0x2a1d14, 0x5a3a20, 0x111111, 0xb08850][Math.abs(Math.round(c.color / 11)) % 4], 0.9);
   const legs = m(0x2c3446);
+  const shoes = m(0x1a1a1c, 0.5);
   const x = st.x;
   const hip = new THREE.Vector3(x, st.top + 0.1, st.z - 0.12);
   const neck = new THREE.Vector3(x, st.eyeY - 0.17, st.z - 0.17);
-  // Torso, leaning back into the seat
-  const tl = hip.distanceTo(neck);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, tl - 0.12, 4, 10), top);
-  torso.position.copy(hip).add(neck).multiplyScalar(0.5);
-  torso.lookAt(neck);
-  torso.rotateX(Math.PI / 2);
-  torso.scale.set(1.15, 1, 0.75);
-  // Head and hair
+  const limb = (a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material) => {
+    const len = a.distanceTo(b);
+    const seg = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, len - r * 2), 4, 10), mat);
+    seg.position.copy(a).add(b).multiplyScalar(0.5);
+    seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    return seg;
+  };
+  // Torso, leaning back into the seat (inside: stops below your chin so it never fills the view)
+  const torso = (topAt: THREE.Vector3) => {
+    const t = limb(hip, topAt, 0.15, top);
+    t.scale.set(1.15, 1, 0.75);
+    return t;
+  };
+  outside.add(torso(neck));
+  inside.add(torso(neck.clone().add(new THREE.Vector3(0, -0.12, -0.03))));
+  // Head and hair (outside only)
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.095, 16, 12), skin);
   head.scale.set(0.9, 1.1, 1);
   head.position.set(x, st.eyeY + 0.02, st.z - 0.05);
@@ -663,36 +682,68 @@ export function buildDriver(ck: Cockpit, c: Custom, pbr: boolean): THREE.Group {
   cap.rotation.x = -0.35;
   const neckM = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 8), skin);
   neckM.position.set(x, st.eyeY - 0.1, st.z - 0.1);
-  g.add(torso, head, cap, neckM);
-  // Arms out to the rim at ten to two
-  const w = st.wheel;
+  outside.add(head, cap, neckM);
+  // Legs: thighs along the cushion, shins down to the pedals (both views)
   for (const sd of [-1, 1]) {
-    const shoulder = new THREE.Vector3(x + sd * 0.19, neck.y - 0.05, neck.z + 0.02);
-    const hand = new THREE.Vector3(w.x + sd * 0.15, w.y + 0.06, w.z - 0.04);
-    const elbow = shoulder.clone().lerp(hand, 0.5).add(new THREE.Vector3(sd * 0.06, -0.1, 0));
-    for (const [a, b2] of [[shoulder, elbow], [elbow, hand]]) {
-      const len = a.distanceTo(b2);
-      const seg = new THREE.Mesh(new THREE.CapsuleGeometry(0.042, Math.max(0.01, len - 0.06), 4, 8), top);
-      seg.position.copy(a).add(b2).multiplyScalar(0.5);
-      seg.lookAt(b2);
-      seg.rotateX(Math.PI / 2);
-      g.add(seg);
-    }
-    const handM = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), skin);
-    handM.position.copy(hand);
-    g.add(handM);
-    // Thighs forward along the cushion, shins down to the pedals
     const knee = new THREE.Vector3(x + sd * 0.1, st.top + 0.14, st.z + 0.42);
     const foot = new THREE.Vector3(x + sd * 0.1 - 0.04, st.top - 0.3, st.z + 0.75);
-    for (const [a, b2, r] of [[new THREE.Vector3(x + sd * 0.1, hip.y, hip.z + 0.05), knee, 0.07], [knee, foot, 0.055]] as const) {
-      const len = a.distanceTo(b2);
-      const seg = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, len - 0.08), 4, 8), legs);
-      seg.position.copy(a).add(b2).multiplyScalar(0.5);
-      seg.lookAt(b2);
-      seg.rotateX(Math.PI / 2);
-      g.add(seg);
+    for (const g of [outside, inside]) {
+      g.add(limb(new THREE.Vector3(x + sd * 0.1, hip.y, hip.z + 0.05), knee, 0.07, legs), limb(knee, foot, 0.055, legs));
+      const shoe = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.08, 0.26, 2, 0.03), shoes);
+      shoe.position.copy(foot).add(new THREE.Vector3(0, -0.02, 0.08));
+      shoe.rotation.x = -0.5;
+      g.add(shoe);
     }
   }
-  g.traverse((o) => ((o as THREE.Mesh).castShadow = false));
-  return g;
+
+  // Hands on the rim at ten to two: they ride on the steering wheel and turn with it
+  const wheel = ck.steering;
+  const tilt = wheel.parent!;
+  const rimR = st.rimR;
+  const handAt: THREE.Vector3[] = [];
+  const arms: { sd: number; upper: THREE.Mesh; fore: THREE.Mesh; shoulder: THREE.Vector3 }[] = [];
+  for (const sd of [-1, 1]) {
+    const local = new THREE.Vector3(sd * rimR * 0.82, rimR * 0.5, -0.025);
+    handAt.push(local);
+    const hand = new THREE.Group();
+    hand.position.copy(local);
+    hand.rotation.z = -sd * 0.6;
+    // Back of the hand on our side of the rim, fingers wrapped round behind it, thumb along the inside
+    const palm = new THREE.Mesh(new RoundedBoxGeometry(0.06, 0.09, 0.04, 2, 0.018), skin);
+    const fingers = new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.06, 3, 8), skin);
+    fingers.position.set(0, 0, 0.045);
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.011, 0.035, 3, 6), skin);
+    thumb.position.set(-sd * 0.035, 0.0, 0.01);
+    thumb.rotation.z = Math.PI / 2;
+    hand.add(palm, fingers, thumb);
+    wheel.add(hand);
+    // Sleeves from the shoulder to the wrist (re-aimed every frame)
+    const shoulder = new THREE.Vector3(x + sd * 0.19, neck.y - 0.05, neck.z + 0.02);
+    const geo = new THREE.CapsuleGeometry(0.045, 1, 4, 10);
+    const upper = new THREE.Mesh(geo, top);
+    const fore = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 1, 4, 10), top);
+    I.add(upper, fore);
+    arms.push({ sd, upper, fore, shoulder });
+  }
+  const up = new THREE.Vector3(0, 1, 0);
+  const aim = (seg: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3, r: number) => {
+    const len = a.distanceTo(b);
+    seg.position.copy(a).add(b).multiplyScalar(0.5);
+    seg.quaternion.setFromUnitVectors(up, b.clone().sub(a).normalize());
+    seg.scale.set(1, Math.max(0.05, len - r * 2), 1);
+  };
+  const update = () => {
+    wheel.updateMatrix();
+    tilt.updateMatrix();
+    arms.forEach((arm, i) => {
+      // Wrist in cabin coordinates, a little back from the hand
+      const wrist = handAt[i].clone().add(new THREE.Vector3(0, -0.02, -0.06)).applyMatrix4(wheel.matrix).applyMatrix4(tilt.matrix);
+      const elbow = arm.shoulder.clone().lerp(wrist, 0.5).add(new THREE.Vector3(arm.sd * 0.07, -0.12, -0.02));
+      aim(arm.upper, arm.shoulder, elbow, 0.045);
+      aim(arm.fore, elbow, wrist, 0.04);
+    });
+  };
+  update();
+  for (const g of [outside, inside]) g.traverse((o) => ((o as THREE.Mesh).castShadow = false));
+  return { outside, inside, update };
 }

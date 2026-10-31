@@ -68,6 +68,14 @@ export class MusicVideos {
     this.index = -1;
   }
 
+  /** Play search results in order, as a list (next/shuffle/repeat work as usual). */
+  playResults(name: string, items: { id: string; title: string; channel: string; duration: number }[], start: number) {
+    const songs: Song[] = items.map((r) => ({ title: r.title, artist: r.channel, duration: r.duration * 1000, uri: `yt:${r.id}` }));
+    songs.forEach((s, i) => remember(s, this.prefer, { cands: [], pick: 0, custom: items[i].id }));
+    this.setSongs(name, songs);
+    void this.playIndex(start);
+  }
+
   /** Play a YouTube video or playlist link directly. */
   playYouTube(link: { videoId?: string; listId?: string }) {
     this.songs = [];

@@ -455,3 +455,13 @@ body.zen .cruise, body[data-screen="pause"] .cruise { opacity: 0; pointer-events
   body:not(.auto-mode) .speedo { bottom: calc(206px + var(--safe-b)); }
   body.cc-on:not(.auto-mode) .cruise { bottom: calc(290px + var(--safe-b)); right: 50%; transform: translateX(50%); }
 }
+
+/* YouTube search results */
+#yt-kind { margin: 6px 0 8px; }
+#yt-results { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; max-height: 46vh; overflow-y: auto; touch-action: pan-y; }
+.yt-item { display: flex; gap: 10px; align-items: center; text-align: left; background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 10px; padding: 6px; min-width: 0; }
+.yt-item img { width: 96px; height: 54px; object-fit: cover; border-radius: 6px; flex-shrink: 0; background: #0006; }
+.yt-item span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.yt-item b { font-size: 13px; font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.yt-item small { font-size: 11px; color: var(--muted); }
+.yt-item:active { transform: scale(.98); }

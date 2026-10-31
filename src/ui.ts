@@ -13,7 +13,7 @@ import { appUri, embedUrl, fetchTitle, loadSaved, parseSpotify, saveList, webUrl
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { MusicVideos } from './music';
 import { fetchSongs } from './tracks';
-import { parseYouTube } from './youtube';
+import { KeyError, QuotaError, channelPlaylists, parseYouTube, searchYouTube, type YtResult } from './youtube';
 import { Radio, STATIONS } from './radio';
 import { PodcastPlayer, loadEpisodes, searchShows } from './podcasts';
 import { fetchLyrics, lineAt, type Line } from './lyrics';
@@ -303,6 +303,8 @@ export class UI {
         <button class="go small" id="sp-login">Log in to Spotify</button>
         <button class="ghost small" id="sp-logout">Log out</button>
       </div>
+      <div class="row"><input id="sps-q" type="search" placeholder="Search Spotify" autocomplete="off" /><button class="go small" id="sps-go">Search</button></div>
+      <p class="hint">Opens the search in the Spotify app. Pick a playlist or album there and it plays straight away, or Share → Copy link and paste it here to play it in the car.</p>
       <div class="row"><button class="ghost small" id="sp-paste">📋 Paste</button>
         <button class="ghost small" id="sp-app" disabled>Open in Spotify app ↗</button></div>
       <div id="sp-player"><p class="hint">In Spotify, open a playlist → ⋯ → Share → <b>Copy link</b>, then paste it here.</p></div>
@@ -331,6 +333,9 @@ export class UI {
       <p class="hint">Free internet radio from <a href="#" id="rd-soma">SomaFM</a>, listener-supported and ad-free.</p>
     </div>
     <div class="mpane" data-pane="videos">
+      <div class="row"><input id="yt-q" type="search" placeholder="Search YouTube" autocomplete="off" /><button class="go small" id="yt-go">Search</button></div>
+      <div class="chips" id="yt-kind"><button class="chip" data-ytk="video">🎬 Videos</button><button class="chip" data-ytk="playlist">📃 Playlists</button><button class="chip" data-ytk="mine">👤 My YouTube</button></div>
+      <div id="yt-results"></div>
       <div class="now-card">
         <div class="now-song" id="mv-song">Nothing playing yet</div>
         <div class="now-video" id="mv-video"></div>
@@ -1791,6 +1796,139 @@ export class UI {
       void this.openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`);
     };
     this.refreshVideos();
+    this.bindYouTubeSearch();
+  }
+
+  // ---------- YouTube search & your channel ----------
+
+  private ytKind: 'video' | 'playlist' | 'mine' = 'video';
+  private ytResults: YtResult[] = [];
+
+  private bindYouTubeSearch() {
+    const q = $<HTMLInputElement>('#yt-q');
+    const go = () => {
+      if (this.ytKind === 'mine') this.ytKind = 'video';
+      void this.ytSearch(q.value.trim());
+      q.blur();
+    };
+    $('#yt-go').onclick = go;
+    q.addEventListener('keydown', (e) => e.key === 'Enter' && go());
+    for (const b of $$('[data-ytk]')) {
+      b.onclick = () => {
+        this.ytKind = b.dataset.ytk as typeof this.ytKind;
+        if (this.ytKind === 'mine') void this.ytMine();
+        else if (q.value.trim()) void this.ytSearch(q.value.trim());
+        else this.renderYt();
+      };
+    }
+    this.renderYt();
+    // Spotify: search in the Spotify app (or the web player if the app isn't installed)
+    const sq = $<HTMLInputElement>('#sps-q');
+    const sgo = async () => {
+      const term = sq.value.trim();
+      if (!term) return;
+      sq.blur();
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const r = await AppLauncher.openUrl({ url: `spotify:search:${encodeURIComponent(term)}` });
+          if (r.completed) return;
+        } catch {
+          /* no app: use the web */
+        }
+      }
+      void this.openExternal(`https://open.spotify.com/search/${encodeURIComponent(term)}`);
+    };
+    $('#sps-go').onclick = () => void sgo();
+    sq.addEventListener('keydown', (e) => e.key === 'Enter' && void sgo());
+  }
+
+  private get ytKey() {
+    return this.s.youtubeKey || BUILTIN_YT_KEY;
+  }
+
+  private ytError(e: unknown) {
+    return e instanceof QuotaError ? "YouTube's daily search limit is used up. Try again tomorrow, or paste a link."
+      : e instanceof KeyError ? 'The YouTube API key was rejected. Check it in ⚙️ Settings.'
+      : e instanceof Error ? e.message : "Couldn't reach YouTube.";
+  }
+
+  private async ytSearch(term: string) {
+    if (!term) return;
+    const el = $('#yt-results');
+    if (!this.ytKey) {
+      el.innerHTML = '<p class="hint">Searching needs a YouTube API key (⚙️ Settings).</p>';
+      return;
+    }
+    el.innerHTML = '<p class="hint">Searching…</p>';
+    try {
+      this.ytResults = await searchYouTube(term, this.ytKey, this.ytKind === 'playlist' ? 'playlist' : 'video');
+      this.renderYt(term);
+    } catch (e) {
+      el.innerHTML = `<p class="error">${esc(this.ytError(e))}</p>`;
+    }
+  }
+
+  /** Your own channel's playlists (public ones; YouTube needs a full Google sign-in for private lists). */
+  private async ytMine() {
+    const el = $('#yt-results');
+    for (const b of $$('[data-ytk]')) b.classList.toggle('on', b.dataset.ytk === 'mine');
+    const ask = (msg = '') => {
+      el.innerHTML = `<p class="hint">Enter your YouTube channel's <b>@handle</b> (find it on your channel page) to play your playlists. Make playlists <b>Public</b> on YouTube for them to show up here.</p>
+        <div class="row"><input id="yt-handle" type="search" placeholder="@yourname" autocomplete="off" value="${esc(this.s.ytChannel)}" /><button class="go small" id="yt-handle-go">Show</button></div>
+        <p class="error">${esc(msg)}</p>`;
+      const inp = $<HTMLInputElement>('#yt-handle');
+      const go = () => {
+        this.s.ytChannel = inp.value.trim();
+        this.save();
+        void this.ytMine();
+      };
+      $('#yt-handle-go').onclick = go;
+      inp.addEventListener('keydown', (e) => e.key === 'Enter' && go());
+    };
+    if (!this.s.ytChannel) return ask();
+    if (!this.ytKey) return ask('Showing your playlists needs a YouTube API key (⚙️ Settings).');
+    el.innerHTML = '<p class="hint">Loading your playlists…</p>';
+    try {
+      const { channel, lists } = await channelPlaylists(this.s.ytChannel, this.ytKey);
+      this.ytResults = lists;
+      this.renderYt('', `👤 ${channel} · <button class="link-btn" id="yt-change">change</button>`);
+      const ch = document.getElementById('yt-change');
+      if (ch) ch.onclick = () => {
+        this.s.ytChannel = '';
+        this.save();
+        ask();
+      };
+    } catch (e) {
+      ask(this.ytError(e));
+    }
+  }
+
+  private renderYt(term = '', header = '') {
+    for (const b of $$('[data-ytk]')) b.classList.toggle('on', b.dataset.ytk === this.ytKind);
+    const el = $('#yt-results');
+    if (!this.ytResults.length) {
+      el.innerHTML = term ? '<p class="hint">Nothing found.</p>' : '';
+      return;
+    }
+    const two = (n: number) => String(Math.floor(n)).padStart(2, '0');
+    const dur = (s: number) => (!s ? '' : s >= 3600 ? `${Math.floor(s / 3600)}:${two((s % 3600) / 60)}:${two(s % 60)}` : `${Math.floor(s / 60)}:${two(s % 60)}`);
+    el.innerHTML = (header ? `<p class="hint">${header}</p>` : '') + this.ytResults
+      .map((r, i) => `<button class="yt-item" data-yti="${i}"><img src="${esc(r.thumb)}" alt="" loading="lazy" /><span><b>${esc(r.title)}</b><small>${esc(r.channel)}${r.kind === 'video' && r.duration ? ' · ' + dur(r.duration) : ''}${r.count ? ` · ${r.count} videos` : ''}${r.kind === 'playlist' ? ' · playlist' : ''}</small></span></button>`)
+      .join('');
+    for (const b of $$('[data-yti]', el)) {
+      b.onclick = () => {
+        const i = Number(b.dataset.yti);
+        const r = this.ytResults[i];
+        this.setMusicMode('videos', false);
+        if (r.kind === 'playlist') this.videos.playYouTube({ listId: r.id });
+        else {
+          // Play this one, then carry on down the results
+          const vids = this.ytResults.filter((x) => x.kind === 'video');
+          this.videos.playResults(term ? `🔎 ${term}` : 'YouTube', vids, vids.indexOf(r));
+        }
+        this.toast(`📺 ${esc(r.title)}`);
+      };
+    }
   }
 
   private refreshVideos() {

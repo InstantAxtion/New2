@@ -4,7 +4,7 @@ import { cutGlass, doorCuts, weatherPaint, type DoorCut, type Tier } from './mat
 import { bodyGeometry, profile } from './carbody';
 import { CARS, COLORS, defaultCustom, type CarSpec, type Custom } from './carspecs';
 import { buildExterior, buildWheel, type PartMats } from './carparts';
-import { buildCockpit, buildDriver, drawCluster, type Cockpit } from './cockpit';
+import { buildCockpit, buildDriver, drawCluster, type Cockpit, type Driver } from './cockpit';
 import { bikeCockpit, buildBike } from './bike';
 
 export { CARS, COLORS };
@@ -217,8 +217,10 @@ export class CarModel {
     this.screenSize = [this.cockpit.screenWidth, this.cockpit.screenWidth * 0.5625];
     if (!s.bike && seeThrough) {
       // Someone at the wheel, seen from outside
-      this.driver = buildDriver(this.cockpit, c, pbr);
-      this.outsideOnly.add(this.driver);
+      this.driver = buildDriver(this.cockpit, c, pbr, this.interior);
+      this.outsideOnly.add(this.driver.outside);
+      this.driver.inside.visible = false;
+      this.interior.add(this.driver.inside);
       if (!this.outsideOnly.parent) b.add(this.outsideOnly);
     }
     this.interior.visible = this.seeThrough && !s.bike;
@@ -258,11 +260,12 @@ export class CarModel {
   /** Switch between the outside look and the driver's-seat cockpit. */
   /** In the driver's seat (the cockpit may also show from outside, through the glass). */
   inside = false;
-  private driver: THREE.Object3D | null = null;
+  private driver: Driver | null = null;
 
   setInside(inside: boolean) {
     this.inside = inside;
     this.interior.visible = inside || (this.seeThrough && !this.spec.bike);
+    if (this.driver) this.driver.inside.visible = inside;
     this.outsideOnly.visible = !inside && (this.seeThrough || !(this.softTop?.visible ?? false));
   }
 
@@ -290,6 +293,7 @@ export class CarModel {
     const turn = wheelAngle === undefined ? steer * 0.5 : Math.sign(wheelAngle) * Math.min(0.55, Math.abs(wheelAngle) * 1.6 + Math.abs(steer) * 0.05);
     for (const p of this.steerPivots) p.rotation.y = -turn;
     this.cockpit.steering.rotation.z = steer * 1.6;
+    this.driver?.update();
     this.glows.forEach((g, i) => (g.visible = lights || (i % 2 === 1 && braking)));
     if (this.pbr) {
       (this.tail as THREE.MeshStandardMaterial).emissiveIntensity = braking ? 2.5 : lights ? 0.8 : 0.12;

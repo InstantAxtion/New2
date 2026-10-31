@@ -211,3 +211,83 @@ export function remember(s: Song, prefer: Prefer, e: CacheEntry) {
     /* ignore */
   }
 }
+
+// ---- Searching YouTube directly, and someone's own channel ----
+
+export interface YtResult {
+  kind: 'video' | 'playlist';
+  id: string;
+  title: string;
+  channel: string;
+  thumb: string;
+  /** Seconds (videos), 0 if unknown. */
+  duration: number;
+  /** Number of videos (playlists). */
+  count?: number;
+}
+
+async function api(path: string, params: Record<string, string>, key: string) {
+  const res = await fetch(`${API}/${path}?${new URLSearchParams({ ...params, key })}`);
+  const j = await res.json();
+  if (!res.ok) {
+    const reason = j?.error?.errors?.[0]?.reason ?? '';
+    if (/quota/i.test(reason)) throw new QuotaError('YouTube daily search limit reached');
+    if (res.status === 400 || res.status === 403) throw new KeyError(j?.error?.message ?? 'YouTube API key rejected');
+    throw new Error(j?.error?.message ?? `YouTube request failed (${res.status})`);
+  }
+  return j;
+}
+
+/** Search YouTube for videos (that play inside the app) or playlists. */
+export async function searchYouTube(q: string, key: string, kind: 'video' | 'playlist'): Promise<YtResult[]> {
+  const params: Record<string, string> = { part: 'snippet', type: kind, maxResults: '20', q };
+  if (kind === 'video') params.videoEmbeddable = 'true';
+  const j = await api('search', params, key);
+  type Item = { id: { videoId?: string; playlistId?: string }; snippet: { title: string; channelTitle: string; thumbnails?: { medium?: { url: string }; default?: { url: string } } } };
+  const items: Item[] = j.items ?? [];
+  const out: YtResult[] = items
+    .map((i) => ({
+      kind,
+      id: (kind === 'video' ? i.id.videoId : i.id.playlistId) ?? '',
+      title: decode(i.snippet.title),
+      channel: decode(i.snippet.channelTitle),
+      thumb: i.snippet.thumbnails?.medium?.url ?? i.snippet.thumbnails?.default?.url ?? '',
+      duration: 0,
+    }))
+    .filter((r) => r.id);
+  if (kind === 'video' && out.length) {
+    try {
+      const j2 = await api('videos', { part: 'contentDetails', id: out.map((r) => r.id).join(',') }, key);
+      const d = new Map<string, number>((j2.items ?? []).map((v: { id: string; contentDetails?: { duration?: string } }) => [v.id, isoDuration(v.contentDetails?.duration ?? '')]));
+      for (const r of out) r.duration = d.get(r.id) ?? 0;
+    } catch {
+      /* durations are a bonus */
+    }
+  }
+  return out;
+}
+
+/** A channel's public playlists, from its @handle, channel link or channel id. */
+export async function channelPlaylists(who: string, key: string): Promise<{ channel: string; lists: YtResult[] }> {
+  const w = who.trim();
+  const idMatch = w.match(/(UC[\w-]{22})/);
+  const handle = w.match(/@([\w.-]+)/)?.[1] ?? (idMatch ? null : w.replace(/^https?:\/\/(www\.)?youtube\.com\//, '').replace(/^@/, ''));
+  const ch = await api('channels', idMatch ? { part: 'snippet', id: idMatch[1] } : { part: 'snippet', forHandle: handle ?? '' }, key);
+  const c = ch.items?.[0];
+  if (!c) throw new Error("Couldn't find that channel. Use your @handle from youtube.com.");
+  const pl = await api('playlists', { part: 'snippet,contentDetails', channelId: c.id, maxResults: '50' }, key);
+  type P = { id: string; snippet: { title: string; channelTitle: string; thumbnails?: { medium?: { url: string } } }; contentDetails?: { itemCount?: number } };
+  const lists: YtResult[] = (pl.items ?? []).map((p: P) => ({
+    kind: 'playlist' as const,
+    id: p.id,
+    title: decode(p.snippet.title),
+    channel: decode(p.snippet.channelTitle),
+    thumb: p.snippet.thumbnails?.medium?.url ?? '',
+    duration: 0,
+    count: p.contentDetails?.itemCount ?? 0,
+  }));
+  // Their uploads too, as a playlist
+  const uploads = 'UU' + c.id.slice(2);
+  lists.unshift({ kind: 'playlist', id: uploads, title: 'Uploads', channel: decode(c.snippet.title), thumb: c.snippet.thumbnails?.medium?.url ?? '', duration: 0 });
+  return { channel: decode(c.snippet.title), lists };
+}
