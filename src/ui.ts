@@ -230,7 +230,6 @@ export class UI {
         <button class="pad small" id="take-wheel" aria-label="Take the wheel">🕹️<span>Drive</span></button>
         <button class="pad small" id="style-btn" aria-label="Driving style"><b id="style-ico">🚗</b><span id="style-lbl">Normal</span></button>
         <button class="pad small" id="sleep-btn" aria-label="Sleep timer">🌙<span id="sleep-lbl">Sleep</span></button>
-        <button class="pad small" id="lane-btn" aria-label="Change lane">⇆<span>Lane</span></button>
       </div>
       <div class="menu-cruise"><button class="pad small" id="m-slower" aria-label="Slower">−</button>
         <div class="cruise-val"><b id="m-cruise">80</b><span>cruise</span></div>
@@ -1042,7 +1041,6 @@ export class UI {
     document.addEventListener('pointerdown', (e) => {
       if (menu.classList.contains('on') && !menu.contains(e.target as Node) && e.target !== $('#menu-btn')) menu.classList.remove('on');
     });
-    $('#lane-btn', r).onclick = () => (this.game.vehicle.lane *= -1);
     $('#tilt-zero', r).onclick = () => this.recentreTilt();
     for (const b of $$('[data-open="stats"]', r)) b.addEventListener('click', () => this.renderStats());
     $('#tv-btn', r).onclick = () => this.tvButton();

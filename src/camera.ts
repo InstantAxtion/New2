@@ -131,12 +131,19 @@ export class CameraRig {
         // you see the car itself rotate into the bend (and a little of its side)
         if (this.first) this.camHeading = v.heading;
         const dh = Math.atan2(Math.sin(v.heading - this.camHeading), Math.cos(v.heading - this.camHeading));
-        this.camHeading += dh * (1 - Math.exp(-dt * (this.calm ? 1.6 : 2.4)));
+        // Just a short lag (and never more than ~20°), so the car stays centred and you see only a hint of its side
+        this.camHeading += dh * (1 - Math.exp(-dt * (this.calm ? 3 : 4.5)));
+        const lim = 0.35;
+        const off = Math.atan2(Math.sin(v.heading - this.camHeading), Math.cos(v.heading - this.camHeading));
+        if (Math.abs(off) > lim) this.camHeading = v.heading - Math.sign(off) * lim;
         const a = this.camHeading + Math.PI + this.yaw;
         desired.set(v.x + Math.sin(a) * d, v.y + h, v.z + Math.cos(a) * d);
-        target.set(v.x + fx * 4, v.y + (far ? 0.5 : 1.1), v.z + fz * 4);
-        stiff = (far ? 3 : 6) * (this.calm ? 0.6 : 1);
-        break;
+        // Look at the car, a little ahead along the camera's own heading (so the view doesn't swing about)
+        const cf = Math.sin(this.camHeading), cz = Math.cos(this.camHeading);
+        target.set(v.x + cf * 3, v.y + (far ? 0.5 : 1.1), v.z + cz * 3);
+        // The swing comes from camHeading alone: the camera is otherwise held firmly in place
+        this.apply(v, desired, target, dt, 30, false);
+        return;
       }
       case 'hood': {
         // Sit in the driver's seat and look where the car points
