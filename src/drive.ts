@@ -64,6 +64,9 @@ export class Vehicle {
   bump = 0;
   /** Body lean on its springs: roll in bends, dive under braking, squat under power. */
   bodyRoll = 0;
+  /** Front wheels' actual angle (rad) and how fast the car is turning (rad/s). */
+  wheelAngle = 0;
+  yawRate = 0;
   bodyPitch = 0;
   bounce = 0;
   private rollV = 0;
@@ -110,7 +113,7 @@ export class Vehicle {
 
   /** Steering (share of max) that follows the lane, pure-pursuit style. */
   pursuit(lane: number): number {
-    return this.pursue(this.lanePoint(clamp(6 + Math.abs(this.v) * 0.75, 7, 38), lane));
+    return this.pursue(this.lanePoint(clamp(5 + Math.abs(this.v) * 0.6, 6, 32), lane));
   }
 
   /** Steering that just follows the bend, keeping the car where it is across the road. */
@@ -121,7 +124,9 @@ export class Vehicle {
   }
 
   private pursue([px, pz]: [number, number]): number {
-    const dx = px - this.x, dz = pz - this.z;
+    // Measured from the rear axle, which is what the car turns about
+    const r = this.wheelbase / 2;
+    const dx = px - (this.x - Math.sin(this.heading) * r), dz = pz - (this.z - Math.cos(this.heading) * r);
     const alpha = wrap(Math.atan2(dx, dz) - this.heading);
     const kappa = (2 * Math.sin(alpha)) / Math.hypot(dx, dz);
     const angle = Math.atan(kappa * this.wheelbase);
@@ -221,15 +226,20 @@ export class Vehicle {
 
     // Lateral: bicycle model, limited by grip
     const angle = this.steer * this.maxAngle();
+    this.wheelAngle = angle;
     let yaw = (this.v * Math.tan(angle)) / this.wheelbase;
     const maxYaw = (s.grip * (this.offroad ? 0.6 : this.gravel ? 0.78 : 1)) / Math.max(Math.abs(this.v), 1);
     yaw = clamp(yaw, -maxYaw, maxYaw);
-    this.heading = wrap(this.heading - yaw * dt);
+    // The car's weight: the turn builds up over a moment rather than snapping on
+    this.yawRate += (yaw - this.yawRate) * (1 - Math.exp(-dt * (this.spec.handling?.steer ?? 3.2) * 2.6));
+    this.heading = wrap(this.heading - this.yawRate * dt);
+    // It pivots about the rear wheels: the middle of the car travels a little into the turn (the nose leads)
+    const beta = Math.atan(0.5 * Math.tan(angle)) * clamp(Math.abs(this.yawRate) / Math.max(Math.abs(yaw), 1e-3), 0, 1);
 
     // Move, unless that would drive into the sea or up a wall
     const ds = this.v * dt;
-    const nx = this.x + Math.sin(this.heading) * ds;
-    const nz = this.z + Math.cos(this.heading) * ds;
+    const nx = this.x + Math.sin(this.heading - beta) * ds;
+    const nz = this.z + Math.cos(this.heading - beta) * ds;
     const ny = w.surface(nx, nz);
     const climb = (ny - this.y) / Math.max(Math.abs(ds), 1e-3);
     const u = w.lateral(nx, nz);
@@ -238,7 +248,25 @@ export class Vehicle {
     // (a car caught on the wrong carriageway may always cross back over to its own side)
     const wrongSide = u0 * (Math.cos(this.heading) >= 0 ? 1 : -1) < 0;
     const barrier = w.highwayAt(nz) > 0.5 && Math.abs(u) < 0.6 && Math.abs(u0) >= 0.6 && !wrongSide;
-    if (ny < 0.15 || (climb > 1.1 && Math.abs(u) > w.roadHalf(nz)) || Math.abs(u) > 420 || barrier) {
+    // Bridge parapets: slide along them instead of dropping off the deck
+    const rail = w.roadHalf(nz) + 0.45 - s.width / 2;
+    if (w.bridge(nz) > 0.3 && Math.abs(u) > rail) {
+      const [tx, tz] = w.tangent(nz);
+      const dir = Math.cos(this.heading) >= 0 ? 1 : -1;
+      const back = Math.abs(u) - rail;
+      // Push back in towards the middle of the deck (lateral is measured along (-tz, tx) negated)
+      const sgn = Math.sign(u);
+      this.x = nx + tz * sgn * back;
+      this.z = nz - tx * sgn * back;
+      this.y = w.roadY(this.z);
+      // Turn to run along the parapet, scrubbing a little speed
+      const along = Math.atan2(tx * dir, tz * dir);
+      this.heading = wrap(along + clamp(wrap(this.heading - along), -0.05, 0.05));
+      this.v *= 1 - dt * 0.6;
+      this.bump = Math.max(this.bump, 0.6);
+      this.dist += ds;
+      if (ds > 0) this.odometer += ds;
+    } else if (ny < 0.15 || (climb > 1.1 && Math.abs(u) > w.roadHalf(nz)) || Math.abs(u) > 420 || barrier) {
       this.v *= -0.25;
       this.bump = 1;
     } else {

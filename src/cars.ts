@@ -4,7 +4,7 @@ import { weatherPaint, type Tier } from './materials';
 import { bodyGeometry, profile } from './carbody';
 import { CARS, COLORS, defaultCustom, type CarSpec, type Custom } from './carspecs';
 import { buildExterior, buildWheel, type PartMats } from './carparts';
-import { buildCockpit, drawCluster, type Cockpit } from './cockpit';
+import { buildCockpit, buildDriver, drawCluster, type Cockpit } from './cockpit';
 import { bikeCockpit, buildBike } from './bike';
 
 export { CARS, COLORS };
@@ -63,7 +63,7 @@ export class CarModel {
   /** Side mirror glass (left, right) for the working mirrors. */
   readonly mirrorGlass: THREE.Mesh[] = [];
 
-  constructor(public spec: CarSpec, custom: Partial<Custom> = {}, tier: Tier = 'pbr') {
+  constructor(public spec: CarSpec, custom: Partial<Custom> = {}, tier: Tier = 'pbr', readonly seeThrough = true) {
     const pbr = (this.pbr = tier === 'pbr');
     const c = (this.custom = { ...defaultCustom(spec), ...custom });
     const s = spec;
@@ -74,9 +74,12 @@ export class CarModel {
     if (pbr) weatherPaint(this.paint, c.finish === 'metallic' ? 1 : c.finish === 'pearl' ? 0.6 : 0);
     const second = paintMaterial(c.color2, c.finish === 'pearl' ? 'metallic' : c.finish, pbr);
     const roofM = c.twoTone ? second : this.paint;
+    // Tinted glass you can see the cabin (and the driver) through; traffic keeps it dark and simple
+    const clear = seeThrough && !s.bike;
     const glass = pbr
-      ? new THREE.MeshPhysicalMaterial({ color: 0x05080b, metalness: 0, roughness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.02, envMapIntensity: 0.7 })
-      : new THREE.MeshPhongMaterial({ color: 0x1b2633, shininess: 120, specular: 0xaaaaaa });
+      ? new THREE.MeshPhysicalMaterial({ color: clear ? 0x0b1218 : 0x05080b, metalness: 0, roughness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.02, envMapIntensity: 0.9,
+          transparent: clear, opacity: clear ? 0.58 : 1, depthWrite: !clear })
+      : new THREE.MeshPhongMaterial({ color: 0x1b2633, shininess: 120, specular: 0xaaaaaa, transparent: clear, opacity: clear ? 0.62 : 1, depthWrite: !clear });
     this.sideGlass = glass.clone();
     const dark = pbr ? new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.55 }) : new THREE.MeshLambertMaterial({ color: 0x1d1e22 });
     const chrome = pbr
@@ -141,7 +144,7 @@ export class CarModel {
       }
 
       // Open-top extras: seats seen from outside, and a fabric roof that can go up
-      if (s.open) {
+      if (s.open && !seeThrough) {
         const cover = new THREE.Mesh(new THREE.BoxGeometry(W * 0.78, 0.04, 1.55), dark);
         cover.position.set(0, s.belt + 0.04, -0.4);
         this.outsideOnly.add(cover);
@@ -202,7 +205,13 @@ export class CarModel {
     if (s.bike) this.cockpit.screen.lookAt(this.eye.position);
     this.screen = this.cockpit.screen;
     this.screenSize = [this.cockpit.screenWidth, this.cockpit.screenWidth * 0.5625];
-    this.interior.visible = false;
+    if (!s.bike && seeThrough) {
+      // Someone at the wheel, seen from outside
+      this.driver = buildDriver(this.cockpit, c, pbr);
+      this.outsideOnly.add(this.driver);
+      if (!this.outsideOnly.parent) b.add(this.outsideOnly);
+    }
+    this.interior.visible = this.seeThrough && !s.bike;
     b.add(this.interior);
     this.drawScreen('', '', '');
     this.drawCluster(0, 'km/h', 0);
@@ -225,9 +234,14 @@ export class CarModel {
   }
 
   /** Switch between the outside look and the driver's-seat cockpit. */
+  /** In the driver's seat (the cockpit may also show from outside, through the glass). */
+  inside = false;
+  private driver: THREE.Object3D | null = null;
+
   setInside(inside: boolean) {
-    this.interior.visible = inside;
-    this.outsideOnly.visible = !inside && !(this.softTop?.visible ?? false);
+    this.inside = inside;
+    this.interior.visible = inside || (this.seeThrough && !this.spec.bike);
+    this.outsideOnly.visible = !inside && (this.seeThrough || !(this.softTop?.visible ?? false));
   }
 
   /** Windows down, sunroof open, soft top up. */
@@ -247,10 +261,12 @@ export class CarModel {
   }
 
   /** Spin wheels by distance travelled and turn the front ones. */
-  animate(dist: number, steer: number, braking: boolean, lights: boolean) {
+  animate(dist: number, steer: number, braking: boolean, lights: boolean, wheelAngle?: number) {
     const a = dist / this.spec.wheel;
     for (const w of this.wheels) w.rotation.x = a;
-    for (const p of this.steerPivots) p.rotation.y = -steer * 0.5;
+    // Front wheels show the real angle (a touch exaggerated so you can see them working at speed)
+    const turn = wheelAngle === undefined ? steer * 0.5 : Math.sign(wheelAngle) * Math.min(0.55, Math.abs(wheelAngle) * 1.6 + Math.abs(steer) * 0.05);
+    for (const p of this.steerPivots) p.rotation.y = -turn;
     this.cockpit.steering.rotation.z = steer * 1.6;
     this.glows.forEach((g, i) => (g.visible = lights || (i % 2 === 1 && braking)));
     if (this.pbr) {

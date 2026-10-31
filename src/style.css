@@ -414,3 +414,28 @@ body.minimal-hud .speedo b { font-size: 40px; }
   .pedals .pad { width: 64px; }
   .manual .steer { margin-right: 6px; }
 }
+
+/* Customising: a docked sheet with tabs, the car stays in view */
+body.customising .gpanel { visibility: hidden; }
+.sheet.dock { width: min(400px, 48vw); }
+.sheet.dock .sheet-head { gap: 8px; }
+.sheet.dock .sheet-head h2 { font-size: 19px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-btns { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.row-btns .chip { padding: 6px 9px; font-size: 16px; line-height: 1; }
+.cutabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: rgba(0,0,0,.25); border-radius: 12px; padding: 3px; margin-bottom: 6px; flex-shrink: 0; }
+.cutab { background: none; border-radius: 9px; padding: 8px 2px; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cutab.on { background: rgba(255,255,255,.14); box-shadow: inset 0 -2px 0 var(--accent); }
+.cupage { display: none; }
+.cupage.on { display: block; }
+.cupage h3:first-child { margin-top: 4px; }
+.cu-reset { margin-top: 14px; }
+.sheet .swatches.left { gap: 9px; }
+.sheet .swatch { flex-shrink: 0; }
+@media (orientation: portrait) {
+  .sheet.dock { top: auto; height: 54vh; width: 100%; border-left: 0; border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; box-shadow: 0 -10px 30px rgba(0,0,0,.4); padding-top: 12px; }
+  .sheet.dock.hidden { transform: translateY(110%); }
+}
+@media (max-height: 420px) {
+  .cutab { padding: 6px 2px; }
+  .sheet.dock .sheet-head { margin-bottom: 4px; }
+}

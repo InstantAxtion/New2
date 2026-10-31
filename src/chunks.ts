@@ -739,14 +739,14 @@ export class ChunkManager {
 
     const lit: { type: PropType; m: THREE.Matrix4; on: number }[] = [];
     const season = this.season;
-    const put = (type0: PropType, x: number, y: number, z: number, s: number, rot: number) => {
+    const put = (type0: PropType, x: number, y: number, z: number, s: number, rot: number): THREE.Color | null => {
       // Trees change with the season
       let type = type0;
       if (season === 'autumn' && (type === 'tree' || type === 'cherry' || type === 'jungleTree')) type = 'treeAutumn';
       else if (season === 'winter') {
         if (type === 'tree' || type === 'treeAutumn' || type === 'cherry') type = 'deadTree';
         else if (type === 'pine' || type === 'cypress') type = 'pineSnow';
-        else if (type === 'flowers' || type === 'lavender') return;
+        else if (type === 'flowers' || type === 'lavender') return null;
       } else if (season === 'spring' && type === 'tree' && r() < 0.35) type = 'cherry';
       else if (season === 'summer' && type === 'treeAutumn') type = 'tree';
       else if ((season === 'summer' || season === 'spring') && type === 'pineSnow') type = 'pine';
@@ -758,8 +758,9 @@ export class ChunkManager {
       if (!items.has(type)) { items.set(type, []); tints.set(type, []); }
       items.get(type)!.push(m4.clone());
       const t = 0.88 + r() * 0.22;
-      if (type === 'billboard') tints.get(type)!.push(new THREE.Color(NEON[Math.floor(r() * NEON.length)]));
-      else tints.get(type)!.push(new THREE.Color(t, t * (0.95 + r() * 0.1), t));
+      const tint = type === 'billboard' ? new THREE.Color(NEON[Math.floor(r() * NEON.length)]) : new THREE.Color(t, t * (0.95 + r() * 0.1), t);
+      tints.get(type)!.push(tint);
+      return tint;
     };
 
     // Roadside: street lamps in towns and the city, marker posts elsewhere (none on bridges)
@@ -835,9 +836,9 @@ export class ChunkManager {
           if (h < hmin || h > hmax) continue;
           const s = spec.scale[0] + (spec.scale[1] - spec.scale[0]) * r();
           const rot = r() * Math.PI * 2;
-          put(spec.type, x, spec.float ? 0 : h - 0.15, z, s, rot);
+          const tint = put(spec.type, x, spec.float ? 0 : h - 0.15, z, s, rot);
           // Old towns are built of warm stone
-          if (isTown && w.oldTownAt(z) > 0.5) tints.get(spec.type)![tints.get(spec.type)!.length - 1].setRGB(0.86, 0.76, 0.6);
+          if (tint && isTown && w.oldTownAt(z) > 0.5) tint.setRGB(0.86, 0.76, 0.6);
           // Windows that light up at night
           if (spec.type === 'house' || spec.type === 'shop' || spec.type === 'cabin' || spec.type === 'farmhouse') lit.push({ type: spec.type, m: m4.clone(), on: r() });
         }

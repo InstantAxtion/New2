@@ -245,7 +245,7 @@ export class Game {
     const p = cam.position.clone().addScaledVector(sunDir, 900).project(cam);
     const onScreen = p.z < 1 ? 1 - THREE.MathUtils.smoothstep(Math.max(Math.abs(p.x), Math.abs(p.y)), 1.0, 1.8) : 0;
     a.uniforms.uSun.value.set((p.x + 1) / 2, (p.y + 1) / 2);
-    a.uniforms.uSunOn.value = (this.phase === 'garage' ? 0 : 1) * up * onScreen * (1 - this.sky.night) * (this.car.interior.visible ? 0.7 : 1);
+    a.uniforms.uSunOn.value = (this.phase === 'garage' ? 0 : 1) * up * onScreen * (1 - this.sky.night) * (this.car.inside ? 0.7 : 1);
     a.uniforms.uSunColor.value.copy(this.sky.sun.color);
     a.uniforms.uTime.value = this.elapsed;
     const dir = Math.cos(v.heading) >= 0 ? 1 : -1;
@@ -470,7 +470,7 @@ export class Game {
     this.parkedTime = Math.abs(v.v) < 0.3 ? this.parkedTime + dt : 0;
     this.car.setParked(garage || this.parkedTime > 4, dt);
     const night = this.sky.night > 0.45 && this.phase !== 'garage';
-    this.car.animate(v.dist, v.steer, v.braking, night);
+    this.car.animate(v.dist, v.steer, v.braking, night, v.wheelAngle);
     this.car.headlight.intensity = night ? 80 : 0;
     this.car.setInside(this.phase !== 'garage' && this.rig.mode === 'hood');
 
@@ -640,7 +640,7 @@ export class Game {
       let cold = 0;
       for (const { biome, w } of this.world.weights(v.z)) if (biome.id === 'winter' || biome.id === 'alpine') cold += w;
       const covered = this.world.tunnelAt(v.z) > 0.45;
-      this.glass.update(dt, this.elapsed, this.camera, this.car.interior.visible && this.rig.mode === 'hood' && this.phase !== 'garage', {
+      this.glass.update(dt, this.elapsed, this.camera, this.car.inside && this.rig.mode === 'hood' && this.phase !== 'garage', {
         rain: covered ? 0 : Math.min(1, wx.look.rain + wx.look.snow * 0.5),
         wiper: ((Math.sin(this.wipePhase) * 0.5 + 0.5) * Math.PI),
         misty: wx.look.rain > 0.3 || wx.look.snow > 0.3 || wx.kind === 'fog' || (cold > 0.5 && this.sky.night > 0.5),
@@ -661,7 +661,7 @@ export class Game {
       this.updateEnvironment();
     }
 
-    this.engine.sealed = this.car.interior.visible && !this.windowsOpen;
+    this.engine.sealed = this.car.inside && !this.windowsOpen;
     this.engine.surface = v.gravel ? 'gravel' : v.offroad ? 'grass' : 'road';
     this.engine.wet = this.weather.look.wet;
     this.engine.roofRain = Math.min(1, this.weather.look.rain + (this.weather.look.hail ?? 0) * 1.2) * (this.world.tunnelAt(v.z) > 0.45 ? 0 : 1);
@@ -673,7 +673,7 @@ export class Game {
         this.passPrev.set(o.pos, dz);
         if (prev !== undefined && Math.sign(prev) !== Math.sign(dz) && Math.abs(o.pos.x - v.x) < 9) {
           const rel = Math.abs(o.v * o.dir - v.v);
-          if (rel > 8) this.engine.whoosh((rel / 40) * (o.heavy ? 1.4 : 1) * (this.car.interior.visible && !this.windowsOpen ? 0.5 : 1));
+          if (rel > 8) this.engine.whoosh((rel / 40) * (o.heavy ? 1.4 : 1) * (this.car.inside && !this.windowsOpen ? 0.5 : 1));
         }
       }
     }
@@ -934,7 +934,7 @@ export class Game {
   private mirrorSkip = 0;
   private renderMirrors() {
     const car = this.car;
-    if (!car.interior.visible || this.settings.quality === 'low') return;
+    if (!car.inside || this.settings.quality === 'low') return;
     // Mirrors are small: refreshing them every other frame is plenty
     if (++this.mirrorSkip % 2 === 1 && this.settings.quality !== 'ultra') return;
     if (!this.mirrorRT.length) {
@@ -995,7 +995,7 @@ export class Game {
     let p: Placement = { kind: 'hidden' };
     const W = window.innerWidth, H = window.innerHeight;
     if (scr.active && this.phase !== 'garage') {
-      if (this.car.interior.visible) {
+      if (this.car.inside) {
         const m = this.car.screen;
         m.updateWorldMatrix(true, false);
         const v = new THREE.Vector3();
@@ -1021,7 +1021,7 @@ export class Game {
 
   /** The dashboard screen's own page: speed, time and region when no video is on. */
   private updateCarScreen(dt: number) {
-    if (!this.car.interior.visible) return;
+    if (!this.car.inside) return;
     this.screenTimer -= dt;
     if (this.screenTimer > 0) return;
     this.screenTimer = 0.2;

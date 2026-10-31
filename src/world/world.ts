@@ -3,6 +3,11 @@ import { hash1, noise1, rng, smoothstep } from './noise';
 
 export const ROAD_HALF = 4.2; // asphalt half-width (two lanes)
 export const LANE = 1.9; // lane centre offset from the middle line
+/** Metres over which the road eases from winding to a bridge's straight line. */
+const BRIDGE_RAMP = 90;
+
+/** A bridge crossing: straight from a to b, easing in over ra and out over rb metres. */
+interface Span { a: number; b: number; xa: number; xb: number; ra: number; rb: number }
 export const FLAT = 7.5; // ground is flat out to here (perpendicular metres)
 export const SEGMENT = 1400; // metres of road per region
 const BLEND = 220; // half-width of the blend between two regions
@@ -120,6 +125,89 @@ export class World {
   // ---- Road ----
 
   roadX(z: number): number {
+    const raw = this.rawX(z);
+    // Bridges run dead straight: over a span the road follows the chord between its two ends
+    let x = raw;
+    // (spans are in order; easing from one into the next keeps the road continuous)
+    for (const sp of this.spansAround(z)) {
+      if (z < sp.a - sp.ra || z > sp.b + sp.rb) continue;
+      const t = z < sp.a ? smoothstep(sp.a - sp.ra, sp.a, z) : z > sp.b ? 1 - smoothstep(sp.b, sp.b + sp.rb, z) : 1;
+      x += (this.chord(sp, z) - x) * t;
+    }
+    return x;
+  }
+
+  private chord(sp: Span, z: number) {
+    return sp.xa + ((sp.xb - sp.xa) * (z - sp.a)) / Math.max(sp.b - sp.a, 1);
+  }
+
+  /** How long the easing on/off a bridge must be so the bend it makes stays gentle (radius > ~120 m). */
+  private rampFor(sp: Span, end: 'a' | 'b') {
+    let r = BRIDGE_RAMP;
+    for (let i = 0; i < 4; i++) {
+      let dev = 0;
+      for (let d = 0; d <= r; d += r / 6) {
+        const z = end === 'a' ? sp.a - d : sp.b + d;
+        dev = Math.max(dev, Math.abs(this.rawX(z) - this.chord(sp, z)));
+      }
+      r = Math.max(BRIDGE_RAMP, Math.sqrt(720 * dev));
+    }
+    return Math.min(r, 600);
+  }
+
+  private spanCells = new Map<number, Span[]>();
+  private spanStarts = new Map<number, Span[]>();
+
+  /** Bridge spans (found on the winding road, before it's straightened) that reach into z's 400 m cell. */
+  private spansAround(z: number) {
+    const c = Math.floor(z / 400);
+    let list = this.spanCells.get(c);
+    if (!list) {
+      list = [];
+      for (let k = c - 11; k <= c + 2; k++) {
+        for (const sp of this.spansStarting(k)) if (sp.b + sp.rb >= c * 400 && sp.a - sp.ra <= c * 400 + 400) list.push(sp);
+      }
+      if (this.spanCells.size > 400) this.spanCells.clear();
+      this.spanCells.set(c, list);
+    }
+    return list;
+  }
+
+  private spansStarting(k: number) {
+    let list = this.spanStarts.get(k);
+    if (list) return list;
+    list = [];
+    const on = (z: number) => this.bridgeOn(z) >= 0.3;
+    // Crossings close together become one long straight
+    const GAP = 700;
+    const near = (z: number, d: number) => {
+      for (let q = 8; q <= GAP; q += 8) if (on(z + d * q)) return z + d * q;
+      return null;
+    };
+    for (let z = k * 400; z < k * 400 + 400; z += 8) {
+      if (!on(z) || on(z - 8) || near(z, -1) !== null) continue;
+      let e = z;
+      for (;;) {
+        while (e < z + 3000 && on(e + 8)) e += 8;
+        const next = e < z + 3000 ? near(e, 1) : null;
+        if (next === null) break;
+        e = next;
+      }
+      // Straighten from a little before the water to a little after
+      const a = z - 30, b = e + 30;
+      const sp: Span = { a, b, xa: this.rawX(a), xb: this.rawX(b), ra: 0, rb: 0 };
+      sp.ra = this.rampFor(sp, 'a');
+      sp.rb = this.rampFor(sp, 'b');
+      list.push(sp);
+      z = e;
+    }
+    if (this.spanStarts.size > 400) this.spanStarts.clear();
+    this.spanStarts.set(k, list);
+    return list;
+  }
+
+  /** Where the road would wind without bridges straightening it. */
+  private rawX(z: number): number {
     const p = this.phases;
     // Mountain roads wind much more tightly
     const alp = this.cached('a', z, () => this.weights(z).reduce((m, x) => m + (x.biome.id === 'alpine' ? x.w : 0), 0));
@@ -380,9 +468,29 @@ export class World {
   }
 
   private bridgeRaw(z: number): number {
-    let b = 0;
-    for (const { biome, w } of this.weights(z)) if (biome.bridges) b += w * biome.bridges(this.roadX(z), z, this.seed);
-    return smoothstep(0.35, 0.65, b);
+    // Inside a straightened span the deck carries on even where the straight line crosses a bit of land
+    // Decks where the crossing is, with short bits of land between them bridged over too
+    for (const sp of this.spansAround(z)) {
+      if (z < sp.a + 30 || z > sp.b - 30) continue;
+      const b = this.bridgeOn(z);
+      if (b > 0.99) return b;
+      let before = false, after = false;
+      for (let d = 8; d <= 64 && !(before && after); d += 8) {
+        before ||= this.bridgeOn(z - d) > 0.3;
+        after ||= this.bridgeOn(z + d) > 0.3;
+      }
+      return before && after ? 1 : b;
+    }
+    return 0;
+  }
+
+  /** Is the winding road over water or a gorge here (bridge finding, before straightening). */
+  private bridgeOn(z: number): number {
+    return this.cached('bo', z, () => {
+      let b = 0;
+      for (const { biome, w } of this.weights(z)) if (biome.bridges) b += w * biome.bridges(this.rawX(z), z, this.seed);
+      return smoothstep(0.35, 0.65, b);
+    });
   }
 
   // ---- Road features: highways, gravel, tunnels ----

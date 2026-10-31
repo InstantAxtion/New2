@@ -132,13 +132,13 @@ export class CameraRig {
         const q = this.calm
           ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), v.heading)
           : this.car.body.getWorldQuaternion(new THREE.Quaternion());
-        // On a tall screen sit nearer the middle and look a touch towards the dashboard screen
+        // Always from the driver's own seat; on a tall screen look a touch towards the middle of the road
         const tall = this.cam.aspect < 1;
         // Lean a little to the side when looking over your shoulder
         const lean = Math.sin(this.yaw) * 0.12;
-        const eye = this.car.eye.localToWorld(new THREE.Vector3((tall ? -0.2 : 0) + lean, tall ? -0.04 : 0, tall ? -0.05 : 0));
+        const eye = this.car.eye.localToWorld(new THREE.Vector3(lean, 0, 0));
         const yaw = this.yaw + (tall ? -0.08 : 0);
-        const dir = new THREE.Vector3(Math.sin(yaw), (tall ? -0.1 : -0.06) + this.pitch * 0.6, Math.cos(yaw)).applyQuaternion(q).normalize();
+        const dir = new THREE.Vector3(Math.sin(yaw), (tall ? -0.03 : -0.06) + this.pitch * 0.6, Math.cos(yaw)).applyQuaternion(q).normalize();
         if (this.focusT > 0.001) {
           // Glance at the screen (and lean a little towards it)
           const scr = this.car.screen.getWorldPosition(new THREE.Vector3());

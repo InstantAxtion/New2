@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { profile } from './carbody';
 import type { CarSpec, Custom } from './carspecs';
 
@@ -25,6 +26,8 @@ export interface Cockpit {
   visors?: THREE.Object3D[];
   /** A head-up display projected on the windscreen (modern cars). */
   hud?: { ctx: CanvasRenderingContext2D; tex: THREE.CanvasTexture; mesh: THREE.Mesh } | null;
+  /** Where the driver sits (cabin coordinates): seat top, eye height, steering wheel centre. */
+  seat?: { x: number; top: number; z: number; eyeY: number; wheel: THREE.Vector3 };
 }
 
 function woodTexture(): THREE.Texture {
@@ -264,29 +267,107 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
 
   // ---- Seats ----
   const eyeZ = zF - (style === 'van' ? 0.9 : 1.0);
-  const seat = (x: number, w: number) => {
-    const cushion = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, 0.5), leather);
-    cushion.position.set(x, floorY + 0.12, eyeZ + 0.05);
-    const back = new THREE.Mesh(new THREE.BoxGeometry(w, 0.7, 0.12), leather);
-    back.position.set(x, floorY + 0.5, eyeZ - 0.25);
-    back.rotation.x = 0.18;
-    I.add(cushion, back);
-    if (style === 'sport') {
+  const eyeY0 = Math.min(yT + 0.2, (s.open ? 1.4 : P.top(eyeZ)) - 0.12);
+  // You sit low, with your eyes about 0.7 m above the cushion
+  const seatTop = Math.max(floorY + 0.14, eyeY0 - 0.72);
+  const seatBase = std(0x1a1b1e, 0.6);
+  const stitch = std(new THREE.Color(c.leather).multiplyScalar(0.55).getHex(), 0.8);
+  const seat = (x: number, w: number, z: number, opts: { sport?: boolean; bench?: boolean; head?: boolean; top?: number } = {}) => {
+    const g = new THREE.Group();
+    const top = opts.top ?? seatTop;
+    g.position.set(x, 0, z);
+    // Runners and a base under the cushion
+    if (!opts.bench) {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, Math.max(0.04, top - 0.08 - floorY), 0.4), seatBase);
+      base.position.set(0, (floorY + top - 0.08) / 2, 0.02);
+      g.add(base);
+    }
+    // Cushion: rounded, tipped back a little, with a seam line
+    const cushion = new THREE.Mesh(new RoundedBoxGeometry(w, 0.12, 0.5, 3, 0.045), leather);
+    cushion.position.set(0, top - 0.05, 0.04);
+    cushion.rotation.x = -0.07;
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(w * 0.86, 0.004, 0.01), stitch);
+    seam.position.set(0, top + 0.012, 0.08);
+    g.add(cushion, seam);
+    // Backrest, reclined, with bolsters on sporty seats
+    const back = new THREE.Group();
+    back.position.set(0, top - 0.02, -0.2);
+    back.rotation.x = -0.2;
+    const pad = new THREE.Mesh(new RoundedBoxGeometry(w * 0.94, 0.66, 0.11, 3, 0.045), leather);
+    pad.position.set(0, 0.34, -0.03);
+    back.add(pad);
+    for (let i = 1; i <= 3; i++) {
+      const line = new THREE.Mesh(new THREE.BoxGeometry(w * 0.6, 0.006, 0.006), stitch);
+      line.position.set(0, 0.12 + i * 0.13, 0.027);
+      back.add(line);
+    }
+    if (opts.sport) {
       for (const sd of [-1, 1]) {
-        const bolster = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.55, 0.18), leather);
-        bolster.position.set(x + sd * (w / 2 - 0.02), floorY + 0.48, eyeZ - 0.2);
-        bolster.rotation.x = 0.18;
-        I.add(bolster);
+        const bolster = new THREE.Mesh(new RoundedBoxGeometry(0.08, 0.5, 0.17, 2, 0.035), leather);
+        bolster.position.set(sd * (w / 2 - 0.02), 0.3, 0.02);
+        bolster.rotation.y = sd * -0.25;
+        back.add(bolster);
+        const side = new THREE.Mesh(new RoundedBoxGeometry(0.07, 0.07, 0.46, 2, 0.03), leather);
+        side.position.set(sd * (w / 2 - 0.02), top + 0.02, 0.04);
+        g.add(side);
       }
     }
-    if (style !== 'classic') {
-      const rest = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.1), leather);
-      rest.position.set(x, floorY + 0.95, eyeZ - 0.32);
-      I.add(rest);
+    // Headrest on two posts
+    if (opts.head !== false) {
+      const hr = new THREE.Mesh(new RoundedBoxGeometry(0.27, 0.17, 0.1, 3, 0.045), leather);
+      hr.position.set(0, 0.8, -0.05);
+      back.add(hr);
+      for (const sd of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.1, 6), chrome);
+        post.position.set(sd * 0.07, 0.69, -0.05);
+        back.add(post);
+      }
     }
+    g.add(back);
+    I.add(g);
+    return g;
   };
-  if (style === 'classic') seat(0, driverX * 2 + 0.5); // bench
-  else for (const x of [driverX, -driverX]) seat(x, 0.5);
+  const sporty = style === 'sport';
+  if (style === 'classic') seat(0, driverX * 2 + 0.5, eyeZ, { bench: true, head: false });
+  else for (const x of [driverX, -driverX]) seat(x, 0.5, eyeZ, { sport: sporty });
+  // Rear seats, if there's room behind
+  const rearZ = eyeZ - 0.88;
+  const roomBehind = !s.open && rearZ - 0.3 > (style === 'van' ? -10 : s.C - 0.5) && s.doors === 4;
+  if (roomBehind) {
+    const rw = inner(rearZ) * 2 - 0.16;
+    if (style === 'van') for (const x of [driverX, -driverX]) seat(x, 0.5, rearZ, { top: seatTop + 0.02 });
+    else seat(0, rw, rearZ, { bench: true, top: seatTop + 0.04 });
+  }
+
+  // Seat belts: from the B-pillar over the shoulder to the buckle
+  for (const sd of [1, -1]) {
+    const x = sd * driverX;
+    const sh = new THREE.Vector3(sd * (inner(eyeZ) - 0.06), eyeY0 - 0.12, eyeZ - 0.32);
+    const buckle = new THREE.Vector3(x - sd * 0.24, seatTop + 0.06, eyeZ + 0.02);
+    const len = sh.distanceTo(buckle);
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.045, len, 0.006), std(0x26272b, 0.8));
+    belt.position.copy(sh).add(buckle).multiplyScalar(0.5);
+    belt.lookAt(buckle);
+    belt.rotateX(Math.PI / 2);
+    belt.translateZ(-0.12); // lie back against the seat
+    const anchor = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.02), trimDark);
+    anchor.position.copy(sh);
+    I.add(belt, anchor);
+  }
+
+  // Pedals in the footwell
+  const pedalZ = zF - 0.05;
+  for (const [dx, w] of [[0.1, 0.06], [-0.02, 0.11], [-0.16, 0.06]] as const) {
+    if (dx === -0.16 && (style === 'ev' || style === 'luxury')) continue;
+    const pedal = new THREE.Mesh(new THREE.BoxGeometry(w, 0.09, 0.015), std(0x2a2b2e, 0.4, 0.6));
+    pedal.position.set(driverX + dx - 0.05, floorY + 0.12, pedalZ);
+    pedal.rotation.x = -0.6;
+    I.add(pedal);
+  }
+  const footrest = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.02), std(0x2a2b2e, 0.4, 0.6));
+  footrest.position.set(driverX + 0.24, floorY + 0.1, pedalZ - 0.05);
+  footrest.rotation.x = -0.7;
+  I.add(footrest);
 
   // ---- Floor, door panels ----
   const floor = new THREE.Mesh(new THREE.BoxGeometry(inner(zF) * 2, 0.03, 2.4), softM);
@@ -376,7 +457,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     mirrorRear.rotation.y = Math.PI;
     I.add(stem, housing, mirrorRear);
   }
-  const eyeY = Math.min(yT + 0.2, (s.open ? 1.4 : P.top(eyeZ)) - 0.12);
+  const eyeY = eyeY0;
   eye.position.set(driverX, eyeY, eyeZ);
   I.add(eye);
 
@@ -469,7 +550,8 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     I.add(mesh);
     hud = { ctx: hc.getContext('2d')!, tex, mesh };
   }
-  return { steering, screen, screenWidth, screenCtx, screenTex, clusterCtx, clusterTex, cluster, ambient, sunroofPanel, mirrorRear, mirrorSides, freshener, visors, hud };
+  return { steering, screen, screenWidth, screenCtx, screenTex, clusterCtx, clusterTex, cluster, ambient, sunroofPanel, mirrorRear, mirrorSides, freshener, visors, hud,
+    seat: { x: driverX, top: seatTop, z: eyeZ, eyeY, wheel: wheelC.clone() } };
 }
 
 /** Draw the instrument cluster: digital speed with a rev bar, or two round dials. */
@@ -522,4 +604,69 @@ export function drawCluster(ck: Cockpit, speed: number, unit: string, rpm: numbe
   }
   g.textAlign = 'left';
   ck.clusterTex.needsUpdate = true;
+}
+
+/** The driver, sitting in the seat with hands on the wheel (seen from outside, through the glass). */
+export function buildDriver(ck: Cockpit, c: Custom, pbr: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const st = ck.seat;
+  if (!st) return g;
+  const m = (col: number, r = 0.75) => (pbr ? new THREE.MeshStandardMaterial({ color: col, roughness: r }) : new THREE.MeshLambertMaterial({ color: col }));
+  const tops = [0x2b3a55, 0x6b2f2f, 0x2f5a46, 0xd9d4c7, 0x333338, 0x8a6a3a];
+  const top = m(tops[Math.abs(Math.round(c.color / 7)) % tops.length]);
+  const skin = m([0xe2b48f, 0xc68e64, 0x8d5a3b, 0xf0c8a8][Math.abs(Math.round(c.color / 13)) % 4], 0.6);
+  const hair = m([0x2a1d14, 0x5a3a20, 0x111111, 0xb08850][Math.abs(Math.round(c.color / 11)) % 4], 0.9);
+  const legs = m(0x2c3446);
+  const x = st.x;
+  const hip = new THREE.Vector3(x, st.top + 0.1, st.z - 0.12);
+  const neck = new THREE.Vector3(x, st.eyeY - 0.17, st.z - 0.17);
+  // Torso, leaning back into the seat
+  const tl = hip.distanceTo(neck);
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, tl - 0.12, 4, 10), top);
+  torso.position.copy(hip).add(neck).multiplyScalar(0.5);
+  torso.lookAt(neck);
+  torso.rotateX(Math.PI / 2);
+  torso.scale.set(1.15, 1, 0.75);
+  // Head and hair
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.095, 16, 12), skin);
+  head.scale.set(0.9, 1.1, 1);
+  head.position.set(x, st.eyeY + 0.02, st.z - 0.05);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), hair);
+  cap.scale.set(0.92, 1.1, 1.05);
+  cap.position.set(x, st.eyeY + 0.035, st.z - 0.065);
+  cap.rotation.x = -0.35;
+  const neckM = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 8), skin);
+  neckM.position.set(x, st.eyeY - 0.1, st.z - 0.1);
+  g.add(torso, head, cap, neckM);
+  // Arms out to the rim at ten to two
+  const w = st.wheel;
+  for (const sd of [-1, 1]) {
+    const shoulder = new THREE.Vector3(x + sd * 0.19, neck.y - 0.05, neck.z + 0.02);
+    const hand = new THREE.Vector3(w.x + sd * 0.15, w.y + 0.06, w.z - 0.04);
+    const elbow = shoulder.clone().lerp(hand, 0.5).add(new THREE.Vector3(sd * 0.06, -0.1, 0));
+    for (const [a, b2] of [[shoulder, elbow], [elbow, hand]]) {
+      const len = a.distanceTo(b2);
+      const seg = new THREE.Mesh(new THREE.CapsuleGeometry(0.042, Math.max(0.01, len - 0.06), 4, 8), top);
+      seg.position.copy(a).add(b2).multiplyScalar(0.5);
+      seg.lookAt(b2);
+      seg.rotateX(Math.PI / 2);
+      g.add(seg);
+    }
+    const handM = new THREE.Mesh(new THREE.SphereGeometry(0.04, 10, 8), skin);
+    handM.position.copy(hand);
+    g.add(handM);
+    // Thighs forward along the cushion, shins down to the pedals
+    const knee = new THREE.Vector3(x + sd * 0.1, st.top + 0.14, st.z + 0.42);
+    const foot = new THREE.Vector3(x + sd * 0.1 - 0.04, st.top - 0.3, st.z + 0.75);
+    for (const [a, b2, r] of [[new THREE.Vector3(x + sd * 0.1, hip.y, hip.z + 0.05), knee, 0.07], [knee, foot, 0.055]] as const) {
+      const len = a.distanceTo(b2);
+      const seg = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, len - 0.08), 4, 8), legs);
+      seg.position.copy(a).add(b2).multiplyScalar(0.5);
+      seg.lookAt(b2);
+      seg.rotateX(Math.PI / 2);
+      g.add(seg);
+    }
+  }
+  g.traverse((o) => ((o as THREE.Mesh).castShadow = false));
+  return g;
 }

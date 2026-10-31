@@ -361,33 +361,48 @@ export class UI {
   </div>
 </aside>
 
-<aside id="custom" class="sheet hidden">
-  <div class="sheet-head"><h2>🎨 <span id="cu-car"></span></h2><button class="icon" data-close="custom" aria-label="Close">✕</button></div>
+<aside id="custom" class="sheet dock hidden">
+  <div class="sheet-head"><h2>🎨 <span id="cu-car"></span></h2>
+    <div class="row-btns"><button class="chip" data-openpart="door">🚪</button><button class="chip" data-openpart="bonnet">🔧</button><button class="chip" data-openpart="boot">🧳</button>
+    <button class="icon" data-close="custom" aria-label="Close">✕</button></div></div>
+  <nav class="cutabs">
+    <button class="cutab" data-cutab="paint">🎨 Paint</button><button class="cutab" data-cutab="wheels">🛞 Wheels</button>
+    <button class="cutab" data-cutab="style">✨ Style</button><button class="cutab" data-cutab="cabin">💺 Interior</button>
+  </nav>
   <div class="sheet-body">
-    <h3>Take a look <small>open it up</small></h3>
-    <div class="chips"><button class="chip" data-openpart="door">🚪 Doors</button><button class="chip" data-openpart="bonnet">🔧 Bonnet</button><button class="chip" data-openpart="boot">🧳 Boot</button></div>
-    <h3>Paint</h3>
-    <div class="swatches left">${COLORS.map((c) => `<button class="swatch" data-cu-color="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
-    <div class="chips" data-cu="finish"><button class="chip" data-v="metallic">Metallic</button><button class="chip" data-v="solid">Gloss</button><button class="chip" data-v="matte">Matte</button><button class="chip" data-v="pearl">Pearl</button></div>
-    <div class="chips"><button class="chip" id="cu-twotone">Two-tone roof</button><button class="chip" id="cu-stripes">Racing stripes</button></div>
-    <h3>Second colour <small>roof and stripes</small></h3>
-    <div class="swatches left">${[0xf2f1ec, 0x1e1f22, ...COLORS.filter((c) => c !== 0xf2f1ec && c !== 0x1e1f22)].map((c) => `<button class="swatch" data-cu-color2="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
-    <h3>Wheels</h3>
-    <div class="chips" data-cu="rim"><button class="chip" data-v="five">5-spoke</button><button class="chip" data-v="multi">Multi-spoke</button><button class="chip" data-v="turbine">Aero</button><button class="chip" data-v="steel">Classic steel</button><button class="chip" data-v="beadlock">Off-road</button></div>
-    <div class="swatches left">${RIM_COLORS.map((c) => `<button class="swatch" data-cu-rimcolor="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
-    <h3>Decals</h3>
-    <div class="chips" data-cu="decal">${DECALS.map((d) => `<button class="chip" data-v="${d.id}">${d.name}</button>`).join('')}</div>
-    <h3>Number plate</h3>
-    <div class="range-row"><input type="text" id="cu-plate" maxlength="9" autocomplete="off" spellcheck="false" placeholder="Your plate" /></div>
-    <h3>Ride height</h3>
-    <div class="range-row"><input type="range" id="cu-ride" min="-0.06" max="0.08" step="0.01" /><span id="cu-ride-lbl"></span></div>
-    <h3>Seats</h3>
-    <div class="swatches left">${LEATHERS.map((c) => `<button class="swatch" data-cu-leather="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
-    <h3>Trim</h3>
-    <div class="chips" data-cu="trim"><button class="chip" data-v="black">Piano black</button><button class="chip" data-v="wood">Wood</button><button class="chip" data-v="carbon">Carbon</button><button class="chip" data-v="alu">Aluminium</button></div>
-    <h3>Ambient lighting <small>at night</small></h3>
-    <div class="swatches left">${AMBIENTS.map((c) => `<button class="swatch${c ? '' : ' off'}" data-cu-ambient="${c}" style="background:${c ? hex(c) : '#2a2b2f'}">${c ? '' : '✕'}</button>`).join('')}</div>
-    <button class="ghost small" id="cu-reset">Reset to factory</button>
+    <div class="cupage" data-cupage="paint">
+      <h3>Colour</h3>
+      <div class="swatches left">${COLORS.map((c) => `<button class="swatch" data-cu-color="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
+      <h3>Finish</h3>
+      <div class="chips" data-cu="finish"><button class="chip" data-v="metallic">Metallic</button><button class="chip" data-v="solid">Gloss</button><button class="chip" data-v="matte">Matte</button><button class="chip" data-v="pearl">Pearl</button></div>
+      <h3>Two-tone</h3>
+      <div class="chips"><button class="chip" id="cu-twotone">Two-tone roof</button><button class="chip" id="cu-stripes">Racing stripes</button></div>
+      <h3>Second colour <small>roof and stripes</small></h3>
+      <div class="swatches left">${[0xf2f1ec, 0x1e1f22, ...COLORS.filter((c) => c !== 0xf2f1ec && c !== 0x1e1f22)].map((c) => `<button class="swatch" data-cu-color2="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
+    </div>
+    <div class="cupage" data-cupage="wheels">
+      <h3>Rims</h3>
+      <div class="chips" data-cu="rim"><button class="chip" data-v="five">5-spoke</button><button class="chip" data-v="multi">Multi-spoke</button><button class="chip" data-v="turbine">Aero</button><button class="chip" data-v="steel">Classic steel</button><button class="chip" data-v="beadlock">Off-road</button></div>
+      <h3>Rim colour</h3>
+      <div class="swatches left">${RIM_COLORS.map((c) => `<button class="swatch" data-cu-rimcolor="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
+      <h3>Ride height</h3>
+      <div class="range-row"><input type="range" id="cu-ride" min="-0.06" max="0.08" step="0.01" /><span id="cu-ride-lbl"></span></div>
+    </div>
+    <div class="cupage" data-cupage="style">
+      <h3>Decals</h3>
+      <div class="chips" data-cu="decal">${DECALS.map((d) => `<button class="chip" data-v="${d.id}">${d.name}</button>`).join('')}</div>
+      <h3>Number plate</h3>
+      <div class="range-row"><input type="text" id="cu-plate" maxlength="9" autocomplete="off" spellcheck="false" placeholder="Your plate" /></div>
+    </div>
+    <div class="cupage" data-cupage="cabin">
+      <h3>Seats</h3>
+      <div class="swatches left">${LEATHERS.map((c) => `<button class="swatch" data-cu-leather="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
+      <h3>Trim</h3>
+      <div class="chips" data-cu="trim"><button class="chip" data-v="black">Piano black</button><button class="chip" data-v="wood">Wood</button><button class="chip" data-v="carbon">Carbon</button><button class="chip" data-v="alu">Aluminium</button></div>
+      <h3>Ambient lighting <small>at night</small></h3>
+      <div class="swatches left">${AMBIENTS.map((c) => `<button class="swatch${c ? '' : ' off'}" data-cu-ambient="${c}" style="background:${c ? hex(c) : '#2a2b2f'}">${c ? '' : '✕'}</button>`).join('')}</div>
+    </div>
+    <button class="ghost small cu-reset" id="cu-reset">Reset to factory</button>
   </div>
 </aside>
 
@@ -457,7 +472,10 @@ export class UI {
   private frameGarage() {
     const w = window.innerWidth, h = window.innerHeight;
     const head = $('#garage .title').getBoundingClientRect();
-    const panel = $('.gpanel').getBoundingClientRect();
+    // (layout box, ignoring the slide-in transform, so it's right even mid-animation)
+    const el = document.body.classList.contains('customising') ? $('#custom') : $('.gpanel');
+    const box = el.getBoundingClientRect();
+    const panel = el.id === 'custom' ? { top: el.offsetTop, left: el.offsetLeft } : box;
     const top = head.bottom;
     if (w > h) {
       // Landscape: left of the panel
@@ -471,10 +489,22 @@ export class UI {
 
   private open(id: string) {
     for (const s of $$('.sheet', this.root)) s.classList.toggle('hidden', s.id !== id);
+    this.docked();
   }
 
   private close(id: string) {
     $('#' + id).classList.add('hidden');
+    if (id === 'custom' && this.game.openState.door && this.cuTabId === 'cabin') this.game.setOpen('door', false);
+    this.docked();
+  }
+
+  /** While customising, the garage menu steps aside and the car moves into the space left over. */
+  private docked() {
+    const on = !$('#custom').classList.contains('hidden');
+    document.body.classList.toggle('customising', on);
+    // (again once the sheet has finished sliding in)
+    requestAnimationFrame(() => this.frameGarage());
+    setTimeout(() => this.frameGarage(), 360);
   }
 
   private back() {
@@ -721,6 +751,8 @@ export class UI {
       const key = g.dataset.cu as keyof Custom;
       for (const b of $$('[data-v]', g)) b.onclick = () => this.customise({ [key]: b.dataset.v } as Partial<Custom>);
     }
+    for (const b of $$('[data-cutab]', r)) b.onclick = () => this.cuTab(b.dataset.cutab!);
+    this.cuTab('paint');
     for (const b of $$('[data-openpart]', r)) {
       b.onclick = () => {
         const part = b.dataset.openpart as 'door' | 'bonnet' | 'boot';
@@ -745,6 +777,19 @@ export class UI {
 
   private rideLabel(v: number) {
     return v === 0 ? 'Standard' : v < 0 ? `Lowered ${Math.round(-v * 100)} cm` : `Raised ${Math.round(v * 100)} cm`;
+  }
+
+  private cuTabId = 'paint';
+
+  /** Customisation sections; the interior one opens the door so you can see in. */
+  private cuTab(id: string) {
+    const was = this.cuTabId;
+    this.cuTabId = id;
+    for (const b of $$('[data-cutab]')) b.classList.toggle('on', b.dataset.cutab === id);
+    for (const p of $$('[data-cupage]')) p.classList.toggle('on', p.dataset.cupage === id);
+    if (id === 'cabin' && !this.game.openState.door) this.game.setOpen('door', true);
+    if (was === 'cabin' && id !== 'cabin' && this.game.openState.door) this.game.setOpen('door', false);
+    this.refreshCustom();
   }
 
   private refreshCustom() {
