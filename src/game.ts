@@ -1226,7 +1226,8 @@ export class Game {
         }
         if (ok) p = { kind: 'quad', corners: pts.map((q) => [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10] as [number, number]) };
       } else if (this.settings.pip) {
-        const width = Math.min(340, W * (W > H ? 0.34 : 0.6));
+        // Small enough to stay clear of the driving buttons along the bottom
+        const width = Math.max(120, Math.min(340, W * (W > H ? 0.34 : 0.6), ((H - (W > H ? (this.settings.auto ? 110 : 225) : 330) - this.pipY) * 16) / 9));
         p = { kind: 'pip', x: 12, y: this.pipY, width };
       }
     }

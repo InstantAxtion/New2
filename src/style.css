@@ -655,3 +655,12 @@ body.zen .take-over, body.theatre-on .take-over { display: none !important; }
   body.auto-mode .hud-tl, .hud-tl { top: calc(64px + var(--safe-t)); }
   .nowbar, body.auto-mode .nowbar { max-width: calc(100vw - 24px); }
 }
+
+/* Lyrics: up in the sky, clear of the speedometer, driving buttons and the small video */
+.lyrics { bottom: auto; top: calc(70px + var(--safe-t)); width: min(56vw, 560px); text-shadow: 0 2px 10px rgba(0,0,0,.7); }
+body.cc-on .lyrics, body.auto-mode .lyrics { top: calc(70px + var(--safe-t)); }
+@media (orientation: portrait) { .lyrics { top: calc(300px + var(--safe-t)); width: calc(100vw - 32px); } }
+@media (orientation: landscape) {
+  .lyrics { left: auto; right: calc(14px + var(--safe-r)); top: calc(64px + var(--safe-t)); width: min(42vw, 460px); text-align: right; transform: translateY(8px); }
+  .lyrics.on { transform: none; }
+}
