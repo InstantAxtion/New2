@@ -253,6 +253,25 @@ export class CarModel {
     b.add(this.headlight, this.headlight.target);
   }
 
+  /** Where the windscreen glass is (body coordinates): middles of its bottom and top edges, and widths there. */
+  get windscreen() {
+    const s = this.spec, P = profile(s);
+    if (s.open) {
+      // The little screen in its chrome frame
+      const c = new THREE.Vector3(0, s.belt + 0.22, s.A - 0.08);
+      const up = new THREE.Vector3(0, Math.cos(0.6), -Math.sin(0.6)).multiplyScalar(0.2);
+      const w = s.width * 0.84;
+      return { bottom: c.clone().sub(up), top: c.clone().add(up), wBottom: w, wTop: w };
+    }
+    const yb = P.belt(s.A) + 0.04, yt = P.top(s.B) - 0.04;
+    return {
+      bottom: new THREE.Vector3(0, yb, s.A - 0.03),
+      top: new THREE.Vector3(0, yt, s.B + 0.03),
+      wBottom: P.half(s.A) * 1.72,
+      wTop: P.half(s.B) * (s.tumble ?? 0.78) * 1.8,
+    };
+  }
+
   setColor(hex: number) {
     this.paint.color.setHex(hex);
   }

@@ -285,6 +285,8 @@ export class Game {
       this.car.dispose();
     }
     this.car = new CarModel(spec, custom, this.tier);
+    const ws = this.car.windscreen;
+    this.glass.fit(ws.bottom, ws.top, ws.wBottom, ws.wTop);
     this.engine.setProfile(spec.engine);
     this.scene.add(this.car.group);
     this.rig.car = this.car;
@@ -640,7 +642,7 @@ export class Game {
       let cold = 0;
       for (const { biome, w } of this.world.weights(v.z)) if (biome.id === 'winter' || biome.id === 'alpine') cold += w;
       const covered = this.world.tunnelAt(v.z) > 0.45;
-      this.glass.update(dt, this.elapsed, this.camera, this.car.inside && this.rig.mode === 'hood' && this.phase !== 'garage', {
+      this.glass.update(dt, this.elapsed, this.car.body, this.car.inside && this.rig.mode === 'hood' && this.phase !== 'garage', {
         rain: covered ? 0 : Math.min(1, wx.look.rain + wx.look.snow * 0.5),
         wiper: ((Math.sin(this.wipePhase) * 0.5 + 0.5) * Math.PI),
         misty: wx.look.rain > 0.3 || wx.look.snow > 0.3 || wx.kind === 'fog' || (cold > 0.5 && this.sky.night > 0.5),

@@ -23,6 +23,7 @@ uniform float uFog;
 uniform float uDemist;
 uniform float uNight;
 uniform vec3 uDash;
+uniform float uTaper;
 uniform vec4 uLeaf[6];
 uniform vec3 uLeafCol[6];
 varying vec2 vUv;
@@ -30,13 +31,16 @@ varying vec2 vUv;
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
 void main() {
+  // Only on the glass: the windscreen narrows towards the top
+  float halfW = 0.5 * mix(1.0, uTaper, vUv.y);
+  if (abs(vUv.x - 0.5) > halfW) discard;
   vec2 p = vec2(vUv.x * uAspect, vUv.y);
   vec3 col = vec3(0.0);
   float alpha = 0.0;
   // Raindrops in two sizes; each appears some time after the wiper last passed over it
   if (uRain > 0.01) {
     for (int s = 0; s < 2; s++) {
-      float scale = s == 0 ? 14.0 : 30.0;
+      float scale = s == 0 ? 8.0 : 17.0;
       vec2 g = p * scale;
       vec2 id = floor(g);
       vec2 f = fract(g) - 0.5;
@@ -113,6 +117,7 @@ export class Windscreen {
       uTime: { value: 0 }, uRain: { value: 0 }, uSec: { value: new Array(SECTORS).fill(-100) },
       uAspect: { value: 1 }, uFog: { value: 0 }, uDemist: { value: 0 }, uNight: { value: 0 },
       uDash: { value: new THREE.Color(1, 0.6, 0.25) },
+      uTaper: { value: 1 },
       uLeaf: { value: Array.from({ length: 6 }, () => new THREE.Vector4()) },
       uLeafCol: { value: Array.from({ length: 6 }, () => new THREE.Color()) },
     };
@@ -132,7 +137,23 @@ export class Windscreen {
   /** Things stuck on the glass: x, y (0..1 across the view), angle, kind (1 leaf/petal, 2 bug), colour. */
   private stuck: { x: number; y: number; a: number; kind: number; col: THREE.Color; slide: number }[] = [];
 
-  update(dt: number, time: number, cam: THREE.PerspectiveCamera, on: boolean, o: { rain: number; wiper: number; misty: boolean; night: number; open: boolean; dash: number; leaves?: number; petals?: number; bugs?: number; speed?: number }) {
+  /** The windscreen's shape in the car (body coordinates). */
+  private shape = { w: 1.3, h: 0.7, taper: 0.85, matrix: new THREE.Matrix4() };
+
+  /** Lay the effects on this car's windscreen: from the middle of its bottom edge to the middle of its top edge. */
+  fit(bottom: THREE.Vector3, top: THREE.Vector3, wBottom: number, wTop: number) {
+    const X = new THREE.Vector3(-1, 0, 0); // across, to the driver's right
+    const Y = top.clone().sub(bottom);
+    const h = Y.length();
+    Y.normalize();
+    const N = new THREE.Vector3().crossVectors(X, Y); // faces in, towards the driver
+    // A hair inside the glass so it sits on it without flickering
+    const centre = bottom.clone().add(top).multiplyScalar(0.5).addScaledVector(N, 0.012);
+    this.shape = { w: wBottom, h, taper: wTop / wBottom, matrix: new THREE.Matrix4().makeBasis(X, Y, N).setPosition(centre) };
+    this.mesh.matrixAutoUpdate = false;
+  }
+
+  update(dt: number, time: number, body: THREE.Object3D, on: boolean, o: { rain: number; wiper: number; misty: boolean; night: number; open: boolean; dash: number; leaves?: number; petals?: number; bugs?: number; speed?: number }) {
     // Now and then something lands on the windscreen; the wind of driving slides it up and off
     const sp = o.speed ?? 0;
     const land = (rate: number, kind: number, col: THREE.Color) => {
@@ -162,7 +183,7 @@ export class Windscreen {
       }
       // The wipers sweep away anything stuck on the glass
       this.stuck = this.stuck.filter((l) => {
-        const ang = Math.atan2(l.y + 0.15, (l.x - 0.5) * (cam.aspect || 1));
+        const ang = Math.atan2(l.y + 0.15, (l.x - 0.5) * (this.shape.w / this.shape.h));
         return !(ang >= lo && ang <= hi);
       });
     }
@@ -189,13 +210,12 @@ export class Windscreen {
       if (l) u.uLeafCol.value[i].copy(l.col);
     }
     if (!on) return;
-    // Fill the view at this distance, facing the camera
-    const d = 1.4;
-    const hgt = 2 * d * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
-    this.mesh.position.copy(cam.position);
-    this.mesh.quaternion.copy(cam.quaternion);
-    this.mesh.translateZ(-d);
-    this.mesh.scale.set(hgt * cam.aspect, hgt, 1);
-    u.uAspect.value = cam.aspect;
+    // On the glass itself: fixed to the car's windscreen, so it stays there when you look around
+    const sh = this.shape;
+    body.updateWorldMatrix(true, false);
+    this.mesh.matrix.multiplyMatrices(body.matrixWorld, sh.matrix).scale(new THREE.Vector3(sh.w, sh.h, 1));
+    this.mesh.matrixWorld.copy(this.mesh.matrix);
+    u.uAspect.value = sh.w / sh.h;
+    u.uTaper.value = sh.taper;
   }
 }

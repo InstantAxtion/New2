@@ -19,6 +19,7 @@ export class CameraRig {
   yaw = 0;
   pitch = 0;
   dragging = false;
+  private still = 0;
   private pos = new THREE.Vector3();
   private offset = new THREE.Vector3();
   private lookOff = new THREE.Vector3();
@@ -105,7 +106,13 @@ export class CameraRig {
       this.cam.near = near;
       this.cam.updateProjectionMatrix();
     }
-    // The view stays wherever you drag it (double-tap to look straight ahead again)
+    // The view stays wherever you drag it (double-tap to look straight ahead again), except that
+    // the 3rd-person camera swings back round behind the car a few seconds after you let go while driving
+    this.still = this.dragging ? 0 : this.still + dt;
+    if (this.mode !== 'hood' && Math.abs(v.v) > 4 && this.still > 2.5) {
+      this.yaw = Math.atan2(Math.sin(this.yaw), Math.cos(this.yaw));
+      this.yaw *= Math.exp(-dt * 1.2);
+    }
     const fx = Math.sin(v.heading), fz = Math.cos(v.heading);
     const desired = new THREE.Vector3();
     const target = new THREE.Vector3(v.x, v.y + 1, v.z);
