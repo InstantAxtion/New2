@@ -849,17 +849,32 @@ export class Game {
   private holdT = 0;
   private holdDir = 0;
 
+  /** Cruise control while you drive: holds the set speed (vehicle.cruise); GAS goes faster, BRAKE cancels. */
+  ccOn = false;
+  onCruise: (on: boolean) => void = () => {};
+
   /** Your controls. Steering buttons are progressive: a tap nudges, holding turns harder. */
   private manual(dt: number): Controls {
-    const c = this.input;
-    if (this.settings.steering === 'tilt' && Math.abs(c.steer) < 1) return c;
-    const dir = Math.sign(c.steer);
-    if (dir !== this.holdDir) {
-      this.holdDir = dir;
-      this.holdT = 0;
+    let c = this.input;
+    if (!(this.settings.steering === 'tilt' && Math.abs(c.steer) < 1)) {
+      const dir = Math.sign(c.steer);
+      if (dir !== this.holdDir) {
+        this.holdDir = dir;
+        this.holdT = 0;
+      }
+      this.holdT += dt;
+      if (dir) c = { ...c, steer: dir * Math.min(1, 0.3 + this.holdT * 1.3) };
     }
-    this.holdT += dt;
-    return dir ? { ...c, steer: dir * Math.min(1, 0.3 + this.holdT * 1.3) } : c;
+    if (this.ccOn) {
+      if (c.brake > 0) {
+        this.ccOn = false;
+        this.onCruise(false);
+      } else {
+        const h = this.vehicle.holdSpeed(this.vehicle.cruise, 1, 0.3);
+        return { steer: c.steer, throttle: Math.max(c.throttle, h.throttle), brake: c.throttle > 0 ? 0 : h.brake };
+      }
+    }
+    return c;
   }
 
   private autoDrive(dt: number): Controls {

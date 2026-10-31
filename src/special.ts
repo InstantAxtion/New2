@@ -106,6 +106,44 @@ export function specialParts(type: PropType): SpecialPart[] | null {
   return parts;
 }
 
+/** A sign face: dark panel with neon-tube words and a border (the tube colour comes per instance). */
+function neonSign(): { base: THREE.Texture; glow: THREE.Texture } {
+  const W = 512, H = 256;
+  const words = ['OPEN 24H', 'NOODLES', 'HOTEL', 'DRIVE', 'ARCADE', 'DINER', 'CINEMA', 'KARAOKE'];
+  const draw = (lit: boolean) => {
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H * words.length;
+    const g = c.getContext('2d')!;
+    g.fillStyle = lit ? '#000' : '#16161b';
+    g.fillRect(0, 0, W, c.height);
+    words.forEach((w, i) => {
+      const y = i * H;
+      g.strokeStyle = lit ? '#fff' : '#3a3a42';
+      g.lineWidth = 7;
+      g.lineJoin = 'round';
+      g.strokeRect(22, y + 22, W - 44, H - 44);
+      g.font = 'bold 92px sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.lineWidth = 6;
+      g.strokeText(w, W / 2, y + H / 2 + 4);
+      if (lit) {
+        g.globalAlpha = 0.5;
+        g.fillText(w, W / 2, y + H / 2 + 4);
+        g.globalAlpha = 1;
+      }
+    });
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    // One word per sign: show an eighth of the strip
+    t.repeat.set(1, 1 / words.length);
+    t.offset.set(0, Math.floor(Math.random() * words.length) / words.length);
+    return t;
+  };
+  return { base: draw(false), glow: draw(true) };
+}
+
 /** Materials that glow at night; the game turns them up after dark. */
 export const nightGlow: { m: THREE.MeshStandardMaterial; day: number; night: number }[] = [];
 
@@ -114,26 +152,28 @@ export function specialMaterial(kind: SpecialMat): THREE.Material {
   switch (kind) {
     case 'building':
       m = new THREE.MeshStandardMaterial({ map: windows(false, 3), emissiveMap: windows(true, 3), emissive: 0xffffff, roughness: 0.35, metalness: 0.4, vertexColors: true });
-      nightGlow.push({ m, day: 0.05, night: 1.6 });
+      nightGlow.push({ m, day: 0.05, night: 1.0 });
       break;
     case 'roofTop':
       m = new THREE.MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.8, vertexColors: false });
       break;
     case 'neon': {
       // A random neon colour per instance comes from the instance colour
-      m = new THREE.MeshStandardMaterial({ color: 0x222226, emissive: 0xffffff, roughness: 0.4 });
+      // Neon tubing on a dark sign: only the lettering and outline glow, not the whole board
+      const sign = neonSign();
+      m = new THREE.MeshStandardMaterial({ color: 0xffffff, map: sign.base, emissive: 0xffffff, emissiveMap: sign.glow, roughness: 0.45 });
       m.onBeforeCompile = (sh) => {
         sh.fragmentShader = sh.fragmentShader.replace(
           '#include <emissivemap_fragment>',
           '#include <emissivemap_fragment>\n#ifdef USE_INSTANCING_COLOR\n totalEmissiveRadiance *= vColor;\n#endif',
         );
       };
-      nightGlow.push({ m, day: 0.6, night: 3 });
+      nightGlow.push({ m, day: 0.25, night: 0.9 });
       break;
     }
     case 'lampHead':
       m = new THREE.MeshStandardMaterial({ color: 0xf2efe6, emissive: 0xffd9a0, roughness: 0.3 });
-      nightGlow.push({ m, day: 0, night: 6 });
+      nightGlow.push({ m, day: 0, night: 2.6 });
       break;
     default:
       m = new THREE.MeshStandardMaterial({ color: 0x4a4d52, roughness: 0.5, metalness: 0.6 });

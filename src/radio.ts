@@ -1,3 +1,5 @@
+import { openTrack, type Track } from './bgaudio';
+
 // Built-in internet radio: free, listener-supported SomaFM stations (somafm.com).
 
 export interface Station {
@@ -38,7 +40,7 @@ export const STATIONS: Station[] = [
 ];
 
 export class Radio {
-  private audio: HTMLAudioElement | null = null;
+  private audio: Track | null = null;
   station: Station | null = null;
   playing = false;
   error = '';
@@ -47,12 +49,15 @@ export class Radio {
 
   play(st: Station) {
     this.stop();
-    const a = new Audio(`https://ice1.somafm.com/${st.id}-128-mp3`);
-    a.preload = 'none';
+    const a = openTrack(`https://ice1.somafm.com/${st.id}-128-mp3`, { title: st.name, subtitle: `📻 ${st.about}`, live: true });
     a.volume = this.vol;
     a.onplaying = () => {
       this.playing = true;
       this.error = '';
+      this.onChange();
+    };
+    a.onpause = () => {
+      this.playing = false;
       this.onChange();
     };
     a.onerror = () => {
@@ -70,10 +75,20 @@ export class Radio {
     this.onChange();
   }
 
+  /** Pause or carry on (a station keeps its place in the list while paused). */
+  toggle() {
+    const a = this.audio;
+    if (!a) {
+      if (this.station) this.play(this.station);
+      return;
+    }
+    if (a.paused) void a.play().catch(() => {});
+    else a.pause();
+  }
+
   stop() {
     if (this.audio) {
-      this.audio.pause();
-      this.audio.src = '';
+      this.audio.stop();
       this.audio = null;
     }
     this.playing = false;

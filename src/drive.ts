@@ -21,6 +21,8 @@ export const STYLES: Record<'relaxed' | 'normal' | 'sporty', DriveStyle> = {
 };
 
 /** What auto-drive needs to know about the road around it. */
+export type CruiseLimit = 'top' | 'bend' | 'limit' | 'traffic' | 'stop' | null;
+
 export interface AutoEnv {
   /** The vehicle ahead in our lane. */
   leader: { gap: number; v: number } | null;
@@ -152,23 +154,50 @@ export class Vehicle {
 
   /** Controls the autopilot would use right now. */
   autopilot(env: AutoEnv | null = null, style: DriveStyle = STYLES.normal): Controls {
-    let target = Math.min(this.cruise, this.vmax, this.safeSpeed(style.lat));
+    // Work out what's holding the speed down (shown under the speedometer)
+    let target = Math.min(this.cruise, this.vmax * 0.97);
+    let why: CruiseLimit = target < this.cruise - 0.5 ? 'top' : null;
+    const lim = (v: number, w: CruiseLimit) => {
+      if (v < target - 0.3) {
+        target = v;
+        why = w;
+      }
+    };
+    lim(this.safeSpeed(style.lat), 'bend');
+    let urgent = false;
     if (env) {
-      target = Math.min(target, env.limit);
+      lim(env.limit, 'limit');
       if (env.leader) {
         // Keep a time gap to the vehicle ahead
         const want = 5 + Math.max(this.v, 0) * style.gap;
-        target = Math.min(target, Math.max(0, env.leader.v + (env.leader.gap - want) * 0.35));
+        lim(Math.max(0, env.leader.v + (env.leader.gap - want) * 0.35), 'traffic');
+        urgent = env.leader.gap < 8 + this.v * 0.6;
       }
-      if (env.stopIn !== null) target = Math.min(target, Math.sqrt(Math.max(0, 2 * 3.5 * (env.stopIn - 5))));
+      if (env.stopIn !== null) lim(Math.sqrt(Math.max(0, 2 * 3.5 * (env.stopIn - 5))), 'stop');
     }
+    this.limitedBy = why;
+    const c = this.holdSpeed(target, style.throttle, style.brake);
+    if (urgent) c.brake = clamp(c.brake + 0.4, 0, 1);
+    return { steer: this.pursuit(this.lane), throttle: urgent ? 0 : c.throttle, brake: c.brake };
+  }
+
+  /** Why auto-drive (or cruise control) is going slower than the set speed. */
+  limitedBy: CruiseLimit = null;
+
+  /**
+   * Pedals that hold a speed: enough throttle to balance drag and hills (so it settles right on
+   * the set speed), plus a nudge to close any gap; gentle braking going downhill.
+   */
+  holdSpeed(target: number, maxThrottle = 1, maxBrake = 0.75): { throttle: number; brake: number } {
+    const s = this.spec;
+    const v = Math.max(this.v, 0);
+    const need = 0.15 + 0.00042 * v * v + G * Math.sin(this.pitch) * 0.6;
+    const pull = s.accel * Math.max(0.05, 1 - (v / this.vmax) ** 2);
+    const hold = clamp(need / pull, 0, 1);
     const e = target - this.v;
-    const urgent = env?.leader && env.leader.gap < 8 + this.v * 0.6;
-    return {
-      steer: this.pursuit(this.lane),
-      throttle: e > 0 ? clamp(e * 0.35, 0, style.throttle) : 0,
-      brake: e < -1 || urgent ? clamp(-e * 0.15 + (urgent ? 0.4 : 0), 0, urgent ? 1 : style.brake) : 0,
-    };
+    if (target < 0.3) return { throttle: 0, brake: this.v > 0.05 ? clamp(0.3 - e * 0.15, 0, maxBrake) : 0 };
+    if (e < -0.8) return { throttle: 0, brake: clamp(-e * 0.15, 0, maxBrake) };
+    return { throttle: clamp(hold + clamp(e * 0.35, -hold, maxThrottle), 0, 1), brake: 0 };
   }
 
   /** Steering assist settles back into the right-hand lane (off while overtaking or on a highway). */

@@ -439,3 +439,20 @@ body.customising .gpanel { visibility: hidden; }
   .cutab { padding: 6px 2px; }
   .sheet.dock .sheet-head { margin-bottom: 4px; }
 }
+
+/* Cruise speed: bottom right in auto-drive; above the pedals with cruise control on */
+.cruise { position: absolute; right: calc(14px + var(--safe-r)); bottom: calc(14px + var(--safe-b)); pointer-events: auto; display: none; }
+body.auto-mode .cruise { display: flex; }
+body.cc-on:not(.auto-mode) .cruise { display: flex; bottom: calc(110px + var(--safe-b)); }
+body.zen .cruise, body[data-screen="pause"] .cruise { opacity: 0; pointer-events: none; }
+.cruise .pad.small { width: 52px; height: 52px; font-size: 24px; display: flex; align-items: center; justify-content: center; }
+.manual #cc-btn { background: rgba(255,255,255,.08); border-color: var(--line); }
+.manual #cc-btn.on { background: rgba(61,220,132,.25); border-color: rgba(61,220,132,.7); }
+@media (orientation: portrait) { body.cc-on:not(.auto-mode) .cruise { bottom: calc(190px + var(--safe-b)); } }
+.manual .mid-pads .auto-pad { width: 60px; height: 60px; font-size: 19px; }
+@media (orientation: portrait) { .manual .mid-pads .auto-pad { width: 52px; height: 52px; font-size: 17px; } }
+@media (orientation: portrait) {
+  .manual .mid-pads { position: absolute; left: 50%; transform: translateX(-50%); bottom: 146px; flex-direction: row; margin: 0; }
+  body:not(.auto-mode) .speedo { bottom: calc(206px + var(--safe-b)); }
+  body.cc-on:not(.auto-mode) .cruise { bottom: calc(290px + var(--safe-b)); right: 50%; transform: translateX(50%); }
+}

@@ -215,7 +215,6 @@ export class UI {
     <button class="icon" data-open="music" aria-label="Music">🎵</button>
     <button class="icon" id="tv-btn" aria-label="Watch the music video on the dashboard">📺</button>
     <button class="icon wide" id="cam-btn">🎥 <span class="lbl" id="cam-label"></span></button>
-    <button class="icon wide" id="mode-btn"><span id="mode-ico"></span> <span class="lbl" id="mode-label"></span></button>
     <button class="icon" id="zen-btn" aria-label="Hide controls">👁️</button>
     <button class="icon" id="pause-btn" aria-label="Pause">⏸</button>
   </div>
@@ -232,6 +231,7 @@ export class UI {
     <div class="tilt-note" id="tilt-note">Tilt to steer<button class="ghost small" id="tilt-zero">Re-centre</button></div>
     <div class="mid-pads">
       <button class="pad auto-pad" id="auto-on" aria-label="Turn on auto-drive">🤖<span>AUTO</span></button>
+      <button class="pad auto-pad" id="cc-btn" aria-label="Cruise control">⏱️<span>CRUISE</span></button>
       <button class="pad auto-pad" id="assist-btn" aria-label="Steering assist">🛟<span id="assist-lbl">ASSIST</span></button>
     </div>
     <div class="pedals">
@@ -246,11 +246,11 @@ export class UI {
       <button class="pad small" id="sleep-btn" aria-label="Sleep timer">🌙<span id="sleep-lbl">Sleep</span></button>
       <button class="pad small" id="lane-btn" aria-label="Change lane">⇆<span>Lane</span></button>
     </div>
-    <div class="cruise">
-      <button class="pad small" id="slower" aria-label="Slower">−</button>
-      <div class="cruise-val"><b id="cruise">80</b><span>cruise</span></div>
-      <button class="pad small" id="faster" aria-label="Faster">+</button>
-    </div>
+  </div>
+  <div class="cruise" id="cruise-box">
+    <button class="pad small" id="slower" aria-label="Slower">−</button>
+    <div class="cruise-val"><b id="cruise">80</b><span id="cruise-lbl">cruise</span></div>
+    <button class="pad small" id="faster" aria-label="Faster">+</button>
   </div>
   <div class="cabin-btns">
     <button class="pad small" id="win-btn" aria-label="Windows">🪟<span>Windows</span></button>
@@ -912,7 +912,6 @@ export class UI {
       this.save();
       this.refreshHud();
     };
-    $('#mode-btn', r).onclick = () => this.setAuto(!this.s.auto);
     $('#auto-on', r).onclick = () => this.setAuto(true);
     $('#assist-btn', r).onclick = () => {
       this.s.assist = !this.s.assist;
@@ -966,6 +965,11 @@ export class UI {
       this.save();
       this.refreshHud();
     };
+    $('#cc-btn', r).onclick = () => this.setCruise(!this.game.ccOn);
+    this.game.onCruise = (on) => {
+      this.refreshHud();
+      if (!on) this.toast('Cruise control off');
+    };
     $('#slower', r).onclick = () => cruise(-1);
     $('#faster', r).onclick = () => cruise(1);
     $('#lane-btn', r).onclick = () => (this.game.vehicle.lane *= -1);
@@ -1012,8 +1016,16 @@ export class UI {
       window.setTimeout(() => ($('#fav-btn').textContent = '☆'), 2500);
       this.toast(`Saved<b>★ ${esc(name)}</b>`);
     };
-    $('#nb-toggle', r).onclick = () => this.videos.toggle();
-    $('#nb-next', r).onclick = () => this.videos.next();
+    $('#nb-toggle', r).onclick = () => this.toggleAudio();
+    $('#nb-next', r).onclick = () => {
+      const src = this.audioSource();
+      if (src === 'videos') this.videos.next();
+      else if (src === 'podcasts') this.podcasts.skip(30);
+      else if (src === 'radio' && this.radio.station) {
+        const i = STATIONS.indexOf(this.radio.station);
+        this.radio.play(STATIONS[(i + 1) % STATIONS.length]);
+      }
+    };
   }
 
   /** 📺: into the driver's seat, then look at the dashboard screen, then back out. */
@@ -1044,11 +1056,31 @@ export class UI {
     this.refreshHud();
   }
 
+  /** Cruise control in manual: hold the speed you're doing now (rounded to 5 mph / 10 km/h). */
+  private setCruise(on: boolean) {
+    const v = this.game.vehicle;
+    if (on) {
+      if (v.v < 4) {
+        this.toast('Get moving first<b>then tap CRUISE to hold that speed</b>');
+        return;
+      }
+      const k = this.s.units === 'mph' ? 0.621371 : 1;
+      const step = this.s.units === 'mph' ? 5 : 10;
+      v.cruise = Math.max(step, Math.round((v.v * 3.6 * k) / step) * step) / k / 3.6;
+      this.s.cruiseKmh = v.cruise * 3.6;
+      this.save();
+    }
+    this.game.ccOn = on;
+    this.refreshHud();
+    this.toast(on ? 'Cruise control on<b>GAS to go faster · BRAKE to cancel</b>' : 'Cruise control off');
+  }
+
   private sleepMin = 0;
   private sleepVol = 1;
 
   private setAuto(on: boolean) {
     this.s.auto = on;
+    this.game.ccOn = false;
     const v = this.game.vehicle;
     if (on) {
       v.lane = v.nearestLane();
@@ -1209,8 +1241,6 @@ export class UI {
     document.body.classList.toggle('minimal-hud', this.s.minimalHud);
     document.body.classList.toggle('no-compass', !this.s.compass);
     this.refreshCabin();
-    $('#mode-ico').textContent = this.s.auto ? '🤖' : '🕹️';
-    $('#mode-label').textContent = this.s.auto ? 'Auto' : 'Manual';
     $('#style-ico').textContent = STYLE_LABEL[this.s.driveStyle].split(' ')[0];
     $('#style-lbl').textContent = STYLE_LABEL[this.s.driveStyle].split(' ')[1];
     $('#sleep-lbl').textContent = this.sleepMin ? `${this.sleepMin}m` : 'Sleep';
@@ -1221,6 +1251,8 @@ export class UI {
     $('#unit').textContent = this.s.units === 'mph' ? 'mph' : 'km/h';
     const k = this.s.units === 'mph' ? 0.621371 : 1;
     $('#cruise').textContent = String(Math.round(this.s.cruiseKmh * k));
+    document.body.classList.toggle('cc-on', this.game.ccOn && !this.s.auto);
+    $('#cc-btn').classList.toggle('on', this.game.ccOn);
   }
 
   private tick() {
@@ -1228,7 +1260,10 @@ export class UI {
     const v = g.vehicle;
     const k = this.s.units === 'mph' ? 0.621371 : 1;
     $('#speed').textContent = String(Math.round(Math.abs(v.v) * 3.6 * k));
-    $('#speed-note').textContent = v.v < -0.5 ? 'R' : v.offroad ? 'off-road' : '';
+    // Say why auto-drive is under the set speed, so cruise control never seems broken
+    const held = this.s.auto && v.v < v.cruise - 1.5 ? v.limitedBy : null;
+    const why = held === 'bend' ? '↪ bend ahead' : held === 'limit' ? 'speed limit' : held === 'traffic' ? 'following traffic' : held === 'stop' ? 'stopping' : held === 'top' ? 'top speed' : '';
+    $('#speed-note').textContent = v.v < -0.5 ? 'R' : v.offroad ? 'off-road' : why;
     $('#odo').textContent = `${((v.odometer / 1000) * k).toFixed(1)} ${this.s.units === 'mph' ? 'mi' : 'km'}`;
     // Fuel (or charge), and where the next station is when it's getting low
     const ev = v.spec.engine === 'ev';
@@ -1279,17 +1314,53 @@ export class UI {
     const tl = $('.hud-tl').getBoundingClientRect();
     g.pipY = Math.round(tl.bottom + 8);
     const np = this.videos.now();
+    // What's playing, with play/pause and next, whatever the source
     const bar = $('#nowbar');
-    bar.classList.toggle('on', this.videos.active);
-    if (this.videos.active) {
-      $('#nowbar-text').textContent = np.song ? `📺 ${np.song.title} · ${np.song.artist}` : np.video ? `📺 ${np.video.title}` : '📺 Music videos';
-    }
+    const src = this.audioSource();
+    bar.classList.toggle('on', src !== null);
+    const label =
+      src === 'videos' ? (np.song ? `📺 ${np.song.title} · ${np.song.artist}` : np.video ? `📺 ${np.video.title}` : '📺 Music videos')
+      : src === 'podcasts' ? `🎙️ ${this.podcasts.episode?.title ?? ''}`
+      : src === 'radio' ? `📻 ${this.radio.station?.name ?? ''}`
+      : src === 'spotify' ? '🎧 Spotify' : '';
+    const txt = $('#nowbar-text');
+    if (txt.textContent !== label) txt.textContent = label;
+    const paused = src === 'podcasts' ? !this.podcasts.playing : src === 'radio' ? !this.radio.playing : src === 'spotify' ? this.spotifyPaused : false;
+    const tb = $('#nb-toggle');
+    const ico = paused ? '▶' : '⏸';
+    if (tb.textContent !== ico && src !== 'videos') tb.textContent = ico;
+    if (src === 'videos' && tb.textContent !== '⏯') tb.textContent = '⏯';
+    $('#nb-next').style.display = src === 'spotify' ? 'none' : '';
     if (g.struggling() && this.s.quality !== 'low') {
       this.s.quality = this.s.quality === 'ultra' ? 'high' : this.s.quality === 'high' ? 'medium' : 'low';
       g.setQuality(this.s.quality);
       this.save();
       this.refreshSettings();
       this.toast(`Graphics lowered to ${this.s.quality} to keep things smooth`);
+    }
+  }
+
+  /** Which sound source the now-playing bar controls, if any. */
+  private audioSource(): 'videos' | 'podcasts' | 'radio' | 'spotify' | null {
+    if (this.videos.active) return 'videos';
+    if (this.s.musicMode === 'podcasts' && this.podcasts.episode) return 'podcasts';
+    if (this.s.musicMode === 'radio' && this.radio.station) return 'radio';
+    if (this.s.musicMode === 'spotify' && $('#sp-player iframe')) return 'spotify';
+    return null;
+  }
+
+  private spotifyPaused = false;
+
+  /** Play/pause for whatever's on: videos, a podcast, the radio or the Spotify player. */
+  private toggleAudio() {
+    const src = this.audioSource();
+    if (src === 'videos') this.videos.toggle();
+    else if (src === 'podcasts') this.podcasts.toggle();
+    else if (src === 'radio') this.radio.toggle();
+    else if (src === 'spotify') {
+      // The Spotify embed listens for the same commands its own iframe API sends
+      $<HTMLIFrameElement>('#sp-player iframe').contentWindow?.postMessage({ command: 'toggle' }, '*');
+      this.spotifyPaused = !this.spotifyPaused;
     }
   }
 
@@ -1361,7 +1432,7 @@ export class UI {
       if (e.key === 'c') $('#cam-btn').click();
       if (e.key === 'h') this.setZen(!this.zen);
       if (e.key === 'm') this.open('music');
-      if (e.key === ' ') $('#mode-btn').click();
+      if (e.key === ' ') this.setAuto(!this.s.auto);
       if (e.key === 'Escape') this.back();
       this.updateInput();
     });
@@ -1498,6 +1569,7 @@ export class UI {
 
   private embed(ref: SpotifyRef) {
     const tall = window.innerHeight > 560;
+    this.spotifyPaused = false;
     $('#sp-player').innerHTML = `<iframe title="Spotify player" src="${embedUrl(ref)}" width="100%" height="${tall ? 352 : 152}" frameborder="0"
       allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
   }

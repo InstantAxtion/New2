@@ -1,4 +1,5 @@
 import { CapacitorHttp, Capacitor } from '@capacitor/core';
+import { openTrack, type Track } from './bgaudio';
 
 // Podcasts: search the Apple Podcasts directory, read the show's RSS feed, and play episodes.
 
@@ -79,7 +80,7 @@ export async function loadEpisodes(show: Show): Promise<Episode[]> {
 }
 
 export class PodcastPlayer {
-  private audio: HTMLAudioElement | null = null;
+  private audio: Track | null = null;
   show: Show | null = null;
   episode: Episode | null = null;
   playing = false;
@@ -90,7 +91,7 @@ export class PodcastPlayer {
 
   play(show: Show, ep: Episode) {
     this.stop();
-    const a = new Audio(ep.url);
+    const a = openTrack(ep.url, { title: ep.title, subtitle: `🎙️ ${show.name}`, live: false });
     a.volume = this.vol;
     a.playbackRate = this.rate;
     a.onplaying = () => {
@@ -143,10 +144,7 @@ export class PodcastPlayer {
   }
 
   stop() {
-    if (this.audio) {
-      this.audio.pause();
-      this.audio.src = '';
-    }
+    if (this.audio) this.audio.stop();
     this.audio = null;
     this.playing = false;
     this.onChange();
