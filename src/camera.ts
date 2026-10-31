@@ -20,6 +20,8 @@ export class CameraRig {
   pitch = 0;
   dragging = false;
   private still = 0;
+  /** The heading the chase camera follows (lags the car's). */
+  private camHeading = 0;
   private pos = new THREE.Vector3();
   private offset = new THREE.Vector3();
   private lookOff = new THREE.Vector3();
@@ -125,7 +127,12 @@ export class CameraRig {
         const far = this.mode === 'far';
         const d = (far ? 15 : 6.2 + Math.abs(v.v) * 0.03) * (1 + this.pitch * 0.3);
         const h = (far ? 6.5 : 2.3) + this.pitch * 6;
-        const a = v.heading + Math.PI + this.yaw;
+        // The camera swings round after the car rather than being bolted to it, so in a turn
+        // you see the car itself rotate into the bend (and a little of its side)
+        if (this.first) this.camHeading = v.heading;
+        const dh = Math.atan2(Math.sin(v.heading - this.camHeading), Math.cos(v.heading - this.camHeading));
+        this.camHeading += dh * (1 - Math.exp(-dt * (this.calm ? 1.6 : 2.4)));
+        const a = this.camHeading + Math.PI + this.yaw;
         desired.set(v.x + Math.sin(a) * d, v.y + h, v.z + Math.cos(a) * d);
         target.set(v.x + fx * 4, v.y + (far ? 0.5 : 1.1), v.z + fz * 4);
         stiff = (far ? 3 : 6) * (this.calm ? 0.6 : 1);

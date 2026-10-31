@@ -168,9 +168,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); touch-action: auto
 }
 
 /* Music videos */
-#video { position: fixed; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; pointer-events: none; overflow: hidden;
+#video { position: fixed; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; pointer-events: none; overflow: hidden;
   background: #000; opacity: 0; z-index: 1; }
-#video iframe { width: 640px; height: 360px; border: 0; display: block; pointer-events: none; }
+#video iframe { width: 1280px; height: 720px; border: 0; display: block; pointer-events: none; }
 #ui { z-index: 2; }
 .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
 .tab { flex: 1; background: rgba(255,255,255,.07); border: 1px solid var(--line); border-radius: 12px; padding: 8px 6px; font-size: 14px; }
@@ -492,7 +492,9 @@ body.auto-mode .hud-tl .pill { display: none !important; }
 .ctile .lock { position: absolute; top: 6px; left: 6px; right: 6px; font-style: normal; font-size: 10.5px; font-weight: 600; background: rgba(0,0,0,.6); border-radius: 8px; padding: 2px 6px; text-align: center; }
 
 /* Cinema view for music videos: big, centred, the drive dimmed behind, controls underneath */
-#video.theatre { box-shadow: 0 0 0 100vmax rgba(0,0,0,.55); }
+/* The drive dims and softens behind the video */
+body.theatre-on #view { filter: brightness(.35) blur(3px); }
+#view { transition: filter .35s; }
 #video { transition: transform .35s ease, opacity .3s; }
 .theatre-bar { position: absolute; left: 50%; bottom: calc(14px + var(--safe-b)); transform: translateX(-50%); display: none; align-items: center; gap: 12px;
   background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 16px; padding: 8px 10px 8px 16px; max-width: calc(100vw - 24px); pointer-events: auto; z-index: 3; }
@@ -501,8 +503,42 @@ body.theatre-on .theatre-bar { display: flex; }
 .tb-btns { display: flex; gap: 6px; flex-shrink: 0; }
 body.theatre-on .manual, body.theatre-on .speedo, body.theatre-on .cruise, body.theatre-on .lyrics, body.theatre-on .hud-tl, body.theatre-on .region-card { display: none !important; }
 #nowbar-text { cursor: pointer; }
-@media (orientation: portrait) {
-  .theatre-bar { flex-direction: column; gap: 6px; padding: 8px 12px; }
-  .tb-title { max-width: 80vw; }
-}
+
 body.theatre-on .toast { display: none !important; }
+
+/* Cinema controls: title and time, a seek bar, buttons and volume, then what's up next */
+.theatre-bar { flex-direction: column; align-items: stretch; gap: 6px; width: min(720px, calc(100vw - 24px)); padding: 10px 12px; }
+.tb-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.tb-title { max-width: none; flex: 1; }
+.tb-time { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+#tb-seek { width: 100%; accent-color: var(--accent); margin: 0; touch-action: auto; }
+.tb-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tb-vol { display: flex; align-items: center; gap: 6px; flex: 1; max-width: 200px; font-size: 16px; }
+.tb-vol input { flex: 1; accent-color: var(--accent); touch-action: auto; }
+.tb-next { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; align-items: center; }
+.tb-next:empty { display: none; }
+.tb-next small { color: var(--muted); font-size: 11px; flex-shrink: 0; }
+.tb-next .chip { white-space: nowrap; flex-shrink: 0; font-size: 12px; padding: 5px 10px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.tb-next .chip i { color: var(--muted); font-style: normal; }
+.watch-btn { display: none; }
+body.video-on .watch-btn { display: inline-flex; }
+.watch-btn.on { background: var(--accent); color: #241400; }
+@media (orientation: portrait) {
+  .theatre-bar { width: calc(100vw - 24px); }
+  .tb-vol { max-width: 110px; }
+  .tb-row .icon { min-width: 40px; height: 40px; }
+}
+
+@media (orientation: landscape) {
+  .theatre-bar { display: none; flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 4px; width: min(980px, calc(100vw - 24px)); padding: 8px 10px; }
+  body.theatre-on .theatre-bar { display: flex; }
+  .tb-top { flex: 1 1 100%; }
+  #tb-seek { flex: 1 1 auto; width: auto; min-width: 120px; order: 2; }
+  .tb-row { order: 1; flex: 0 0 auto; }
+  .tb-row .tb-btns:last-child { order: 3; }
+  .tb-vol { max-width: 130px; }
+  .tb-next { flex: 1 1 100%; order: 4; }
+  .theatre-bar .icon { min-width: 38px; height: 38px; }
+}
+@media (orientation: portrait) { .tb-vol { display: none; } }
+body.theatre-on .hud-tr, body.theatre-on .hud-menu { display: none !important; }

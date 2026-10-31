@@ -248,6 +248,8 @@ export class Vehicle {
       else if (this.v > -6) a -= c.brake * 3; // reverse
     }
     a -= Math.sign(this.v) * (0.15 + 0.00042 * this.v * this.v + (this.offroad ? 1.8 : 0));
+    // Tyres scrub off a little speed in a hard turn
+    a -= Math.sign(this.v) * Math.abs(this.yawRate * this.v) * 0.05;
     a -= G * Math.sin(this.pitch) * 0.6;
     const nv = this.v + a * dt;
     // Don't let drag flip the direction of travel

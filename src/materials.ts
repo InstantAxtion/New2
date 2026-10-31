@@ -447,3 +447,37 @@ export function weatherPaint(m: THREE.Material, flake = 0) {
   };
   m.customProgramCacheKey = () => 'weather-paint';
 }
+
+/**
+ * Mirror glass: rounded corners, a slightly darker, blue-silvered edge, and for the rear-view
+ * mirror the frame of the back window (roof lining and pillars) around the view.
+ */
+export function mirrorMaterial(rear: boolean, aspect: number): THREE.MeshBasicMaterial {
+  const m = new THREE.MeshBasicMaterial({ color: 0x8c96a3 });
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vMirUv;')
+      .replace(
+        '#include <dithering_fragment>',
+        `#include <dithering_fragment>
+        {
+          vec2 q = (vMirUv - 0.5) * vec2(${aspect.toFixed(3)}, 1.0);
+          vec2 b = vec2(${(aspect / 2).toFixed(3)}, 0.5) - 0.12;
+          float d = length(max(abs(q) - b, 0.0)) - 0.12;
+          if (d > 0.0) discard;
+          // Silvered edge
+          float edge = smoothstep(-0.06, 0.0, d);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb * vec3(0.9, 0.95, 1.02), vec3(0.08, 0.09, 0.1), edge * 0.85);
+          ${rear ? `// The back window: dark headliner along the top, the pillars down the sides
+          float frame = max(smoothstep(0.72, 0.8, vMirUv.y), max(smoothstep(0.1, 0.03, vMirUv.x), smoothstep(0.9, 0.97, vMirUv.x)));
+          frame = max(frame, smoothstep(0.18, 0.1, vMirUv.y) * 0.85);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.06, 0.06, 0.07), frame);` : ''}
+        }`,
+      );
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vMirUv;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMirUv = uv;');
+  };
+  m.customProgramCacheKey = () => 'mirror' + (rear ? 'r' : 's') + aspect.toFixed(2);
+  return m;
+}

@@ -558,7 +558,9 @@ export class Game {
     const gloomy = this.sky.night > 0.25 || this.world.tunnelAt(v.z) > 0.3 || this.weather.look.fog < 0.45 || this.weather.look.rain > 0.5;
     this.lightsOn = this.phase !== 'garage' && (lm === 'on' || (lm === 'auto' && gloomy));
     this.car.animate(v.dist, v.steer, v.braking, this.lightsOn, v.wheelAngle);
-    this.car.headlight.intensity = this.lightsOn ? 260 * (0.35 + 0.65 * Math.max(this.sky.night, this.world.tunnelAt(v.z))) : 0;
+    const dark = Math.max(this.sky.night, this.world.tunnelAt(v.z), this.weather.look.fog < 0.45 ? 0.5 : 0);
+    this.car.headlight.intensity = this.lightsOn ? 260 * (0.35 + 0.65 * dark) : 0;
+    this.car.setLights(this.lightsOn ? 0.18 + 0.5 * dark : 0);
     this.car.setInside(this.phase !== 'garage' && this.rig.mode === 'hood');
     // Cabin mood lighting breathes gently with the music (about 120 bpm, with a little swing)
     {
@@ -1096,9 +1098,10 @@ export class Game {
   private mirrorSkip = 0;
   private renderMirrors() {
     const car = this.car;
-    if (!car.inside || this.settings.quality === 'low') return;
-    // Mirrors are small: refreshing them every other frame is plenty
-    if (++this.mirrorSkip % 2 === 1 && this.settings.quality !== 'ultra') return;
+    if (!car.inside) return;
+    // Mirrors are small: refreshing them every other frame is plenty (every fourth on low graphics)
+    const every = this.settings.quality === 'ultra' ? 1 : this.settings.quality === 'low' ? 4 : 2;
+    if (++this.mirrorSkip % every !== 0) return;
     if (!this.mirrorRT.length) {
       this.mirrorRT = [new THREE.WebGLRenderTarget(384, 106), new THREE.WebGLRenderTarget(192, 128), new THREE.WebGLRenderTarget(192, 128)];
       for (const rt of this.mirrorRT) rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
@@ -1139,8 +1142,9 @@ export class Game {
       cam.fov = i === 0 ? 22 : 30;
       cam.updateProjectionMatrix();
       // Look backwards (and a little outwards for the side mirrors)
+      // Side mirrors look back along the car, a sliver of its own flank showing on the inside edge
       const side = i === 0 ? 0 : i === 1 ? -1 : 1;
-      const dir = new THREE.Vector3(side * 0.25, -0.03, -1).applyQuaternion(q);
+      const dir = new THREE.Vector3(side * 0.16, -0.04, -1).applyQuaternion(q);
       cam.up.set(0, 1, 0).applyQuaternion(q);
       cam.lookAt(pos.clone().add(dir));
       // The rear-view mirror looks out through the back window: your own car (and its tail lights) isn't in it
@@ -1170,8 +1174,10 @@ export class Game {
     const W = window.innerWidth, H = window.innerHeight;
     if (scr.active && this.phase !== 'garage' && this.theatre) {
       // Cinema: big, flat and sharp in the middle of the screen, with room for the controls below
-      const width = Math.min(W - 24, ((H - 120) * 16) / 9, 1280);
-      p = { kind: 'theatre', x: (W - width) / 2, y: Math.max(12, (H - 70 - (width * 9) / 16) / 2), width };
+      // (leave room for the control panel underneath: ~150 px landscape, ~200 portrait)
+      const below = W > H ? (this.videos?.songs?.length ?? 0) > 1 ? 128 : 96 : 200;
+      const width = Math.min(W - 16, ((H - below - 20) * 16) / 9, 1600);
+      p = { kind: 'theatre', x: (W - width) / 2, y: Math.max(8, (H - below - (width * 9) / 16) / 2), width };
     } else if (scr.active && this.phase !== 'garage') {
       if (this.car.inside) {
         const m = this.car.screen;

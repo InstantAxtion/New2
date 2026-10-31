@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { profile } from './carbody';
+import { mirrorMaterial } from './materials';
 import type { CarSpec, Custom } from './carspecs';
 
 // The cabin as the driver sees it, built from the car's body shape and its cabin style.
@@ -210,13 +211,16 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   }
 
   // ---- Centre screen ----
-  const tablet = style === 'ev';
+  // Modern cars get a big landscape touchscreen standing on the dash (great for videos); classics keep a small in-dash one
+  const tablet = style !== 'classic';
   // Big screens: they're for watching music videos
   // Fit it between the instrument cluster and the passenger side, leaving room for the vents
   const left = driverX - 0.22, right = -inner(zF) + 0.12;
   const room = left - right - (tablet ? 0 : 0.3);
-  const wantW = tablet ? 0.52 : style === 'classic' ? 0.28 : style === 'luxury' ? Math.min(0.46, inner(zF) * 0.55) : Math.min(0.42, inner(zF) * 0.5);
-  const screenWidth = tablet ? wantW : Math.max(0.22, Math.min(wantW, room));
+  const wantW = tablet ? Math.min(0.6, inner(zF) * 0.72) : style === 'classic' ? 0.28 : style === 'luxury' ? Math.min(0.46, inner(zF) * 0.55) : Math.min(0.42, inner(zF) * 0.5);
+  // A standing screen must stay under the slope of the windscreen in front of it
+  const headroom = P.top(zF + 0.05) - 0.04 - (yT - 0.06);
+  const screenWidth = tablet ? Math.max(0.3, Math.min(wantW, headroom / 0.5625)) : Math.max(0.22, Math.min(wantW, room));
   const screenX = tablet ? 0 : Math.min(-0.04, (left + right) / 2);
   const cv = document.createElement('canvas');
   cv.width = 512; cv.height = 288;
@@ -225,18 +229,28 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   screenTex.colorSpace = THREE.SRGBColorSpace;
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.5625), new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false }));
   screen.scale.setScalar(screenWidth);
+  screen.userData.noFit = true;
   const bezel = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.62, tablet ? 0.05 : 0.08), style === 'classic' ? chrome : trimDark);
   bezel.position.z = -0.045;
   screen.add(bezel);
   let screenY: number;
   if (tablet) {
     // A landscape tablet standing on top of the dash, in the middle
-    screenY = yT + (screenWidth * 0.5625) / 2 + 0.035;
-    screen.position.set(0, screenY, zF + 0.07);
-    screen.rotation.set(-0.2, Math.PI - 0.12, 0, 'YXZ');
-    const stand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.05), trimDark);
-    stand.position.set(0, yT + 0.02, zF + 0.1);
+    // Mostly sunk into the dash top so it doesn't block the road, tilted back towards the driver
+    screenY = yT + (screenWidth * 0.5625) / 2 - 0.06;
+    screen.position.set(-0.02, screenY, zF + 0.05);
+    screen.rotation.set(-0.22, Math.PI - 0.16, 0, 'YXZ');
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.06), trimDark);
+    stand.position.set(-0.02, yT - 0.01, zF + 0.09);
     I.add(stand);
+    // Vents in the dash face below it
+    for (const vx of [-0.24, 0.0]) {
+      const vring = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.05, 0.025, 2, 0.01), style === 'sport' ? trimM : chrome);
+      vring.position.set(vx - 0.02, yT - 0.08, zF - 0.03);
+      const hole = new THREE.Mesh(new THREE.BoxGeometry(0.145, 0.036, 0.01), std(0x050506, 0.9));
+      hole.position.set(vx - 0.02, yT - 0.08, zF - 0.043);
+      I.add(vring, hole);
+    }
   } else {
     screenY = yT - 0.025 - (screenWidth * 0.5625) / 2;
     // Stands proud of the dash face (the face bulges out to about zF - 0.015 under the top)
@@ -246,7 +260,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     for (const x of [-1, 1]) {
       const vx = screenX + x * (screenWidth / 2 + 0.085);
       if (x > 0 && vx + 0.07 > left + 0.02) continue;
-      const vring = new THREE.Mesh(new RoundedBoxGeometry(0.13, 0.06, 0.025, 2, 0.01), style === 'sport' ? trimM : chrome);
+      const vring = new THREE.Mesh(new RoundedBoxGeometry(0.13, 0.06, 0.025, 2, 0.01), chrome);
       vring.position.set(vx, screenY + 0.02, zF - 0.03);
       const hole = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.046, 0.01), std(0x050506, 0.9));
       hole.position.set(vx, screenY + 0.02, zF - 0.043);
@@ -491,7 +505,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   // ---- Floor, door panels ----
   // Vans are roomy all the way back
   const zBack = s.open ? zF - 1.6 : style === 'van' ? s.C + 0.05 : Math.max(s.C - 0.2, zF - 2.4);
-  const floorLen = Math.max(2.4, zF - zBack + 0.2);
+  const floorLen = Math.min(Math.max(2.4, zF - zBack + 0.2), zF + 0.1 - (P.rear + 0.25));
   const floor = new THREE.Mesh(new THREE.BoxGeometry(inner(zF) * 2, 0.03, floorLen), carpet);
   floor.position.set(0, floorY, zF + 0.1 - floorLen / 2);
   I.add(floor);
@@ -568,7 +582,6 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   let sunroofPanel: THREE.Object3D | null = null;
   let mirrorRear: THREE.Mesh | null = null;
   const mirrorSides: THREE.Mesh[] = [];
-  const mirrorGlass = () => new THREE.MeshBasicMaterial({ color: 0x8c96a3 });
   if (!s.open) {
     // Headliner in three sections; the middle one is the sunroof blind. EVs have a glass roof.
     const z0 = s.B + 0.02, z1 = Math.max(s.C - 0.15, s.D + 0.1);
@@ -598,10 +611,10 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     const my = P.top(s.B) - 0.16;
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.1, 6), trimDark);
     stem.position.set(0, my + 0.07, s.B - 0.05);
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.03), trimDark);
+    const housing = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.082, 0.035, 3, 0.02), trimDark);
     housing.position.set(0, my, s.B - 0.08);
-    mirrorRear = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.055), mirrorGlass());
-    mirrorRear.position.set(0, my, s.B - 0.096);
+    mirrorRear = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.066), mirrorMaterial(true, 0.24 / 0.066));
+    mirrorRear.position.set(0, my, s.B - 0.1);
     mirrorRear.rotation.y = Math.PI;
     I.add(stem, housing, mirrorRear);
   }
@@ -615,15 +628,15 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   if (!s.open) {
     const my = P.top(s.B) - 0.16;
     freshener = new THREE.Group();
-    freshener.position.set(0.02, my - 0.04, s.B - 0.1);
-    const string = new THREE.Mesh(new THREE.CylinderGeometry(0.0015, 0.0015, 0.08, 4).translate(0, -0.04, 0), std(0xeeeeee, 0.8));
+    freshener.position.set(-0.11, my - 0.02, s.B - 0.1);
+    const string = new THREE.Mesh(new THREE.CylinderGeometry(0.0015, 0.0015, 0.04, 4).translate(0, -0.02, 0), std(0xeeeeee, 0.8));
     const tree = new THREE.Shape();
     tree.moveTo(0, 0);
     tree.lineTo(0.03, -0.035); tree.lineTo(0.015, -0.035); tree.lineTo(0.04, -0.07); tree.lineTo(0.02, -0.07);
     tree.lineTo(0.045, -0.105); tree.lineTo(0.006, -0.105); tree.lineTo(0.006, -0.12); tree.lineTo(-0.006, -0.12); tree.lineTo(-0.006, -0.105);
     tree.lineTo(-0.045, -0.105); tree.lineTo(-0.02, -0.07); tree.lineTo(-0.04, -0.07); tree.lineTo(-0.015, -0.035); tree.lineTo(-0.03, -0.035);
     tree.closePath();
-    const card = new THREE.Mesh(new THREE.ShapeGeometry(tree).translate(0, -0.08, 0), std([0x2f9a4a, 0xd4a52a, 0xd8475a][Math.floor(Math.abs(c.color) % 3)], 0.8));
+    const card = new THREE.Mesh(new THREE.ShapeGeometry(tree).translate(0, -0.04, 0), std([0x2f9a4a, 0xd4a52a, 0xd8475a][Math.floor(Math.abs(c.color) % 3)], 0.8));
     freshener.add(string, card);
     I.add(freshener);
     // Sun visors, hinged at the top of the windscreen
@@ -753,123 +766,4 @@ export function drawCluster(ck: Cockpit, speed: number, unit: string, rpm: numbe
   }
   g.textAlign = 'left';
   ck.clusterTex.needsUpdate = true;
-}
-
-/** The driver, sitting in the seat with hands on the wheel. */
-export interface Driver {
-  /** Head and body, seen from outside. */
-  outside: THREE.Group;
-  /** Body without a head, for your own view from the driver's seat (look down and there you are). */
-  inside: THREE.Group;
-  /** Follow the steering wheel with the hands and arms (call after turning the wheel). */
-  update(): void;
-  /** Sleeves (live in the cabin). */
-  arms: THREE.Object3D[];
-}
-
-export function buildDriver(ck: Cockpit, c: Custom, pbr: boolean, I: THREE.Group): Driver {
-  const outside = new THREE.Group();
-  const inside = new THREE.Group();
-  const st = ck.seat;
-  if (!st) return { outside, inside, update() {}, arms: [] };
-  const m = (col: number, r = 0.75) => (pbr ? new THREE.MeshStandardMaterial({ color: col, roughness: r }) : new THREE.MeshLambertMaterial({ color: col }));
-  const tops = [0x2b3a55, 0x6b2f2f, 0x2f5a46, 0xd9d4c7, 0x333338, 0x8a6a3a];
-  const top = m(tops[Math.abs(Math.round(c.color / 7)) % tops.length]);
-  const skin = m([0xe2b48f, 0xc68e64, 0x8d5a3b, 0xf0c8a8][Math.abs(Math.round(c.color / 13)) % 4], 0.6);
-  const hair = m([0x2a1d14, 0x5a3a20, 0x111111, 0xb08850][Math.abs(Math.round(c.color / 11)) % 4], 0.9);
-  const legs = m(0x2c3446);
-  const shoes = m(0x1a1a1c, 0.5);
-  const x = st.x;
-  const hip = new THREE.Vector3(x, st.top + 0.1, st.z - 0.12);
-  const neck = new THREE.Vector3(x, st.eyeY - 0.17, st.z - 0.17);
-  const limb = (a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material) => {
-    const len = a.distanceTo(b);
-    const seg = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, len - r * 2), 4, 10), mat);
-    seg.position.copy(a).add(b).multiplyScalar(0.5);
-    seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
-    return seg;
-  };
-  // Torso, leaning back into the seat (inside: stops below your chin so it never fills the view)
-  const torso = (topAt: THREE.Vector3) => {
-    const t = limb(hip, topAt, 0.15, top);
-    t.scale.set(1.15, 1, 0.75);
-    return t;
-  };
-  outside.add(torso(neck));
-  inside.add(torso(neck.clone().add(new THREE.Vector3(0, -0.12, -0.03))));
-  // Head and hair (outside only)
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.095, 16, 12), skin);
-  head.scale.set(0.9, 1.1, 1);
-  head.position.set(x, st.eyeY + 0.02, st.z - 0.05);
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), hair);
-  cap.scale.set(0.92, 1.1, 1.05);
-  cap.position.set(x, st.eyeY + 0.035, st.z - 0.065);
-  cap.rotation.x = -0.35;
-  const neckM = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 8), skin);
-  neckM.position.set(x, st.eyeY - 0.1, st.z - 0.1);
-  outside.add(head, cap, neckM);
-  // Legs: thighs along the cushion, shins down to the pedals (both views)
-  for (const sd of [-1, 1]) {
-    // Right foot on the accelerator, left on the footrest
-    const foot = (sd < 0 ? st.pedal : st.rest).clone().add(new THREE.Vector3(0, 0.05, -0.08));
-    const knee = new THREE.Vector3((x + sd * 0.1 + foot.x) / 2, st.top + 0.16, st.z + 0.4);
-    for (const g of [outside, inside]) {
-      g.add(limb(new THREE.Vector3(x + sd * 0.1, hip.y, hip.z + 0.05), knee, 0.07, legs), limb(knee, foot, 0.055, legs));
-      const shoe = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.08, 0.26, 2, 0.03), shoes);
-      shoe.position.copy(foot).add(new THREE.Vector3(0, -0.02, 0.08));
-      shoe.rotation.x = -0.5;
-      g.add(shoe);
-    }
-  }
-
-  // Hands on the rim at ten to two: they ride on the steering wheel and turn with it
-  const wheel = ck.steering;
-  const tilt = wheel.parent!;
-  const rimR = st.rimR;
-  const handAt: THREE.Vector3[] = [];
-  const arms: { sd: number; upper: THREE.Mesh; fore: THREE.Mesh; shoulder: THREE.Vector3 }[] = [];
-  for (const sd of [-1, 1]) {
-    const local = new THREE.Vector3(sd * rimR * 0.82, rimR * 0.5, -0.025);
-    handAt.push(local);
-    const hand = new THREE.Group();
-    hand.position.copy(local);
-    hand.rotation.z = -sd * 0.6;
-    // Back of the hand on our side of the rim, fingers wrapped round behind it, thumb along the inside
-    const palm = new THREE.Mesh(new RoundedBoxGeometry(0.06, 0.09, 0.04, 2, 0.018), skin);
-    const fingers = new THREE.Mesh(new RoundedBoxGeometry(0.058, 0.075, 0.03, 2, 0.013), skin);
-    fingers.position.set(0, -0.005, 0.042);
-    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.011, 0.035, 3, 6), skin);
-    thumb.position.set(-sd * 0.03, -0.02, 0.012);
-    thumb.rotation.z = -sd * 0.5;
-    hand.add(palm, fingers, thumb);
-    wheel.add(hand);
-    // Sleeves from the shoulder to the wrist (re-aimed every frame)
-    const shoulder = new THREE.Vector3(x + sd * 0.19, neck.y - 0.05, neck.z + 0.02);
-    const geo = new THREE.CapsuleGeometry(0.045, 1, 4, 10);
-    const upper = new THREE.Mesh(geo, top);
-    const fore = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 1, 4, 10), top);
-    I.add(upper, fore);
-    arms.push({ sd, upper, fore, shoulder });
-  }
-  const up = new THREE.Vector3(0, 1, 0);
-  const aim = (seg: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3, r: number) => {
-    const len = a.distanceTo(b);
-    seg.position.copy(a).add(b).multiplyScalar(0.5);
-    seg.quaternion.setFromUnitVectors(up, b.clone().sub(a).normalize());
-    seg.scale.set(1, Math.max(0.05, len - r * 2), 1);
-  };
-  const update = () => {
-    wheel.updateMatrix();
-    tilt.updateMatrix();
-    arms.forEach((arm, i) => {
-      // Wrist in cabin coordinates, a little back from the hand
-      const wrist = handAt[i].clone().add(new THREE.Vector3(0, -0.02, -0.06)).applyMatrix4(wheel.matrix).applyMatrix4(tilt.matrix);
-      const elbow = arm.shoulder.clone().lerp(wrist, 0.5).add(new THREE.Vector3(arm.sd * 0.07, -0.12, -0.02));
-      aim(arm.upper, arm.shoulder, elbow, 0.045);
-      aim(arm.fore, elbow, wrist, 0.04);
-    });
-  };
-  update();
-  for (const g of [outside, inside]) g.traverse((o) => ((o as THREE.Mesh).castShadow = false));
-  return { outside, inside, update, arms: arms.flatMap((a) => [a.upper, a.fore]) };
 }

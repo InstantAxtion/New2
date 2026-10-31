@@ -213,6 +213,7 @@ export class UI {
       <button class="icon tiny" id="nb-next" aria-label="Next song">⏭</button></div>
   </div>
   <div class="hud-tr">
+    <button class="icon wide watch-btn" id="watch-btn">📺 <span class="lbl">Watch</span></button>
     <button class="icon wide" id="cam-btn">🎥 <span class="lbl" id="cam-label"></span></button>
     <button class="icon" id="menu-btn" aria-label="Menu">☰</button>
   </div>
@@ -263,14 +264,25 @@ export class UI {
     <button class="pad small" id="faster" aria-label="Faster">+</button>
   </div>
   <div class="theatre-bar" id="theatre-bar">
-    <span class="tb-title" id="tb-title"></span>
-    <div class="tb-btns">
-      <button class="icon" id="tb-prev" aria-label="Previous">⏮</button>
-      <button class="icon" id="tb-toggle" aria-label="Play or pause">⏯</button>
-      <button class="icon" id="tb-next" aria-label="Next">⏭</button>
-      <button class="icon" id="tb-dash" aria-label="Watch on the car's screen">🚗</button>
-      <button class="icon" id="tb-close" aria-label="Close">✕</button>
+    <div class="tb-top">
+      <span class="tb-title" id="tb-title"></span>
+      <span class="tb-time" id="tb-time"></span>
     </div>
+    <input type="range" id="tb-seek" min="0" max="1000" value="0" aria-label="Seek" />
+    <div class="tb-row">
+      <div class="tb-btns">
+        <button class="icon" id="tb-prev" aria-label="Previous">⏮</button>
+        <button class="icon" id="tb-toggle" aria-label="Play or pause">⏸</button>
+        <button class="icon" id="tb-next" aria-label="Next">⏭</button>
+      </div>
+      <label class="tb-vol">🔊<input type="range" id="tb-vol" min="0" max="1" step="0.05" aria-label="Volume" /></label>
+      <div class="tb-btns">
+        <button class="icon" id="tb-find" aria-label="Find something else">🔎</button>
+        <button class="icon" id="tb-dash" aria-label="Watch on the car's screen">🚗</button>
+        <button class="icon" id="tb-close" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="tb-next" id="tb-upnext"></div>
   </div>
   <div class="toast" id="toast"></div>
   <div class="sleep-cover" id="sleep-cover"><div><b>Good night 🌙</b><span>Pulled over and stopped. The music has faded out.</span>
@@ -1044,6 +1056,50 @@ export class UI {
       this.refreshHud();
       this.toast(`💡 Headlights<b>${this.s.lights === 'auto' ? 'Automatic' : this.s.lights === 'on' ? 'On' : 'Off'}</b>`);
     };
+    $('#watch-btn', r).onclick = () => this.tvButton();
+    $('#tb-find', r).onclick = () => {
+      this.open('music');
+      $<HTMLElement>('[data-mtab="videos"]').click();
+      setTimeout(() => $<HTMLInputElement>('#yt-q').focus(), 350);
+    };
+    let tbSeeking = false;
+    const seek = $<HTMLInputElement>('#tb-seek', r);
+    seek.oninput = () => (tbSeeking = true);
+    seek.onchange = () => {
+      const d = this.videos.screen.duration();
+      if (d) this.videos.screen.seek((Number(seek.value) / 1000) * d);
+      tbSeeking = false;
+    };
+    const vol = $<HTMLInputElement>('#tb-vol', r);
+    vol.value = String(this.s.volMusic);
+    vol.oninput = () => {
+      this.s.volMusic = Number(vol.value);
+      const el = document.getElementById('vol-music') as HTMLInputElement | null;
+      if (el) el.value = vol.value;
+      this.applyMix();
+      this.save();
+    };
+    // Keep the time, seek bar and up-next list fresh while the cinema view is open
+    setInterval(() => {
+      if (!this.game.theatre) return;
+      const scr = this.videos.screen;
+      const t = Math.max(0, scr.time()), d = scr.duration();
+      const f = (x: number) => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, '0')}`;
+      $('#tb-time').textContent = d ? `${f(t)} / ${f(d)}` : '';
+      if (!tbSeeking && d) seek.value = String(Math.round((t / d) * 1000));
+      $('#tb-toggle').textContent = scr.paused ? '▶' : '⏸';
+      const v = this.videos;
+      const html = v.songs.length > 1
+        ? '<small>Up next</small>' + [1, 2, 3].map((k) => v.songs[(v.index + k) % v.songs.length]).filter(Boolean)
+            .map((sg, k) => `<button class="chip" data-upnext="${(v.index + k + 1) % v.songs.length}">${esc(sg.title)}<i> · ${esc(sg.artist.split(',')[0])}</i></button>`).join('')
+        : '';
+      const box = $('#tb-upnext');
+      if (box.dataset.k !== html) {
+        box.dataset.k = html;
+        box.innerHTML = html;
+        for (const b of $$('[data-upnext]', box)) b.onclick = () => void v.playIndex(Number(b.dataset.upnext));
+      }
+    }, 500);
     $('#tb-close', r).onclick = () => this.setTheatre(false);
     $('#tb-toggle', r).onclick = () => this.videos.toggle();
     $('#tb-next', r).onclick = () => this.videos.next();
@@ -1305,6 +1361,7 @@ export class UI {
     $('#assist-btn').classList.toggle('on', this.s.assist);
     $('#assist-lbl').textContent = this.s.assist ? 'ASSIST' : 'NO ASSIST';
     $('#tv-btn').classList.toggle('on', this.game.theatre);
+    $('#watch-btn').classList.toggle('on', this.game.theatre);
     $('#lights-lbl').textContent = this.s.lights === 'on' ? 'On' : this.s.lights === 'off' ? 'Off' : 'Auto';
     document.body.classList.toggle('driver-view', this.s.cam === 'hood');
     document.body.classList.toggle('minimal-hud', this.s.minimalHud);
@@ -1414,6 +1471,7 @@ export class UI {
     const txt = $('#nowbar-text');
     if (txt.textContent !== label) txt.textContent = label;
     if (g.theatre && !this.videos.active) this.setTheatre(false);
+    document.body.classList.toggle('video-on', this.videos.active || this.s.musicMode === 'videos');
     const tt = $('#tb-title');
     if (g.theatre && tt.textContent !== label) tt.textContent = label;
     const paused = src === 'podcasts' ? !this.podcasts.playing : src === 'radio' ? !this.radio.playing : src === 'spotify' ? this.spotifyPaused : false;

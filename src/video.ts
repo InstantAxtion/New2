@@ -16,6 +16,8 @@ interface YTPlayer {
   setVolume(v: number): void;
   getCurrentTime(): number;
   getDuration(): number;
+  seekTo(s: number, allowSeekAhead: boolean): void;
+  setPlaybackQuality?(q: string): void;
   destroy(): void;
 }
 declare global {
@@ -42,8 +44,9 @@ function loadApi(): Promise<void> {
   return apiReady;
 }
 
-export const VW = 640;
-export const VH = 360;
+// A full HD-sized player (YouTube picks the stream quality from the player's size), scaled down to fit
+export const VW = 1280;
+export const VH = 720;
 
 export type Corners = [number, number][]; // TL, TR, BR, BL in screen pixels
 
@@ -118,6 +121,11 @@ export class VideoScreen {
           if (e.data === PS().ENDED) this.onEnded();
           if (e.data === PS().PLAYING) {
             this.paused = false;
+            try {
+              this.player?.setPlaybackQuality?.('hd1080');
+            } catch {
+              /* the player chooses */
+            }
             this.onPlaying();
           }
           if (e.data === PS().PAUSED) this.paused = true;
@@ -174,6 +182,15 @@ export class VideoScreen {
     this.active = false;
     this.player?.stopVideo();
     this.place({ kind: 'hidden' });
+  }
+
+  /** Jump to a point in the video (seconds). */
+  seek(t: number) {
+    try {
+      this.player?.seekTo(t, true);
+    } catch {
+      /* not ready */
+    }
   }
 
   setVolume(v: number) {

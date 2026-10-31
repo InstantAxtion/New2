@@ -1,11 +1,11 @@
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import * as THREE from 'three';
 import { addDecals, buildOpenings, type Openings } from './carextras';
-import { cutGlass, doorCuts, weatherPaint, type DoorCut, type Tier } from './materials';
+import { cutGlass, doorCuts, mirrorMaterial, weatherPaint, type DoorCut, type Tier } from './materials';
 import { bodyGeometry, profile } from './carbody';
 import { CARS, COLORS, defaultCustom, type CarSpec, type Custom } from './carspecs';
 import { buildExterior, buildWheel, type PartMats } from './carparts';
-import { buildCockpit, buildDriver, drawCluster, type Cockpit, type Driver } from './cockpit';
+import { buildCockpit, drawCluster, type Cockpit } from './cockpit';
 import { bikeCockpit, buildBike } from './bike';
 
 export { CARS, COLORS };
@@ -27,6 +27,95 @@ function paintMaterial(color: number, finish: Custom['finish'], pbr: boolean): T
     default:
       return new THREE.MeshPhysicalMaterial({ color, metalness: 0.6, roughness: 0.26, clearcoat: 1, clearcoatRoughness: 0.03 });
   }
+}
+
+/**
+ * Keep every part of the cabin inside the body: anything that pokes out through the roof, the
+ * glass or the sides (headrests under a sloping roof, the screen under a raked windscreen…)
+ * is nudged back in.
+ */
+function fitInside(I: THREE.Group, s: CarSpec) {
+  const P = profile(s);
+  I.updateMatrixWorld(true);
+  const toI = new THREE.Matrix4().copy(I.matrixWorld).invert();
+  const v = new THREE.Vector3();
+  const meshes: THREE.Mesh[] = [];
+  I.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh && m.geometry?.attributes?.position && !m.userData.noFit && !m.parent?.userData.noFit) meshes.push(m);
+  });
+  for (const m of meshes) {
+    const pos = m.geometry.attributes.position;
+    const rel = new THREE.Matrix4().multiplyMatrices(toI, m.matrixWorld);
+    let up = 0, side = 0, fwd = 0, back = 0, sx = 0, minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9, worstScale = 1;
+    const step = Math.max(1, Math.floor(pos.count / 120));
+    for (let i = 0; i < pos.count; i += step) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(rel);
+      const z = Math.min(P.front - 0.01, Math.max(P.rear + 0.01, v.z));
+      const margin = 0.025;
+      if (!s.open) up = Math.max(up, v.y - (P.top(z) - margin));
+      minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
+      minZ = Math.min(minZ, v.z); maxZ = Math.max(maxZ, v.z);
+      const o = Math.abs(v.x) - (P.half(z) - margin);
+      if (o > 0 && Math.abs(v.x) > 0.01) worstScale = Math.min(worstScale, (P.half(z) - margin) / Math.abs(v.x));
+      if (o > side) {
+        side = o;
+        sx = Math.sign(v.x);
+      }
+      fwd = Math.max(fwd, v.z - (P.front - 0.05));
+      back = Math.max(back, P.rear + 0.05 - v.z);
+    }
+    if (up <= 0 && side <= 0 && fwd <= 0 && back <= 0) continue;
+    // Something across the middle (the floor, the dash, a bench) is narrowed rather than pushed sideways
+    const across = minX < -0.05 && maxX > 0.05;
+    if (across && side > 0) {
+      m.scale.x *= Math.max(0.6, worstScale);
+      side = 0;
+    }
+    // Big structural pieces (the floor, door ribbons, headliner) are shaped to the body already
+    if (maxZ - minZ > 1.2 || maxX - minX > 1.6) continue;
+    const shift = new THREE.Vector3(side > 0 ? -sx * side : 0, up > 0 ? -up : 0, fwd > 0 ? -fwd : back > 0 ? back : 0);
+    if (shift.length() > 0.6) {
+      m.visible = false; // far outside: it doesn't belong in this body at all
+      continue;
+    }
+    // Apply the shift in the mesh's parent space
+    const parentInv = new THREE.Matrix4().copy(m.parent!.matrixWorld).invert();
+    const a = new THREE.Vector3().applyMatrix4(I.matrixWorld).applyMatrix4(parentInv);
+    const b2 = shift.clone().applyMatrix4(I.matrixWorld).applyMatrix4(parentInv);
+    m.position.add(b2.sub(a));
+    m.updateMatrixWorld(true);
+  }
+}
+
+let beamTex: THREE.Texture | null = null;
+/** Two overlapping beams fanning out from the front of the car, brightest near the car. */
+function beamTexture(): THREE.Texture {
+  if (beamTex) return beamTex;
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 256;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(128, 256);
+  for (let y = 0; y < 256; y++) {
+    // The top row of the image lands next to the car (the plane is laid flat with its top towards -z)
+    const near = 1 - y / 255;
+    const along = 1 - near;
+    const spread = 0.18 + along * 0.82;
+    for (let x = 0; x < 128; x++) {
+      const u = (x / 127) * 2 - 1;
+      let b = 0;
+      for (const cx of [-0.35, 0.35]) {
+        const d = Math.abs(u - cx * (1 - along * 0.6)) / (spread * 0.6);
+        b = Math.max(b, Math.exp(-d * d * 2.2));
+      }
+      const fade = Math.pow(near, 0.6) * Math.min(1, along * 8);
+      const v = Math.min(255, b * fade * 255);
+      img.data.set([v, v, v, v], (y * 128 + x) * 4);
+    }
+  }
+  g.putImageData(img, 0, 0);
+  beamTex = new THREE.CanvasTexture(c);
+  return beamTex;
 }
 
 /** A roof rack with two surfboards, or a tow-bar bike rack with two bicycles. */
@@ -151,12 +240,12 @@ export class CarModel {
     if (pbr) weatherPaint(this.paint, c.finish === 'metallic' ? 1 : c.finish === 'pearl' ? 0.6 : 0);
     const second = paintMaterial(c.color2, c.finish === 'pearl' ? 'metallic' : c.finish, pbr);
     const roofM = c.twoTone ? second : this.paint;
-    // Dark privacy tint: the cabin and driver just show through; traffic keeps it fully dark
+    // Dark privacy tint
     const clear = seeThrough && !s.bike;
     const glass = pbr
       ? new THREE.MeshPhysicalMaterial({ color: 0x04070a, metalness: 0, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.3,
-          transparent: clear, opacity: clear ? 0.95 : 1, depthWrite: !clear })
-      : new THREE.MeshPhongMaterial({ color: 0x141b24, shininess: 120, specular: 0xaaaaaa, transparent: clear, opacity: clear ? 0.88 : 1, depthWrite: !clear });
+          transparent: false, opacity: 1 })
+      : new THREE.MeshPhongMaterial({ color: 0x141b24, shininess: 120, specular: 0xaaaaaa, transparent: false, opacity: 1 });
     this.sideGlass = glass.clone();
     const dark = pbr ? new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.55 }) : new THREE.MeshLambertMaterial({ color: 0x1d1e22 });
     const chrome = pbr
@@ -227,7 +316,7 @@ export class CarModel {
         const bezel = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2 - 0.012, hh * 2 - 0.012), dark);
         bezel.position.z = -0.026;
         bezel.rotation.y = Math.PI;
-        const mg = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2 - 0.03, hh * 2 - 0.03), new THREE.MeshBasicMaterial({ color: 0x8c96a3 }));
+        const mg = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2 - 0.03, hh * 2 - 0.03), mirrorMaterial(false, (hw * 2 - 0.03) / (hh * 2 - 0.03)));
         mg.position.z = -0.028;
         mg.rotation.y = Math.PI;
         mirror.add(housing, base, arm, bezel, mg);
@@ -310,22 +399,7 @@ export class CarModel {
     if (s.bike) this.cockpit.screen.lookAt(this.eye.position);
     this.screen = this.cockpit.screen;
     this.screenSize = [this.cockpit.screenWidth, this.cockpit.screenWidth * 0.5625];
-    if (!s.bike && seeThrough) {
-      // Someone at the wheel, seen from outside
-      this.driver = buildDriver(this.cockpit, c, pbr, this.interior);
-      this.outsideOnly.add(this.driver.outside);
-      // Seen from outside the cabin is just the seats, the wheel and the driver's arms: copies of the
-      // real ones, so nothing of the full cabin can poke through the body
-      this.driver.update();
-      for (const o of [...(this.cockpit.seats ?? []), this.cockpit.steering.parent!, ...this.driver.arms]) {
-        o.updateMatrix();
-        this.outsideCabin.add(o.clone());
-      }
-      this.outsideOnly.add(this.outsideCabin);
-      this.driver.inside.visible = false;
-      this.interior.add(this.driver.inside);
-      if (!this.outsideOnly.parent) b.add(this.outsideOnly);
-    }
+    if (!s.bike) for (let k = 0; k < 2; k++) fitInside(this.interior, s);
     this.interior.visible = false;
     b.add(this.interior);
     // Open the doors and the body is cut away behind them, showing the cabin
@@ -357,6 +431,25 @@ export class CarModel {
     this.headlight.position.set(0, lampY + 0.1, front);
     this.headlight.target.position.set(0, 0, front + 26);
     b.add(this.headlight, this.headlight.target);
+    // The pool of light the beams throw on the road ahead (shows on every graphics setting)
+    this.lightPool = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+      map: beamTexture(), color: 0xfff0d2, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false,
+    }));
+    const span = s.bike ? 22 : 34;
+    this.lightPool.scale.set(s.bike ? 6 : 9, 1, span);
+    this.lightPool.position.set(0, 0.06, front + span / 2 - 1.5);
+    this.lightPool.renderOrder = 2;
+    this.lightPool.visible = false;
+    this.group.add(this.lightPool);
+  }
+
+  readonly lightPool: THREE.Mesh;
+
+  /** Headlights on (0..1 brightness). */
+  setLights(k: number) {
+    this.lightPool.visible = k > 0.01;
+    (this.lightPool.material as THREE.MeshBasicMaterial).opacity = k;
   }
 
   /** Where the windscreen glass is (body coordinates): middles of its bottom and top edges, and widths there. */
@@ -385,16 +478,12 @@ export class CarModel {
   /** Switch between the outside look and the driver's-seat cockpit. */
   /** In the driver's seat (the cockpit may also show from outside, through the glass). */
   inside = false;
-  private driver: Driver | null = null;
   private doorOpen = false;
-  private outsideCabin = new THREE.Group();
 
   setInside(inside: boolean) {
     this.inside = inside;
     // The full cabin only from the driver's seat, or through an open door
     this.interior.visible = inside || (this.doorOpen && !this.spec.bike);
-    this.outsideCabin.visible = !this.interior.visible;
-    if (this.driver) this.driver.inside.visible = inside;
     this.outsideOnly.visible = !inside && (this.seeThrough || !(this.softTop?.visible ?? false));
   }
 
@@ -432,7 +521,6 @@ export class CarModel {
     const turn = wheelAngle === undefined ? steer * 0.5 : Math.sign(wheelAngle) * Math.min(0.55, Math.abs(wheelAngle) * 1.6 + Math.abs(steer) * 0.05);
     for (const p of this.steerPivots) p.rotation.y = -turn;
     this.cockpit.steering.rotation.z = steer * 1.6;
-    this.driver?.update();
     this.glows.forEach((g, i) => (g.visible = lights || (i % 2 === 1 && braking)));
     if (this.pbr) {
       (this.tail as THREE.MeshStandardMaterial).emissiveIntensity = braking ? 2.5 : lights ? 0.8 : 0.12;
