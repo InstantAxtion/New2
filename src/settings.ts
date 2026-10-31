@@ -108,7 +108,7 @@ export const DEFAULTS: Settings = {
   lights: 'auto',
   ytChannel: '',
   prefer: 'video',
-  pip: false,
+  pip: true,
   orientation: 'auto',
   trafficDensity: 0,
   driveStyle: 'normal',
@@ -141,8 +141,9 @@ export function loadSettings(): Settings {
     // Only two cameras now: behind the car, or the driver's seat
     if (s.cam !== 'hood') s.cam = 'chase';
     // The video lives on the car's screen (or the Watch view), not floating over the outside cameras
-    if (!raw.pipV2) s.pip = false;
-    (s as unknown as { pipV2: boolean }).pipV2 = true;
+    // The video shows small in a corner in 3rd person (tap it to watch big)
+    if (!raw.pipV3) s.pip = true;
+    (s as unknown as { pipV3: boolean }).pipV3 = true;
     // Empty roads unless you turn traffic on
     if (!raw.trafficV2) s.trafficDensity = 0;
     (s as unknown as { trafficV2: boolean }).trafficV2 = true;

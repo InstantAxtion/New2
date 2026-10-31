@@ -102,6 +102,7 @@ public class SpotifyLoginPlugin extends Plugin {
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
+        s.setUserAgentString(MainActivity.chromeUserAgent(s.getUserAgentString()));
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
         web.setWebViewClient(new WebViewClient() {

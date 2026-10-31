@@ -495,7 +495,8 @@ body.auto-mode .hud-tl .pill { display: none !important; }
 /* The drive dims and softens behind the video */
 body.theatre-on #view { filter: brightness(.35) blur(3px); }
 #view { transition: filter .35s; }
-#video { transition: transform .35s ease, opacity .3s; }
+/* No transition on the transform: it has to follow the car's screen exactly, every frame */
+#video { transition: opacity .3s; }
 .theatre-bar { position: absolute; left: 50%; bottom: calc(14px + var(--safe-b)); transform: translateX(-50%); display: none; align-items: center; gap: 12px;
   background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 16px; padding: 8px 10px 8px 16px; max-width: calc(100vw - 24px); pointer-events: auto; z-index: 3; }
 body.theatre-on .theatre-bar { display: flex; }
@@ -627,3 +628,6 @@ input[type=url], input[type=search], input[type=text] { background: rgba(255,255
   .sheet.hidden { transform: translateY(calc(100% + 20px)); }
   .sheet.dock { left: 8px; right: 8px; width: auto; }
 }
+
+/* Tap the small video to watch it big */
+#video.pip { pointer-events: auto; cursor: pointer; box-shadow: 0 8px 30px rgba(0,0,0,.5); }

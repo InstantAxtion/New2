@@ -1,4 +1,3 @@
-import { Capacitor } from '@capacitor/core';
 import * as THREE from 'three';
 import { World, SEGMENT, LANE, STOP_INFO, type Stop } from './world/world';
 import { BIOMES, type Biome, type BiomeId } from './world/biomes';
@@ -1172,7 +1171,7 @@ export class Game {
 
   private prevCorners: [number, number][] | null = null;
   /** How many frames to lead the video layer by (it lags on Android). */
-  videoLead = Capacitor.isNativePlatform() ? 1 : 0;
+  videoLead = 0;
 
   private placeVideo() {
     const scr = this.videos?.screen;

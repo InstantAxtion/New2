@@ -215,6 +215,7 @@ export class VideoScreen {
   place(p: Placement) {
     const s = this.el.style;
     this.el.classList.toggle('theatre', p.kind === 'theatre');
+    this.el.classList.toggle('pip', p.kind === 'pip');
     document.body.classList.toggle('theatre-on', p.kind === 'theatre');
     if (p.kind === 'quad') {
       s.opacity = '1';

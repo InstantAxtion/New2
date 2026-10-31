@@ -29,6 +29,9 @@ public class MainActivity extends BridgeActivity {
         WebSettings settings = webView.getSettings();
         // Keep the layout as designed: a large system font size would otherwise overflow the buttons
         settings.setTextZoom(100);
+        // Look like the phone's Chrome browser rather than an embedded web view: Spotify's player only
+        // plays full songs (instead of 30-second previews) in browsers it recognises
+        settings.setUserAgentString(chromeUserAgent(settings.getUserAgentString()));
         // Let the Spotify and YouTube players start playback and keep the Spotify login
         settings.setMediaPlaybackRequiresUserGesture(false);
         CookieManager.getInstance().setAcceptCookie(true);
@@ -66,5 +69,11 @@ public class MainActivity extends BridgeActivity {
         WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
         c.hide(WindowInsetsCompat.Type.systemBars());
         c.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+    }
+
+    /** The web view's user agent with the "; wv" and "Version/4.0" markers taken out. */
+    static String chromeUserAgent(String ua) {
+        if (ua == null) return null;
+        return ua.replace("; wv)", ")").replaceAll("Version/\\d+(\\.\\d+)* ", "");
     }
 }

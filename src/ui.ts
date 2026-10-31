@@ -215,7 +215,8 @@ export class UI {
       <button class="icon tiny" id="nb-next" aria-label="Next song">⏭</button></div>
   </div>
   <div class="hud-tr">
-    <button class="icon wide watch-btn" id="watch-btn">📺 <span class="lbl">Watch</span></button>
+    <button class="icon" id="top-play" aria-label="Play or pause the music">⏯</button>
+    <button class="icon" data-open="music" aria-label="Music">🎵</button>
     <button class="icon wide" id="cam-btn">🎥 <span class="lbl" id="cam-label"></span></button>
     <button class="icon" id="menu-btn" aria-label="Menu">☰</button>
   </div>
@@ -1055,7 +1056,12 @@ export class UI {
       this.refreshHud();
       this.toast(`💡 Headlights<b>${this.s.lights === 'auto' ? 'Automatic' : this.s.lights === 'on' ? 'On' : 'Off'}</b>`);
     };
-    $('#watch-btn', r).onclick = () => this.tvButton();
+    $('#top-play', r).onclick = () => {
+      if (this.audioSource()) this.toggleAudio();
+      else this.open('music');
+    };
+    // Tap the small video in the corner to watch it big
+    this.videos.screen.el.addEventListener('click', () => this.setTheatre(true));
     $('#tb-find', r).onclick = () => {
       this.open('music');
       $<HTMLElement>('[data-mtab="videos"]').click();
@@ -1376,7 +1382,6 @@ export class UI {
     $('#assist-btn').classList.toggle('on', this.s.assist);
     $('#assist-lbl').textContent = this.s.assist ? 'ASSIST' : 'NO ASSIST';
     $('#tv-btn').classList.toggle('on', this.game.theatre);
-    $('#watch-btn').classList.toggle('on', this.game.theatre);
     $('#lights-lbl').textContent = this.s.lights === 'on' ? 'On' : this.s.lights === 'off' ? 'Off' : 'Auto';
     document.body.classList.toggle('driver-view', this.s.cam === 'hood');
     document.body.classList.toggle('minimal-hud', this.s.minimalHud);
@@ -1495,6 +1500,9 @@ export class UI {
     const ico = paused ? '▶' : '⏸';
     if (tb.textContent !== ico && src !== 'videos') tb.textContent = ico;
     if (src === 'videos' && tb.textContent !== '⏯') tb.textContent = '⏯';
+    const tp = $('#top-play');
+    const tpIco = !src ? '▶' : src === 'videos' ? (this.videos.screen.paused ? '▶' : '⏸') : ico;
+    if (tp.textContent !== tpIco) tp.textContent = tpIco;
     $('#nb-next').style.display = src === 'spotify' ? 'none' : '';
     if (g.struggling() && this.s.quality !== 'low') {
       this.s.quality = this.s.quality === 'ultra' ? 'high' : this.s.quality === 'high' ? 'medium' : 'low';
