@@ -11,7 +11,7 @@ export interface BodyShape {
   width: number;
   wheel: number;
   /** Axle positions (front, rear), metres from the centre. */
-  axles: [number, number];
+  axles: [number, number, ...number[]];
   /** Underside height between the wheels. */
   sill: number;
   /** Shoulder (belt line) height. */

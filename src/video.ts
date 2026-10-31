@@ -69,7 +69,7 @@ export function quadMatrix(p: Corners, w = VW, h = VH): string {
   return `matrix3d(${m.map((v) => +v.toFixed(8)).join(',')})`;
 }
 
-export type Placement = { kind: 'quad'; corners: Corners } | { kind: 'pip'; x: number; y: number; width: number } | { kind: 'hidden' };
+export type Placement = { kind: 'quad'; corners: Corners } | { kind: 'pip' | 'theatre'; x: number; y: number; width: number } | { kind: 'hidden' };
 
 export class VideoScreen {
   readonly el: HTMLDivElement;
@@ -196,15 +196,17 @@ export class VideoScreen {
   /** Put the player on the dashboard, in a corner, or out of sight (it keeps playing). */
   place(p: Placement) {
     const s = this.el.style;
+    this.el.classList.toggle('theatre', p.kind === 'theatre');
+    document.body.classList.toggle('theatre-on', p.kind === 'theatre');
     if (p.kind === 'quad') {
       s.opacity = '1';
       s.transform = quadMatrix(p.corners);
       s.borderRadius = '0';
-    } else if (p.kind === 'pip') {
+    } else if (p.kind === 'pip' || p.kind === 'theatre') {
       const k = p.width / VW;
       s.opacity = '1';
       s.transform = `translate(${p.x}px, ${p.y}px) scale(${k})`;
-      s.borderRadius = '18px';
+      s.borderRadius = p.kind === 'theatre' ? `${12 / k}px` : '18px';
     } else {
       s.opacity = '0';
       s.transform = 'translate(0px, 0px) scale(0.2)';

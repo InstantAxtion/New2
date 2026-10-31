@@ -1,3 +1,4 @@
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import * as THREE from 'three';
 import { addDecals, buildOpenings, type Openings } from './carextras';
 import { cutGlass, doorCuts, weatherPaint, type DoorCut, type Tier } from './materials';
@@ -28,6 +29,79 @@ function paintMaterial(color: number, finish: Custom['finish'], pbr: boolean): T
   }
 }
 
+/** A roof rack with two surfboards, or a tow-bar bike rack with two bicycles. */
+function buildRack(s: CarSpec, kind: 'surf' | 'bikes', pbr: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const P = profile(s);
+  const m = (c: number, r = 0.5, me = 0) => (pbr ? new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: me }) : new THREE.MeshLambertMaterial({ color: c }));
+  const black = m(0x1a1b1e, 0.5);
+  if (kind === 'surf') {
+    const roofZ = s.open || s.bed ? (s.bed ? (P.rear + s.D) / 2 : -0.6) : (s.B + s.C) / 2;
+    const y = s.open ? s.belt + 0.55 : s.bed ? s.belt + 0.55 : P.top(roofZ) + 0.08;
+    const span = s.open || s.bed ? 1.0 : Math.max(0.8, Math.min(1.4, (s.B - s.C) * 0.7));
+    for (const dz of [-span / 2, span / 2]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(s.width * 0.82, 0.04, 0.06), black);
+      bar.position.set(0, y, roofZ + dz);
+      g.add(bar);
+      if (s.open || s.bed) for (const sd of [-1, 1]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.04), black);
+        leg.position.set(sd * s.width * 0.38, y - 0.27, roofZ + dz);
+        g.add(leg);
+      }
+    }
+    const cols = [0xf2c14e, 0x3fb6c9];
+    cols.forEach((col, i) => {
+      const board = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 2.0, 6, 14).rotateX(Math.PI / 2).scale(1, 0.12, 1), m(col, 0.25));
+      board.position.set((i - 0.5) * 0.56, y + 0.05 + i * 0.04, roofZ);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.035, 2.2), m(0xffffff, 0.3));
+      stripe.position.set(board.position.x, board.position.y + 0.005, roofZ);
+      const strap = new THREE.Mesh(new THREE.BoxGeometry(s.width * 0.8, 0.012, 0.04), m(0xd23a2a, 0.6));
+      strap.position.set(0, y + 0.12, roofZ + span / 2);
+      g.add(board, stripe, strap);
+    });
+  } else {
+    // A rack on the tow bar with two bikes standing across the back
+    const z = P.rear - 0.35;
+    const steel = m(0x2a2b2e, 0.4, 0.7);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.45), steel);
+    arm.position.set(0, 0.45, P.rear - 0.15);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 0.06), steel);
+    post.position.set(0, 0.8, z);
+    const tray = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.04, 0.18), steel);
+    tray.position.set(0, 0.42, z);
+    g.add(arm, post, tray);
+    [0xd23a2a, 0x2a6fb5].forEach((col, i) => {
+      const bike = new THREE.Group();
+      bike.position.set(0, 0.42, z - 0.08 - i * 0.2);
+      const frame = m(col, 0.35, 0.4);
+      const tyre = m(0x141416, 0.9);
+      for (const sd of [-1, 1]) {
+        // (the bikes stand across the back of the car, so the wheels lie in the car's x-y plane)
+        const w = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.025, 6, 24), tyre);
+        w.position.set(sd * 0.52, 0.34, 0);
+        bike.add(w);
+      }
+      const tube = (a: THREE.Vector3, b: THREE.Vector3) => {
+        const t = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, a.distanceTo(b), 6), frame);
+        t.position.copy(a).add(b).multiplyScalar(0.5);
+        t.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+        bike.add(t);
+      };
+      const rear = new THREE.Vector3(-0.52, 0.34, 0), front = new THREE.Vector3(0.52, 0.34, 0);
+      const seat = new THREE.Vector3(-0.15, 0.78, 0), head = new THREE.Vector3(0.38, 0.82, 0), crank = new THREE.Vector3(0, 0.3, 0);
+      tube(rear, seat); tube(seat, head); tube(head, front); tube(seat, crank); tube(crank, head); tube(rear, crank);
+      const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.05, 0.1), m(0x111111, 0.7));
+      saddle.position.set(-0.17, 0.83, 0);
+      const bars = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.45, 6).rotateX(Math.PI / 2), m(0x222222, 0.5));
+      bars.position.set(0.36, 0.9, 0);
+      bike.add(saddle, bars);
+      g.add(bike);
+    });
+  }
+  g.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+  return g;
+}
+
 export class CarModel {
   readonly group = new THREE.Group();
   /** Pitch/roll lives on this inner group so the outer one can follow the road. */
@@ -46,6 +120,9 @@ export class CarModel {
   /** Side windows (hidden when they're wound down). */
   readonly sideGlass: THREE.Material;
   readonly wipers: THREE.Object3D[];
+  /** The dog's ears and tail. */
+  private flappers: THREE.Object3D[] = [];
+  private lastDist = 0;
   /** Stand-in cabin bits seen from outside (roadster seats); hidden from the driver's seat. */
   private outsideOnly = new THREE.Group();
   private head: THREE.Material;
@@ -122,6 +199,7 @@ export class CarModel {
       b.add(this.openings.group);
       this.glows = ext.glows;
       this.wipers = ext.wipers;
+      this.flappers = ext.flappers ?? [];
 
       // Wheel wells, so you can't see through the arches
       for (const ax of s.axles) {
@@ -133,12 +211,26 @@ export class CarModel {
       // Side mirrors on stalks at the base of the windscreen
       for (const side of [-1, 1]) {
         const mx = s.open ? s.A - 0.1 : s.A - 0.15;
-        const mirror = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10).scale(0.55, 0.62, 0.85), this.paint);
-        mirror.position.set(side * (P.half(mx) + 0.1), P.belt(mx) + 0.1, mx);
-        const mg = new THREE.Mesh(new THREE.CircleGeometry(0.05, 20).scale(1.25, 0.95, 1), new THREE.MeshBasicMaterial({ color: 0x8c96a3 }));
-        mg.position.set(0, 0, -0.074);
+        // A proper wing mirror: an arm out from the door, a rounded housing in body colour,
+        // a black base, and the glass in its back face angled a little towards the driver
+        const big = s.width > 2.2;
+        const hw = big ? 0.16 : 0.115, hh = big ? 0.26 : 0.075;
+        const mirror = new THREE.Group();
+        mirror.position.set(side * (P.half(mx) + (big ? 0.2 : 0.13)), P.belt(mx) + (big ? 0.25 : 0.1), mx);
+        mirror.rotation.y = side * 0.18;
+        const housing = new THREE.Mesh(new RoundedBoxGeometry(hw * 2, hh * 2, 0.09, 3, 0.035), this.paint);
+        housing.position.z = 0.02;
+        const base = new THREE.Mesh(new RoundedBoxGeometry(hw * 2 - 0.01, 0.025, 0.08, 2, 0.01), dark);
+        base.position.set(0, -hh + 0.005, 0.02);
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.035, 0.05), dark);
+        arm.position.set(-side * (hw + 0.03), -hh * 0.4, 0.01);
+        const bezel = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2 - 0.012, hh * 2 - 0.012), dark);
+        bezel.position.z = -0.026;
+        bezel.rotation.y = Math.PI;
+        const mg = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2 - 0.03, hh * 2 - 0.03), new THREE.MeshBasicMaterial({ color: 0x8c96a3 }));
+        mg.position.z = -0.028;
         mg.rotation.y = Math.PI;
-        mirror.add(mg);
+        mirror.add(housing, base, arm, bezel, mg);
         this.mirrorGlass.push(mg);
         b.add(mirror);
       }
@@ -210,6 +302,9 @@ export class CarModel {
       });
     }
 
+    // Surfboards on the roof, or bikes on a rack on the back
+    if (!s.bike && c.rack !== 'none') b.add(buildRack(s, c.rack, pbr));
+
     // Cockpit
     this.cockpit = s.bike ? bikeCockpit(this.interior, this.eye, c, this.paint, pbr) : buildCockpit(this.interior, this.eye, s, c, pbr, chrome);
     if (s.bike) this.cockpit.screen.lookAt(this.eye.position);
@@ -219,11 +314,19 @@ export class CarModel {
       // Someone at the wheel, seen from outside
       this.driver = buildDriver(this.cockpit, c, pbr, this.interior);
       this.outsideOnly.add(this.driver.outside);
+      // Seen from outside the cabin is just the seats, the wheel and the driver's arms: copies of the
+      // real ones, so nothing of the full cabin can poke through the body
+      this.driver.update();
+      for (const o of [...(this.cockpit.seats ?? []), this.cockpit.steering.parent!, ...this.driver.arms]) {
+        o.updateMatrix();
+        this.outsideCabin.add(o.clone());
+      }
+      this.outsideOnly.add(this.outsideCabin);
       this.driver.inside.visible = false;
       this.interior.add(this.driver.inside);
       if (!this.outsideOnly.parent) b.add(this.outsideOnly);
     }
-    this.interior.visible = this.seeThrough && !s.bike;
+    this.interior.visible = false;
     b.add(this.interior);
     // Open the doors and the body is cut away behind them, showing the cabin
     const box = this.openings.doorBox;
@@ -234,6 +337,8 @@ export class CarModel {
       doorCuts.set(this.sideGlass, cut);
       this.openings.onDoor = (open) => {
         cut.on.value = open ? 1 : 0;
+        this.doorOpen = open;
+        this.setInside(this.inside);
         for (const p of this.cockpit.doorPanels ?? []) p.visible = !open;
       };
     }
@@ -247,9 +352,10 @@ export class CarModel {
     shadow.renderOrder = 1;
     this.group.add(shadow);
 
-    this.headlight = new THREE.SpotLight(0xfff1d0, 0, 90, 0.55, 0.5, 1.2);
+    // Dipped beam: a wide pool on the road reaching ~120 m, aimed a little down
+    this.headlight = new THREE.SpotLight(0xfff3dc, 0, 140, 0.62, 0.55, 1.1);
     this.headlight.position.set(0, lampY + 0.1, front);
-    this.headlight.target.position.set(0, 0, front + 20);
+    this.headlight.target.position.set(0, 0, front + 26);
     b.add(this.headlight, this.headlight.target);
   }
 
@@ -280,10 +386,14 @@ export class CarModel {
   /** In the driver's seat (the cockpit may also show from outside, through the glass). */
   inside = false;
   private driver: Driver | null = null;
+  private doorOpen = false;
+  private outsideCabin = new THREE.Group();
 
   setInside(inside: boolean) {
     this.inside = inside;
-    this.interior.visible = inside || (this.seeThrough && !this.spec.bike);
+    // The full cabin only from the driver's seat, or through an open door
+    this.interior.visible = inside || (this.doorOpen && !this.spec.bike);
+    this.outsideCabin.visible = !this.interior.visible;
     if (this.driver) this.driver.inside.visible = inside;
     this.outsideOnly.visible = !inside && (this.seeThrough || !(this.softTop?.visible ?? false));
   }
@@ -307,6 +417,16 @@ export class CarModel {
   /** Spin wheels by distance travelled and turn the front ones. */
   animate(dist: number, steer: number, braking: boolean, lights: boolean, wheelAngle?: number) {
     const a = dist / this.spec.wheel;
+    if (this.flappers.length) {
+      // Ears stream back in the wind and flutter; the tail wags all the time
+      const speed = Math.min(1, Math.abs(dist - this.lastDist) * 2.5);
+      const t = performance.now() / 1000;
+      for (const f of this.flappers) {
+        if (f.userData.wag) f.rotation.z = Math.sin(t * 9) * 0.5;
+        else f.rotation.x = -speed * 1.2 + Math.sin(t * 25 + f.userData.side) * 0.25 * speed;
+      }
+    }
+    this.lastDist = dist;
     for (const w of this.wheels) w.rotation.x = a;
     // Front wheels show the real angle (a touch exaggerated so you can see them working at speed)
     const turn = wheelAngle === undefined ? steer * 0.5 : Math.sign(wheelAngle) * Math.min(0.55, Math.abs(wheelAngle) * 1.6 + Math.abs(steer) * 0.05);

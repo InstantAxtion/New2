@@ -25,6 +25,8 @@ export interface Exterior {
   front: number;
   /** A pop-up roof or roof tent, if the car has one. */
   poptop?: THREE.Group | null;
+  /** Bits that flap in the wind (the dog's ears): animated with speed. */
+  flappers?: THREE.Object3D[];
 }
 
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -63,6 +65,7 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
   const glows: THREE.Sprite[] = [];
   const wipers: THREE.Object3D[] = [];
   let poptop: THREE.Group | null = null;
+  const flappers: THREE.Object3D[] = [];
   const dside = (M.dark as THREE.MeshStandardMaterial).clone?.() ?? M.dark;
   if ((dside as THREE.Material).side !== undefined) (dside as THREE.Material).side = THREE.DoubleSide;
 
@@ -375,6 +378,58 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
         b.add(spare);
         break;
       }
+      case 'stacks': {
+        // Tall chrome exhaust stacks behind the cab
+        for (const sd of [-1, 1]) {
+          const x = sd * (W / 2 - 0.12);
+          b.add(tube(V(x, s.belt - 0.2, s.C - 0.15), V(x, s.roof + 0.55, s.C - 0.15), 0.07, M.chrome, 12));
+          const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.12, 12), M.dark);
+          cap.position.set(x, s.roof + 0.6, s.C - 0.15);
+          b.add(cap);
+        }
+        // Fifth wheel on the chassis, and fuel tanks along the sides
+        const fifth = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.1, 20), M.dark);
+        fifth.position.set(0, s.belt + 0.08, (s.axles[1] + (s.axles[2] ?? s.axles[1])) / 2);
+        b.add(fifth);
+        for (const sd of [-1, 1]) {
+          const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.1, 18).rotateX(Math.PI / 2), M.chrome);
+          tank.position.set(sd * (W / 2 - 0.3), s.sill + 0.1, s.C - 0.35);
+          b.add(tank);
+        }
+        // Grille: a tall chrome face
+        const gh = Math.min(s.nose, P.belt(front - 0.2)) - s.sill - 0.2;
+        const grille = new THREE.Mesh(new THREE.BoxGeometry(W * 0.5, gh, 0.05), M.chrome);
+        grille.position.set(0, s.sill + 0.1 + gh / 2, noseZ(W * 0.25) - 0.01);
+        b.add(grille);
+        // Air horns on the roof
+        for (const sd of [-1, 1]) {
+          const horn = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.02, 0.5, 10).rotateX(Math.PI / 2), M.chrome);
+          horn.position.set(sd * 0.35, s.roof + 0.1, s.B - 0.2);
+          b.add(horn);
+        }
+        break;
+      }
+      case 'vfront': {
+        // The split-screen bus's V of second colour on the nose and a round badge, laid on the nose surface
+        const n = 10;
+        for (let i = 0; i < n; i++) {
+          for (const sd of [-1, 1]) {
+            const t0 = i / n, t1 = (i + 1) / n;
+            const x0 = sd * t0 * W * 0.44, x1 = sd * t1 * W * 0.44;
+            const y0 = s.belt - 0.38 + t0 * 0.38, y1 = s.belt - 0.38 + t1 * 0.38;
+            const a2 = V(x0, y0, noseZ(x0) + 0.008), b2 = V(x1, y1, noseZ(x1) + 0.008);
+            const seg = new THREE.Mesh(new THREE.BoxGeometry(0.11, a2.distanceTo(b2) + 0.02, 0.012), M.second);
+            seg.position.copy(a2).add(b2).multiplyScalar(0.5);
+            seg.lookAt(seg.position.clone().add(V(0, 0, 1)));
+            seg.rotateZ(Math.atan2(b2.y - a2.y, b2.x - a2.x) - Math.PI / 2);
+            b.add(seg);
+          }
+        }
+        const badge = new THREE.Mesh(new THREE.CircleGeometry(0.11, 24), M.chrome);
+        badge.position.set(0, s.belt - 0.22, noseZ(0) + 0.012);
+        b.add(badge);
+        break;
+      }
       case 'bed': {
         const bed = new THREE.Mesh(new THREE.BoxGeometry(W - 0.26, 0.05, s.D - rear - 0.15), M.dark);
         bed.position.set(0, s.belt + 0.03, (rear + s.D) / 2);
@@ -482,7 +537,7 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
       }
     }
   }
-  return { glows, wipers, lampY, front, poptop };
+  return { glows, wipers, lampY, front, poptop, flappers };
 }
 
 let tyreTex: THREE.Texture | null = null;

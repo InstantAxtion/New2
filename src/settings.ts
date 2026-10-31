@@ -25,6 +25,8 @@ export interface Settings {
   musicMode: 'spotify' | 'videos' | 'radio' | 'podcasts';
   /** The player's own YouTube Data API key (for finding music videos). */
   youtubeKey: string;
+  /** Headlights. */
+  lights: 'auto' | 'on' | 'off';
   /** Your YouTube channel (@handle), for your playlists. */
   ytChannel: string;
   prefer: 'video' | 'lyrics';
@@ -103,6 +105,7 @@ export const DEFAULTS: Settings = {
   cruiseKmh: 96.56, // 60 mph
   musicMode: 'spotify',
   youtubeKey: '',
+  lights: 'auto',
   ytChannel: '',
   prefer: 'video',
   pip: true,

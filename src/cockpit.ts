@@ -30,6 +30,8 @@ export interface Cockpit {
   seat?: { x: number; top: number; z: number; eyeY: number; wheel: THREE.Vector3; rimR: number; pedal: THREE.Vector3; rest: THREE.Vector3 };
   /** Inside of the doors (they swing out with the doors, so hide while those are open). */
   doorPanels?: THREE.Object3D[];
+  /** The seats (copied for the outside view). */
+  seats?: THREE.Object3D[];
 }
 
 function woodTexture(): THREE.Texture {
@@ -352,6 +354,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
   const seatTop = Math.max(floorY + 0.14, eyeY0 - 0.72);
   const seatBase = std(0x1a1b1e, 0.6);
   const stitch = std(new THREE.Color(c.leather).multiplyScalar(0.55).getHex(), 0.8);
+  const seatGroups: THREE.Object3D[] = [];
   const seat = (x: number, w: number, z: number, opts: { sport?: boolean; bench?: boolean; head?: boolean; top?: number } = {}) => {
     const g = new THREE.Group();
     const top = opts.top ?? seatTop;
@@ -405,6 +408,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     }
     g.add(back);
     I.add(g);
+    seatGroups.push(g);
     return g;
   };
   const sporty = style === 'sport';
@@ -696,7 +700,7 @@ export function buildCockpit(I: THREE.Group, eye: THREE.Object3D, s: CarSpec, c:
     hud = { ctx: hc.getContext('2d')!, tex, mesh };
   }
   return { steering, screen, screenWidth, screenCtx, screenTex, clusterCtx, clusterTex, cluster, ambient, sunroofPanel, mirrorRear, mirrorSides, freshener, visors, hud,
-    seat: { x: driverX, top: seatTop, z: eyeZ, eyeY, wheel: wheelC.clone(), rimR, pedal: pedalAt, rest: restAt }, doorPanels };
+    seat: { x: driverX, top: seatTop, z: eyeZ, eyeY, wheel: wheelC.clone(), rimR, pedal: pedalAt, rest: restAt }, doorPanels, seats: seatGroups };
 }
 
 /** Draw the instrument cluster: digital speed with a rev bar, or two round dials. */
@@ -759,13 +763,15 @@ export interface Driver {
   inside: THREE.Group;
   /** Follow the steering wheel with the hands and arms (call after turning the wheel). */
   update(): void;
+  /** Sleeves (live in the cabin). */
+  arms: THREE.Object3D[];
 }
 
 export function buildDriver(ck: Cockpit, c: Custom, pbr: boolean, I: THREE.Group): Driver {
   const outside = new THREE.Group();
   const inside = new THREE.Group();
   const st = ck.seat;
-  if (!st) return { outside, inside, update() {} };
+  if (!st) return { outside, inside, update() {}, arms: [] };
   const m = (col: number, r = 0.75) => (pbr ? new THREE.MeshStandardMaterial({ color: col, roughness: r }) : new THREE.MeshLambertMaterial({ color: col }));
   const tops = [0x2b3a55, 0x6b2f2f, 0x2f5a46, 0xd9d4c7, 0x333338, 0x8a6a3a];
   const top = m(tops[Math.abs(Math.round(c.color / 7)) % tops.length]);
@@ -865,5 +871,5 @@ export function buildDriver(ck: Cockpit, c: Custom, pbr: boolean, I: THREE.Group
   };
   update();
   for (const g of [outside, inside]) g.traverse((o) => ((o as THREE.Mesh).castShadow = false));
-  return { outside, inside, update };
+  return { outside, inside, update, arms: arms.flatMap((a) => [a.upper, a.fore]) };
 }

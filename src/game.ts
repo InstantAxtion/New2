@@ -16,6 +16,7 @@ import { Drift } from './drift';
 import { Windscreen } from './glass';
 import { Showroom } from './showroom';
 import { Thumbs } from './thumbs';
+import { Trailer } from './trailer';
 import { updateFilm } from './stops';
 import { drawVisualizer } from './map';
 import { AtmosphereShader, makeLensflare } from './post';
@@ -60,6 +61,8 @@ export class Game {
   readonly showroom: Showroom;
   /** Studio photos of the cars for the garage picker. */
   readonly thumbs: Thumbs;
+  /** A caravan or boat towed behind. */
+  trailer!: Trailer;
   /** Doors, bonnet and boot open in the garage. */
   openState = { door: false, bonnet: false, boot: false };
   private renderPass: RenderPass | null = null;
@@ -348,6 +351,8 @@ export class Game {
       this.car.dispose();
     }
     this.car = new CarModel(spec, custom, this.tier);
+    this.trailer ??= new Trailer(this.world);
+    this.trailer.set(spec.bike ? 'none' : this.car.custom.tow ?? 'none', this.car.custom.color);
     const ws = this.car.windscreen;
     this.glass.fit(ws.bottom, ws.top, ws.wBottom, ws.wTop);
     this.engine.setProfile(spec.engine);
@@ -526,9 +531,17 @@ export class Game {
     const garage = this.phase === 'garage';
     const home = garage ? this.showroom.scene : this.scene;
     if (this.car.group.parent !== home) home.add(this.car.group);
+    if (this.trailer.group.parent !== home) home.add(this.trailer.group);
     if (garage) {
       this.showroom.update(dt, new THREE.Vector3(v.x, v.y, v.z));
       this.car.group.rotation.y = this.showroom.angle;
+    }
+    if (this.trailer.kind !== 'none') {
+      // The tow ball just behind the back bumper
+      this.trailer.world = this.world;
+      this.car.group.updateMatrixWorld();
+      const hitch = new THREE.Vector3(0, 0.45, -this.car.spec.length / 2 - 0.25).applyMatrix4(this.car.group.matrixWorld);
+      this.trailer.update(hitch, this.car.group.rotation.y, garage);
     }
     this.car.openings.update(dt);
     this.car.cabinTick(dt, v.steer * v.v * 0.35, this.visorDown);
@@ -536,8 +549,12 @@ export class Game {
     this.parkedTime = Math.abs(v.v) < 0.3 ? this.parkedTime + dt : 0;
     this.car.setParked(garage || this.parkedTime > 4, dt);
     const night = this.sky.night > 0.45 && this.phase !== 'garage';
-    this.car.animate(v.dist, v.steer, v.braking, night, v.wheelAngle);
-    this.car.headlight.intensity = night ? 80 : 0;
+    // Headlights: on, off, or automatic (dusk, tunnels, fog and heavy rain)
+    const lm = this.settings.lights ?? 'auto';
+    const gloomy = this.sky.night > 0.25 || this.world.tunnelAt(v.z) > 0.3 || this.weather.look.fog < 0.45 || this.weather.look.rain > 0.5;
+    this.lightsOn = this.phase !== 'garage' && (lm === 'on' || (lm === 'auto' && gloomy));
+    this.car.animate(v.dist, v.steer, v.braking, this.lightsOn, v.wheelAngle);
+    this.car.headlight.intensity = this.lightsOn ? 260 * (0.35 + 0.65 * Math.max(this.sky.night, this.world.tunnelAt(v.z))) : 0;
     this.car.setInside(this.phase !== 'garage' && this.rig.mode === 'hood');
 
     if (this.phase === 'drive') this.traffic.update(dt, v, night, (z) => this.speedLimit(z));
@@ -1020,7 +1037,7 @@ export class Game {
     // Mirrors are small: refreshing them every other frame is plenty
     if (++this.mirrorSkip % 2 === 1 && this.settings.quality !== 'ultra') return;
     if (!this.mirrorRT.length) {
-      this.mirrorRT = [new THREE.WebGLRenderTarget(320, 88), new THREE.WebGLRenderTarget(160, 120), new THREE.WebGLRenderTarget(160, 120)];
+      this.mirrorRT = [new THREE.WebGLRenderTarget(384, 106), new THREE.WebGLRenderTarget(192, 128), new THREE.WebGLRenderTarget(192, 128)];
       for (const rt of this.mirrorRT) rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
     }
     const tex = (i: number) => {
@@ -1054,7 +1071,8 @@ export class Game {
       if (!m) continue;
       const pos = m.getWorldPosition(new THREE.Vector3());
       cam.position.copy(pos);
-      cam.aspect = i === 0 ? 3.6 : 1.33;
+      // (side mirrors match their glass: wide on cars, tall on the big rig)
+      cam.aspect = i === 0 ? 3.6 : car.spec.width > 2.2 ? 0.6 : 1.55;
       cam.fov = i === 0 ? 22 : 30;
       cam.updateProjectionMatrix();
       // Look backwards (and a little outwards for the side mirrors)
@@ -1074,12 +1092,21 @@ export class Game {
   }
 
   /** Lay the YouTube player over the dashboard screen (or in a corner). */
+  /** Watch the video big, in the middle of the screen. */
+  theatre = false;
+  /** Are the headlights on right now. */
+  lightsOn = false;
+
   private placeVideo() {
     const scr = this.videos?.screen;
     if (!scr) return;
     let p: Placement = { kind: 'hidden' };
     const W = window.innerWidth, H = window.innerHeight;
-    if (scr.active && this.phase !== 'garage') {
+    if (scr.active && this.phase !== 'garage' && this.theatre) {
+      // Cinema: big, flat and sharp in the middle of the screen, with room for the controls below
+      const width = Math.min(W - 24, ((H - 120) * 16) / 9, 1280);
+      p = { kind: 'theatre', x: (W - width) / 2, y: Math.max(12, (H - 70 - (width * 9) / 16) / 2), width };
+    } else if (scr.active && this.phase !== 'garage') {
       if (this.car.inside) {
         const m = this.car.screen;
         m.updateWorldMatrix(true, false);

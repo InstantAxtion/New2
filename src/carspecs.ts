@@ -9,7 +9,7 @@ export type Lights = 'slim' | 'round' | 'quad' | 'square' | 'bar';
 export type Feature =
   | 'lip' | 'wing' | 'ducktail' | 'scoop' | 'rails' | 'rack' | 'spare' | 'bed' | 'bullbar' | 'lightbar' | 'snorkel'
   | 'fogs' | 'diffuser' | 'splitter' | 'skirts' | 'exhaust2' | 'exhaust4' | 'exhaustC' | 'antenna' | 'chrome' | 'fins'
-  | 'nogrille' | 'softtop' | 'intakes' | 'mudflaps' | 'scissor' | 'poptop' | 'rooftent';
+  | 'nogrille' | 'softtop' | 'intakes' | 'mudflaps' | 'scissor' | 'poptop' | 'rooftent' | 'stacks' | 'vfront';
 
 /** How a car drives and leans. */
 export interface Handling {
@@ -66,6 +66,10 @@ export interface Custom {
   plate: string;
   /** Decal on the doors. */
   decal: 'none' | 'number' | 'flames' | 'stripe' | 'stars' | 'endless';
+  /** What's towed behind. */
+  tow: 'none' | 'caravan' | 'boat';
+  /** Surfboards on the roof or bikes on the back. */
+  rack: 'none' | 'surf' | 'bikes';
 }
 
 const H = (roll: number, dive: number, steer: number, spring: number): Handling => ({ roll, dive, steer, spring });
@@ -205,6 +209,20 @@ export const CARS: CarSpec[] = [
     features: ['bullbar', 'rack', 'rooftent', 'snorkel', 'spare', 'fogs', 'mudflaps', 'lightbar'],
   },
   {
+    id: 'kombi', name: "Splitscreen Bus '67", blurb: 'A vintage microbus: a V on the nose, slow and happy', top: 115, accel: 2.4, grip: 5.4,
+    length: 4.3, width: 1.78, wheel: 0.34, axles: [1.2, -1.2], defaultColor: 0x5fa9b8,
+    sill: 0.36, belt: 1.06, nose: 1.0, tail: 1.75, deck: 1.82, roof: 1.96, A: 1.95, B: 1.78, C: -1.95, D: -2.05, tumble: 0.9,
+    doors: 2, lights: 'round', cabin: 'van', engine: 'flat4', handling: H(0.02, 0.014, 2.3, 3.4), rim: 'steel', finish: 'solid',
+    features: ['chrome', 'vfront', 'rack'],
+  },
+  {
+    id: 'rig', name: 'Long Hauler', blurb: 'A big rig: high seat, air horn, chrome stacks', top: 125, accel: 1.8, grip: 5.2,
+    length: 7.0, width: 2.5, wheel: 0.52, axles: [2.35, -1.7, -2.95], defaultColor: 0x9c1f1f,
+    sill: 0.78, belt: 1.55, nose: 1.6, tail: 1.5, deck: 1.55, roof: 3.15, A: 1.05, B: 0.78, C: -0.95, D: -1.05, bed: true, tumble: 0.92,
+    doors: 2, lights: 'square', cabin: 'utility', engine: 'diesel', handling: H(0.02, 0.012, 2.0, 3.0), rim: 'steel', finish: 'metallic',
+    features: ['bed', 'chrome', 'stacks', 'mudflaps'],
+  },
+  {
     id: 'bike', name: 'Horizon Tourer', blurb: 'A motorbike: lean into the bends', top: 230, accel: 8.5, grip: 9,
     length: 2.2, width: 0.8, wheel: 0.33, axles: [0.74, -0.72], defaultColor: 0x1f4fa8,
     sill: 0.3, belt: 0.9, nose: 0.8, tail: 0.8, deck: 0.9, roof: 1.2, A: 0.3, B: 0, C: -0.3, D: -0.5, open: true,
@@ -212,6 +230,13 @@ export const CARS: CarSpec[] = [
     features: [], bike: true,
   },
 ];
+
+/** Cars you start with; the rest unlock as your total miles add up (miles needed). */
+export const STARTERS = ['hatch', 'gt', 'suv', 'van', 'ev', 'wagon', 'bubble'];
+export const UNLOCK_MILES: Record<string, number> = {
+  roadster: 10, pickup: 20, muscle: 35, classic: 50, kombi: 65, offroad: 100, spider: 125, wanderer: 150,
+  starliner: 175, nomad: 200, rig: 250, veloce: 300, super: 350, bike: 400, hyper: 500,
+};
 
 export const COLORS = [0xb3121b, 0xd9a21b, 0xf2f1ec, 0x1b2233, 0x2a6fb5, 0x3d4a3a, 0x3f8f86, 0x8fc3d6, 0xc85a8f, 0x6a4bb0, 0x1e1f22, 0xa9aeb5, 0xe0701e, 0x6b6a43, 0x48505c, 0x6fa8a0];
 export const LEATHERS = [0x1c1c1e, 0x6b3b22, 0x8c1c1c, 0xd9cfbf, 0x2a3550, 0x5b5f66];
@@ -223,8 +248,8 @@ export function defaultCustom(spec: CarSpec): Custom {
   return {
     color: spec.defaultColor,
     finish: spec.finish,
-    color2: spec.id === 'van' ? 0xefefea : spec.id === 'muscle' || spec.id === 'starliner' || spec.id === 'wanderer' ? 0xf2f1ec : 0x1e1f22,
-    twoTone: spec.id === 'van' || spec.id === 'classic' || spec.id === 'starliner' || spec.id === 'wanderer',
+    color2: spec.id === 'van' || spec.id === 'kombi' ? 0xefefea : spec.id === 'muscle' || spec.id === 'starliner' || spec.id === 'wanderer' ? 0xf2f1ec : 0x1e1f22,
+    twoTone: spec.id === 'van' || spec.id === 'kombi' || spec.id === 'classic' || spec.id === 'starliner' || spec.id === 'wanderer',
     stripes: spec.id === 'muscle',
     rim: spec.rim,
     rimColor: spec.rim === 'beadlock' ? 0x1d1e21 : spec.rim === 'steel' ? 0xe6e7ea : 0xc9ccd1,
@@ -234,5 +259,7 @@ export function defaultCustom(spec: CarSpec): Custom {
     ambient: spec.cabin === 'ev' || spec.cabin === 'luxury' ? 0x5ab4ff : 0,
     plate: '',
     decal: 'none',
+    tow: 'none',
+    rack: 'none',
   };
 }

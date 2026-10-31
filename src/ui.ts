@@ -3,7 +3,7 @@ import { AppLauncher } from '@capacitor/app-launcher';
 import { App } from '@capacitor/app';
 import type { Game } from './game';
 import { CARS, COLORS } from './cars';
-import { AMBIENTS, LEATHERS, RIM_COLORS, defaultCustom, type Custom } from './carspecs';
+import { AMBIENTS, LEATHERS, RIM_COLORS, STARTERS, UNLOCK_MILES, defaultCustom, type Custom } from './carspecs';
 import { DECALS, defaultPlate } from './carextras';
 import { BIOMES, BIOME_IDS, type BiomeId } from './world/biomes';
 import type { TimeMode } from './sky';
@@ -62,8 +62,8 @@ const CAR_CATS: { id: string; label: string; cars: string[] }[] = [
   { id: 'everyday', label: '🚗 Everyday', cars: ['hatch', 'ev', 'wagon', 'bubble'] },
   { id: 'sport', label: '🏁 Sporty', cars: ['gt', 'roadster', 'muscle', 'spider'] },
   { id: 'super', label: '🏎️ Super', cars: ['super', 'veloce', 'hyper'] },
-  { id: 'classic', label: '🕰️ Classic', cars: ['classic', 'starliner', 'spider', 'bubble'] },
-  { id: 'adventure', label: '🏕️ Adventure', cars: ['suv', 'pickup', 'offroad', 'nomad', 'van', 'wanderer'] },
+  { id: 'classic', label: '🕰️ Classic', cars: ['classic', 'starliner', 'spider', 'bubble', 'kombi'] },
+  { id: 'adventure', label: '🏕️ Adventure', cars: ['suv', 'pickup', 'offroad', 'nomad', 'van', 'wanderer', 'kombi', 'rig'] },
   { id: 'bike', label: '🏍️ Bike', cars: ['bike'] },
 ];
 
@@ -219,9 +219,10 @@ export class UI {
   <div class="hud-menu card" id="hud-menu">
     <div class="menu-grid">
       <button class="pad small" data-open="music" aria-label="Music">🎵<span>Music</span></button>
-      <button class="pad small" id="tv-btn" aria-label="Watch the music video on the dashboard">📺<span>Screen</span></button>
+      <button class="pad small" id="tv-btn" aria-label="Watch the music video">📺<span>Watch</span></button>
       <button class="pad small" id="zen-btn" aria-label="Hide controls">👁️<span>Hide all</span></button>
       <button class="pad small" id="pause-btn" aria-label="Pause">⏸<span>Pause</span></button>
+      <button class="pad small" id="lights-btn" aria-label="Headlights">💡<span id="lights-lbl">Auto</span></button>
     </div>
     <div class="menu-auto">
       <div class="menu-grid">
@@ -260,6 +261,16 @@ export class UI {
     <button class="pad small" id="slower" aria-label="Slower">−</button>
     <div class="cruise-val"><b id="cruise">80</b><span id="cruise-lbl">cruise</span></div>
     <button class="pad small" id="faster" aria-label="Faster">+</button>
+  </div>
+  <div class="theatre-bar" id="theatre-bar">
+    <span class="tb-title" id="tb-title"></span>
+    <div class="tb-btns">
+      <button class="icon" id="tb-prev" aria-label="Previous">⏮</button>
+      <button class="icon" id="tb-toggle" aria-label="Play or pause">⏯</button>
+      <button class="icon" id="tb-next" aria-label="Next">⏭</button>
+      <button class="icon" id="tb-dash" aria-label="Watch on the car's screen">🚗</button>
+      <button class="icon" id="tb-close" aria-label="Close">✕</button>
+    </div>
   </div>
   <div class="toast" id="toast"></div>
   <div class="sleep-cover" id="sleep-cover"><div><b>Good night 🌙</b><span>Pulled over and stopped. The music has faded out.</span>
@@ -375,7 +386,7 @@ export class UI {
     <button class="icon" data-close="custom" aria-label="Close">✕</button></div></div>
   <nav class="cutabs">
     <button class="cutab" data-cutab="paint">🎨 Paint</button><button class="cutab" data-cutab="wheels">🛞 Wheels</button>
-    <button class="cutab" data-cutab="style">✨ Style</button><button class="cutab" data-cutab="cabin">💺 Interior</button>
+    <button class="cutab" data-cutab="style">✨ Style</button><button class="cutab" data-cutab="cabin">💺 Inside</button><button class="cutab" data-cutab="extras">🧳 Extras</button>
   </nav>
   <div class="sheet-body">
     <div class="cupage" data-cupage="paint">
@@ -401,6 +412,13 @@ export class UI {
       <div class="chips" data-cu="decal">${DECALS.map((d) => `<button class="chip" data-v="${d.id}">${d.name}</button>`).join('')}</div>
       <h3>Number plate</h3>
       <div class="range-row"><input type="text" id="cu-plate" maxlength="9" autocomplete="off" spellcheck="false" placeholder="Your plate" /></div>
+    </div>
+    <div class="cupage" data-cupage="extras">
+      <h3>Tow</h3>
+      <div class="chips" data-cu="tow"><button class="chip" data-v="none">Nothing</button><button class="chip" data-v="caravan">🚐 Caravan</button><button class="chip" data-v="boat">🚤 Boat</button></div>
+      <h3>Carry</h3>
+      <div class="chips" data-cu="rack"><button class="chip" data-v="none">Nothing</button><button class="chip" data-v="surf">🏄 Surfboards</button><button class="chip" data-v="bikes">🚲 Bikes</button></div>
+      <p class="hint">Not on the motorbike.</p>
     </div>
     <div class="cupage" data-cupage="cabin">
       <h3>Seats</h3>
@@ -843,7 +861,11 @@ export class UI {
     const list = cat.cars.length ? CARS.filter((c) => cat.cars.includes(c.id)) : CARS;
     const strip = $('#car-strip');
     strip.innerHTML = list
-      .map((c) => `<button class="ctile${c.id === this.s.car ? ' on' : ''}" data-car="${c.id}"><img alt="" /><b>${esc(c.name)}</b><span>${this.speed(c.top)}</span></button>`)
+      .map((c) => {
+        const togo = this.milesToGo(c.id);
+        const lock = togo > 0 ? `<i class="lock">🔒 ${this.s.units === 'kmh' ? Math.ceil(togo * 1.609) + ' km' : Math.ceil(togo) + ' mi'} to go</i>` : '';
+        return `<button class="ctile${c.id === this.s.car ? ' on' : ''}${togo > 0 ? ' locked' : ''}" data-car="${c.id}"><img alt="" />${lock}<b>${esc(c.name)}</b><span>${this.speed(c.top)}</span></button>`;
+      })
       .join('');
     for (const b of $$('[data-car]', strip)) {
       const spec = CARS.find((c) => c.id === b.dataset.car)!;
@@ -851,6 +873,12 @@ export class UI {
       this.game.thumbs.get(spec, this.customOf(spec.id), (url) => (img.src = url));
       b.onclick = () => {
         if (this.s.car === spec.id) return;
+        const togo = this.milesToGo(spec.id);
+        if (togo > 0) {
+          const d = this.s.units === 'kmh' ? `${Math.ceil(togo * 1.609)} km` : `${Math.ceil(togo)} miles`;
+          this.toast(`🔒 ${esc(spec.name)}<b>Drive ${d} more to unlock it</b>`);
+          return;
+        }
         this.s.car = spec.id;
         this.game.setCar(spec.id);
         this.save();
@@ -860,6 +888,15 @@ export class UI {
     }
     const on = $('.ctile.on', strip);
     if (on) strip.scrollLeft = on.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2;
+  }
+
+  /** Miles still to drive before a car unlocks (0 = yours to drive). */
+  private milesToGo(id: string): number {
+    if (STARTERS.includes(id) || id === this.s.car) return 0;
+    const st = this.game.stats.data;
+    if ((st.perCar[id] ?? 0) > 0) return 0; // already driven it before unlocks existed
+    const need = UNLOCK_MILES[id] ?? 0;
+    return Math.max(0, need - st.totalM / 1609.34);
   }
 
   private speed(kmh: number) {
@@ -996,6 +1033,24 @@ export class UI {
     $('#tilt-zero', r).onclick = () => this.recentreTilt();
     for (const b of $$('[data-open="stats"]', r)) b.addEventListener('click', () => this.renderStats());
     $('#tv-btn', r).onclick = () => this.tvButton();
+    $('#nowbar-text', r).onclick = () => {
+      if (this.videos.active) this.setTheatre(true);
+    };
+    $('#lights-btn', r).onclick = () => {
+      const order: Settings['lights'][] = ['auto', 'on', 'off'];
+      this.s.lights = order[(order.indexOf(this.s.lights ?? 'auto') + 1) % 3];
+      this.save();
+      this.refreshHud();
+      this.toast(`💡 Headlights<b>${this.s.lights === 'auto' ? 'Automatic' : this.s.lights === 'on' ? 'On' : 'Off'}</b>`);
+    };
+    $('#tb-close', r).onclick = () => this.setTheatre(false);
+    $('#tb-toggle', r).onclick = () => this.videos.toggle();
+    $('#tb-next', r).onclick = () => this.videos.next();
+    $('#tb-prev', r).onclick = () => this.videos.previous();
+    $('#tb-dash', r).onclick = () => {
+      this.setTheatre(false);
+      this.dashButton();
+    };
     // Trip meter, favourite places
     $('#trip-btn', r).onclick = () => $('#trip-card').classList.toggle('show');
     $('#trip-close', r).onclick = () => $('#trip-card').classList.remove('show');
@@ -1028,8 +1083,27 @@ export class UI {
     };
   }
 
-  /** 📺: into the driver's seat, then look at the dashboard screen, then back out. */
+  /** 📺: watch big in the middle of the screen (the car keeps driving behind). */
   private tvButton() {
+    if (!this.videos.active) {
+      this.setMusicMode('videos');
+      if (!this.videos.songs.length && !this.videos.ytList) {
+        this.open('music');
+        return;
+      }
+    }
+    this.setTheatre(!this.game.theatre);
+  }
+
+  private setTheatre(on: boolean) {
+    this.game.theatre = on;
+    // Let auto-drive take over while you watch
+    if (on && !this.s.auto) this.setAuto(true);
+    this.refreshHud();
+  }
+
+  /** Into the driver's seat to look at the dashboard screen (or back out). */
+  private dashButton() {
     const rig = this.game.rig;
     if (this.s.cam !== 'hood') this.watchOnScreen(true);
     else if (!rig.screenFocus) {
@@ -1229,7 +1303,8 @@ export class UI {
     $('#cam-label').textContent = CAM_LABEL[this.s.cam];
     $('#assist-btn').classList.toggle('on', this.s.assist);
     $('#assist-lbl').textContent = this.s.assist ? 'ASSIST' : 'NO ASSIST';
-    $('#tv-btn').classList.toggle('on', this.s.cam === 'hood');
+    $('#tv-btn').classList.toggle('on', this.game.theatre);
+    $('#lights-lbl').textContent = this.s.lights === 'on' ? 'On' : this.s.lights === 'off' ? 'Off' : 'Auto';
     document.body.classList.toggle('driver-view', this.s.cam === 'hood');
     document.body.classList.toggle('minimal-hud', this.s.minimalHud);
     document.body.classList.toggle('no-compass', !this.s.compass);
@@ -1249,9 +1324,28 @@ export class UI {
     $('#cc-btn').classList.toggle('on', this.game.ccOn);
   }
 
+  private unlockedSeen: Set<string> | null = null;
+
+  /** Tell the driver when their miles unlock a new car. */
+  private checkUnlocks() {
+    const now = new Set(CARS.filter((c) => this.milesToGo(c.id) === 0).map((c) => c.id));
+    if (this.unlockedSeen) {
+      for (const id of now) {
+        if (!this.unlockedSeen.has(id)) {
+          const c = CARS.find((x) => x.id === id)!;
+          this.toast(`🔓 New car unlocked<b>${esc(c.name)}</b>`);
+        }
+      }
+    }
+    this.unlockedSeen = now;
+  }
+
+  private unlockTimer = 0;
+
   private tick() {
     const g = this.game;
     const v = g.vehicle;
+    if (++this.unlockTimer % 50 === 0) this.checkUnlocks();
     const k = this.s.units === 'mph' ? 0.621371 : 1;
     $('#speed').textContent = String(Math.round(Math.abs(v.v) * 3.6 * k));
     // Say why auto-drive is under the set speed, so cruise control never seems broken
@@ -1318,6 +1412,9 @@ export class UI {
       : src === 'spotify' ? '🎧 Spotify' : '';
     const txt = $('#nowbar-text');
     if (txt.textContent !== label) txt.textContent = label;
+    if (g.theatre && !this.videos.active) this.setTheatre(false);
+    const tt = $('#tb-title');
+    if (g.theatre && tt.textContent !== label) tt.textContent = label;
     const paused = src === 'podcasts' ? !this.podcasts.playing : src === 'radio' ? !this.radio.playing : src === 'spotify' ? this.spotifyPaused : false;
     const tb = $('#nb-toggle');
     const ico = paused ? '▶' : '⏸';
