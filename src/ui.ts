@@ -15,6 +15,7 @@ import { MusicVideos } from './music';
 import { fetchSongs } from './tracks';
 import { KeyError, QuotaError, channelPlaylists, parseYouTube, searchYouTube, type YtResult } from './youtube';
 import { Radio, STATIONS } from './radio';
+import { SCAPES, Soundscape, type ScapeId } from './soundscape';
 import { PodcastPlayer, loadEpisodes, searchBooks, searchShows } from './podcasts';
 import { fetchLyrics, lineAt, type Line } from './lyrics';
 import { STAMPS } from './stats';
@@ -322,7 +323,7 @@ export class UI {
   <div class="tabs">
     <button class="tab" data-mtab="spotify">🎧 Spotify player</button>
     <button class="tab" data-mtab="videos">📺 Music videos</button>
-    <button class="tab" data-mtab="radio">📻 Radio</button>
+    <button class="tab" data-mtab="radio">📻 Radio & ambience</button>
     <button class="tab" data-mtab="podcasts">🎙️ Talk & books</button>
   </div>
   <div class="sheet-body">
@@ -360,6 +361,9 @@ export class UI {
       <div id="pc-list"><p class="hint">Search for a show, then pick an episode. Episodes stream while you drive.</p></div>
     </div>
     <div class="mpane" data-pane="radio">
+      <h3>Soundscapes <small>instead of music</small></h3>
+      <div class="scapes">${SCAPES.map((x) => `<button class="rtile" data-scape="${x.id}"><i>${x.icon}</i><span>${x.name}</span></button>`).join('')}</div>
+      <h3>Radio stations</h3>
       <p class="now-status" id="rd-status"></p>
       <div id="rd-list">${STATIONS.map((st) => `<button class="song" data-station="${st.id}"><b>${st.name}</b><span>${st.about}</span></button>`).join('')}</div>
       <div class="row"><button class="ghost small" id="rd-stop">⏹ Stop</button></div>
@@ -1485,6 +1489,7 @@ export class UI {
       src === 'videos' ? (np.song ? `📺 ${np.song.title} · ${np.song.artist}` : np.video ? `📺 ${np.video.title}` : '📺 Music videos')
       : src === 'podcasts' ? `🎙️ ${this.podcasts.episode?.title ?? ''}`
       : src === 'radio' ? `📻 ${this.radio.station?.name ?? ''}`
+      : src === 'scape' ? `${SCAPES.find((x) => x.id === (this.scape.current ?? this.scapePaused))?.icon ?? ''} ${SCAPES.find((x) => x.id === (this.scape.current ?? this.scapePaused))?.name ?? ''}`
       : src === 'spotify' ? '🎧 Spotify' : '';
     const txt = $('#nowbar-text');
     if (txt.textContent !== label) txt.textContent = label;
@@ -1492,7 +1497,7 @@ export class UI {
     document.body.classList.toggle('video-on', this.videos.active || this.s.musicMode === 'videos');
     const tt = $('#tb-title');
     if (g.theatre && tt.textContent !== label) tt.textContent = label;
-    const paused = src === 'podcasts' ? !this.podcasts.playing : src === 'radio' ? !this.radio.playing : src === 'spotify' ? this.spotifyPaused : false;
+    const paused = src === 'podcasts' ? !this.podcasts.playing : src === 'radio' ? !this.radio.playing : src === 'scape' ? !this.scape.current : src === 'spotify' ? this.spotifyPaused : false;
     const tb = $('#nb-toggle');
     const ico = paused ? '▶' : '⏸';
     if (tb.textContent !== ico && src !== 'videos') tb.textContent = ico;
@@ -1508,15 +1513,17 @@ export class UI {
   }
 
   /** Which sound source the now-playing bar controls, if any. */
-  private audioSource(): 'videos' | 'podcasts' | 'radio' | 'spotify' | null {
+  private audioSource(): 'videos' | 'podcasts' | 'radio' | 'scape' | 'spotify' | null {
     if (this.videos.active) return 'videos';
     if (this.s.musicMode === 'podcasts' && this.podcasts.episode) return 'podcasts';
+    if (this.s.musicMode === 'radio' && (this.scape.current || this.scapePaused)) return 'scape';
     if (this.s.musicMode === 'radio' && this.radio.station) return 'radio';
     if (this.s.musicMode === 'spotify' && $('#sp-player iframe')) return 'spotify';
     return null;
   }
 
   private spotifyPaused = false;
+  private scapePaused: ScapeId | null = null;
 
   /** Play/pause for whatever's on: videos, a podcast, the radio or the Spotify player. */
   private toggleAudio() {
@@ -1524,6 +1531,15 @@ export class UI {
     if (src === 'videos') this.videos.toggle();
     else if (src === 'podcasts') this.podcasts.toggle();
     else if (src === 'radio') this.radio.toggle();
+    else if (src === 'scape') {
+      if (this.scape.current) {
+        this.scapePaused = this.scape.current;
+        this.scape.stop();
+      } else if (this.scapePaused) {
+        this.scape.play(this.scapePaused);
+        this.scapePaused = null;
+      }
+    }
     else if (src === 'spotify') {
       // The Spotify embed listens for the same commands its own iframe API sends
       $<HTMLIFrameElement>('#sp-player iframe').contentWindow?.postMessage({ command: 'toggle' }, '*');
@@ -1717,7 +1733,10 @@ export class UI {
     this.save();
     this.refreshMusicTabs();
     if (!changed) return;
-    if (mode !== 'radio') this.radio.stop();
+    if (mode !== 'radio') {
+      this.radio.stop();
+      this.scape.stop();
+    }
     if (mode !== 'podcasts') this.podcasts.stop();
     if (mode !== 'videos') this.videos.stop();
     if (mode === 'videos') {
@@ -1793,6 +1812,7 @@ export class UI {
     const m = this.s.volMusic * this.sleepVolNow();
     this.radio.setVolume(m);
     this.podcasts.setVolume(m);
+    this.scape.setVolume(m);
     this.videos.screen.setVolume(m * 100);
   }
 
@@ -1886,6 +1906,7 @@ export class UI {
   // ---------- Radio ----------
 
   readonly radio = new Radio();
+  readonly scape = new Soundscape();
 
   private bindRadio() {
     const rd = this.radio;
@@ -1898,10 +1919,29 @@ export class UI {
     for (const b of $$('[data-station]')) {
       b.onclick = () => {
         this.setMusicMode('radio', false);
+        this.scape.stop();
         rd.play(STATIONS.find((s) => s.id === b.dataset.station)!);
       };
     }
-    $('#rd-stop').onclick = () => rd.stop();
+    $('#rd-stop').onclick = () => {
+      rd.stop();
+      this.scape.stop();
+      this.scapePaused = null;
+    };
+    // Soundscapes: tap to play, tap again to stop
+    this.scape.onChange = () => {
+      for (const b of $$('[data-scape]')) b.classList.toggle('on', b.dataset.scape === this.scape.current);
+    };
+    for (const b of $$('[data-scape]')) {
+      b.onclick = () => {
+        if (this.scape.current === b.dataset.scape) return this.scape.stop();
+        this.setMusicMode('radio', false);
+        rd.stop();
+        this.scape.setVolume(this.s.volMusic * this.sleepVolNow());
+        this.scapePaused = null;
+        this.scape.play(b.dataset.scape as ScapeId);
+      };
+    }
     $('#rd-soma').onclick = (e) => {
       e.preventDefault();
       void this.openExternal('https://somafm.com/support/');

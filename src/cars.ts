@@ -295,6 +295,22 @@ export class CarModel {
         const well = new THREE.Mesh(new THREE.BoxGeometry(W - 0.62, s.wheel * 1.2, s.wheel * 2.3), dark);
         well.position.set(0, s.wheel + 0.1, ax);
         b.add(well);
+        // A thin black lip round each arch, following the body's cut-out
+        for (const side of [-1, 1]) {
+          const r = s.wheel + 0.1;
+          const pts: THREE.Vector3[] = [];
+          for (let k = 0; k <= 18; k++) {
+            const a = Math.PI * (k / 18);
+            const z = ax + Math.cos(a) * r;
+            const y = s.wheel + Math.sin(a) * r * 0.98;
+            if (y < s.sill - 0.01) continue;
+            pts.push(new THREE.Vector3(side * (P.half(z) - 0.005), y, z));
+          }
+          if (pts.length > 1) {
+            const lip = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.018, 5, false), dark);
+            b.add(lip);
+          }
+        }
       }
 
       // Side mirrors on stalks at the base of the windscreen

@@ -1,10 +1,39 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { defaultPlate, plateTexture } from './carextras';
 import { profile, surface } from './carbody';
 import type { CarSpec, Custom, RimStyle } from './carspecs';
 import { glowTexture } from './textures';
 
 // Exterior details for a car: lamps, seams, trim, features and wheels.
+
+let grilleMat: THREE.MeshStandardMaterial | null = null;
+/** A honeycomb mesh grille (dark plastic with a sheen on the cells' edges). */
+function meshGrille(): THREE.MeshStandardMaterial {
+  if (grilleMat) return grilleMat;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#050506';
+  g.fillRect(0, 0, 64, 64);
+  g.strokeStyle = '#3a3c42';
+  g.lineWidth = 2.5;
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+    const cx = x * 16 + (y % 2) * 8, cy = y * 16 + 8;
+    g.beginPath();
+    for (let k = 0; k <= 6; k++) {
+      const a = (k / 6) * Math.PI * 2 + Math.PI / 6;
+      g.lineTo(cx + Math.cos(a) * 7, cy + Math.sin(a) * 7);
+    }
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(10, 3);
+  grilleMat = new THREE.MeshStandardMaterial({ map: t, roughness: 0.5, metalness: 0.3 });
+  return grilleMat;
+}
 
 export interface PartMats {
   paint: THREE.Material;
@@ -91,22 +120,41 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
     b.add(sp);
     glows.push(sp);
   };
+  // Lamp materials: a smoked housing, a clear glossy cover, deep red tail lens, white reversing and amber indicators
+  const housingM = new THREE.MeshStandardMaterial({ color: 0x1a1c20, roughness: 0.35, metalness: 0.6 });
+  const coverM = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.18, roughness: 0.02, clearcoat: 1, depthWrite: false });
+  const tailLensM = new THREE.MeshPhysicalMaterial({ color: 0x5a0606, roughness: 0.12, clearcoat: 1, metalness: 0.1 });
+  const reverseM = new THREE.MeshStandardMaterial({ color: 0xe8e8ea, roughness: 0.2, metalness: 0.3 });
+  const indicatorM = new THREE.MeshStandardMaterial({ color: 0xd88a1c, roughness: 0.25, emissive: 0x3a1a00 });
   for (const side of [-1, 1]) {
     const hx = side * W * 0.33;
     const hz = noseZ(hx);
     const yaw = side * 0.3 * (1 - P.half(hz) / (W / 2) + 0.4);
     switch (s.lights) {
       case 'slim': {
-        const g = new THREE.CapsuleGeometry(0.06, 0.28, 4, 12).rotateZ(Math.PI / 2);
-        const l = new THREE.Mesh(g, M.head);
-        l.scale.set(1, 0.7, 0.5);
-        l.position.set(hx, lampY, hz - 0.02);
-        l.rotation.y = yaw;
-        // LED daytime strip under it
-        const drl = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.015, 0.02), M.lens);
-        drl.position.set(hx, lampY - 0.065, hz - 0.03);
-        drl.rotation.y = yaw;
-        b.add(l, drl);
+        // A headlamp unit: a smoked housing under a clear cover, chrome reflectors, two projector
+        // lenses and an LED daytime-running strip curling round the bottom
+        const unit = new THREE.Group();
+        unit.position.set(hx, lampY, hz - 0.035);
+        unit.rotation.y = yaw;
+        const housing = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.3, 6, 16).rotateZ(Math.PI / 2).scale(1, 0.72, 0.45), housingM);
+        const cover = new THREE.Mesh(new THREE.CapsuleGeometry(0.072, 0.302, 6, 16).rotateZ(Math.PI / 2).scale(1, 0.74, 0.5), coverM);
+        cover.position.z = 0.004;
+        unit.add(housing, cover);
+        for (const dx of [-0.08, 0.08]) {
+          const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.03, 0.02, 20).rotateX(Math.PI / 2), M.chrome);
+          bowl.position.set(side * dx, 0.004, 0.018);
+          const proj = new THREE.Mesh(new THREE.SphereGeometry(0.024, 16, 10), M.head);
+          proj.position.set(side * dx, 0.004, 0.026);
+          proj.scale.z = 0.6;
+          unit.add(bowl, proj);
+        }
+        const drl = new THREE.Mesh(new THREE.CapsuleGeometry(0.007, 0.3, 3, 8).rotateZ(Math.PI / 2), M.lens);
+        drl.position.set(0, -0.036, 0.024);
+        const hook = new THREE.Mesh(new THREE.CapsuleGeometry(0.007, 0.05, 3, 8), M.lens);
+        hook.position.set(side * 0.17, -0.016, 0.022);
+        unit.add(drl, hook);
+        b.add(unit);
         break;
       }
       case 'round':
@@ -128,13 +176,24 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
         break;
       }
       case 'square': {
-        const l = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.15, 0.05), M.head);
-        l.position.set(hx, lampY, hz - 0.015);
-        l.rotation.y = yaw * 0.6;
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.18, 0.04), M.chrome);
-        frame.position.copy(l.position).add(V(0, 0, -0.012));
-        frame.rotation.y = l.rotation.y;
-        b.add(frame, l);
+        // A rugged lamp: a chrome-framed box with a reflector, a main lamp and an indicator beside it
+        const unit = new THREE.Group();
+        unit.position.set(hx, lampY, hz - 0.02);
+        unit.rotation.y = yaw * 0.6;
+        const frame = new THREE.Mesh(new RoundedBoxGeometry(0.37, 0.18, 0.05, 2, 0.02), M.chrome);
+        const housing = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.15, 0.04), housingM);
+        housing.position.z = 0.01;
+        const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.045, 0.02, 24).rotateX(Math.PI / 2), M.chrome);
+        bowl.position.set(-side * 0.06, 0, 0.026);
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 10), M.head);
+        lamp.position.set(-side * 0.06, 0, 0.032);
+        lamp.scale.z = 0.5;
+        const ind = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.012), indicatorM);
+        ind.position.set(side * 0.11, 0, 0.03);
+        const cover = new THREE.Mesh(new THREE.BoxGeometry(0.345, 0.155, 0.006), coverM);
+        cover.position.z = 0.036;
+        unit.add(frame, housing, bowl, lamp, ind, cover);
+        b.add(unit);
         break;
       }
       case 'bar':
@@ -151,11 +210,23 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
       ring.position.copy(t.position);
       b.add(t, ring);
     } else if (s.lights !== 'bar') {
-      const t = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.26, 4, 10).rotateZ(Math.PI / 2), M.tail);
-      t.scale.set(1, s.lights === 'square' ? 1.3 : 0.75, 0.5);
-      t.position.set(tx, tailY, tz + 0.02);
-      t.rotation.y = -side * 0.2;
-      b.add(t);
+      // A tail light cluster: a deep red lens with a bright light bar inside, a white reversing lamp
+      // and an amber indicator, wrapping a little round the corner
+      const tall = s.lights === 'square' ? 1.35 : 0.8;
+      const unit = new THREE.Group();
+      unit.position.set(tx, tailY, tz + 0.025);
+      unit.rotation.y = -side * 0.2;
+      const housing = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.3, 5, 14).rotateZ(Math.PI / 2).scale(1, tall, 0.45), tailLensM);
+      const bar = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.26, 3, 8).rotateZ(Math.PI / 2), M.tail);
+      bar.position.set(0, 0.012 * tall, -0.022);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.006, 6, 18), M.tail);
+      ring.position.set(side * 0.1, -0.012 * tall, -0.022);
+      const rev = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.022 * tall, 0.01), reverseM);
+      rev.position.set(-side * 0.04, -0.03 * tall, -0.024);
+      const ind = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.018 * tall, 0.01), indicatorM);
+      ind.position.set(-side * 0.12, -0.03 * tall, -0.024);
+      unit.add(housing, bar, ring, rev, ind);
+      b.add(unit);
     }
     glow(V(tx, tailY, tz - 0.1), 0xff2020, 0.5, 0.55);
   }
@@ -173,7 +244,7 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
   if (!has('nogrille')) {
     const gw = s.lights === 'quad' ? W * 0.32 : W * 0.38;
     const gh = Math.max(0.1, lampY - s.sill - 0.2);
-    const grille = new THREE.Mesh(new THREE.BoxGeometry(gw, gh, 0.05), M.dark);
+    const grille = new THREE.Mesh(new RoundedBoxGeometry(gw, gh, 0.05, 2, 0.02), M.pbr ? meshGrille() : M.dark);
     grille.position.set(0, s.sill + 0.14 + gh / 2, noseZ(gw / 2) - 0.01);
     b.add(grille);
     // Horizontal slats
@@ -183,7 +254,7 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
       b.add(slat);
     }
   }
-  const lowerIntake = new THREE.Mesh(new THREE.BoxGeometry(W * 0.5, 0.07, 0.05), M.dark);
+  const lowerIntake = new THREE.Mesh(new RoundedBoxGeometry(W * 0.56, 0.09, 0.05, 2, 0.02), M.pbr ? meshGrille() : M.dark);
   lowerIntake.position.set(0, s.sill + 0.08, noseZ(W * 0.25) - 0.02);
   b.add(lowerIntake);
   if (has('chrome')) {

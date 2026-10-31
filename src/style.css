@@ -582,3 +582,4 @@ body.theatre-on .hud-tr, body.theatre-on .hud-menu { display: none !important; }
   .sheet.stats-sheet { top: auto; height: 62vh; width: 100%; border-left: 0; border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; }
   .sheet.stats-sheet.hidden { transform: translateY(110%); }
 }
+.scapes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 6px; }

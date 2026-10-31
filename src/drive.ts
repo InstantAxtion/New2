@@ -42,7 +42,7 @@ const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 const G = 9.81;
 /** Tyres grip a bit better than real ones, so the car turns as eagerly as it looks like it should. */
-const GRIP = 1.3;
+const GRIP = 1.6;
 
 /** The player's car: a simple bicycle model rolling over the world surface. */
 export class Vehicle {
@@ -140,7 +140,7 @@ export class Vehicle {
   /** Full lock: at speed, as much as the tyres can take (so the whole range of the wheel means something). */
   private maxAngle() {
     const v2 = Math.max(this.v * this.v, 1);
-    return Math.min(0.62, Math.atan((this.spec.grip * GRIP * this.wheelbase) / v2) * 1.08);
+    return Math.min(0.66, Math.atan((this.spec.grip * GRIP * this.wheelbase) / v2) * 1.12);
   }
 
   /** The speed the autopilot is happy with given the bends ahead. */
