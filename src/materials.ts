@@ -317,7 +317,17 @@ export function foliageMaterial(kind: FoliageMat): THREE.Material {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = shared.time;
     sh.uniforms.uWind = shared.wind;
-    if (kind !== 'bark' && kind !== 'palmBark') seasonal(sh);
+    if (kind !== 'bark' && kind !== 'palmBark') {
+      seasonal(sh);
+      // Light through the leaves: canopies glow softly with the sky instead of going black on the shady side
+      sh.fragmentShader = sh.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        #if NUM_HEMI_LIGHTS > 0
+          totalEmissiveRadiance += diffuseColor.rgb * hemisphereLights[0].skyColor * 0.55;
+        #endif`,
+      );
+    }
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float sway;\nuniform float uTime;\nuniform float uWind;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SWAY_VERT);

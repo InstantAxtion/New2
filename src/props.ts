@@ -219,7 +219,16 @@ function build(type: PropType): THREE.BufferGeometry {
       ];
       for (const [x, y] of [[-1.9, 1.9], [1.9, 1.9], [-1.9, 4.0], [1.9, 4.0], [0, 4.0]]) {
         parts.push(box(1.2, 1.25, 0.08, trim, x, y, 2.52), box(0.95, 1.0, 0.1, glassC, x, y, 2.55));
+        // Sill and a glazing bar
+        parts.push(box(1.35, 0.08, 0.22, 0xd9d6cf, x, y - 0.66, 2.6), box(0.05, 1.0, 0.12, trim, x, y, 2.57));
       }
+      // A little porch canopy over the door, a step and a path of lamps either side
+      parts.push(box(1.9, 0.1, 0.8, 0x4a4f56, 0, 2.95, 2.9), box(0.08, 0.5, 0.08, trim, -0.85, 2.7, 3.25), box(0.08, 0.5, 0.08, trim, 0.85, 2.7, 3.25));
+      parts.push(box(1.6, 0.16, 0.5, 0xb7b3ab, 0, 0.58, 2.85));
+      parts.push(box(0.12, 0.2, 0.08, 0x2a2a2a, -0.8, 2.1, 2.56), box(0.12, 0.2, 0.08, 0x2a2a2a, 0.8, 2.1, 2.56));
+      // A band at first-floor level and corner quoins
+      parts.push(box(6.06, 0.12, 5.06, trim, 0, 3.0, 0));
+      for (const cx of [-3, 3]) for (const cz of [-2.5, 2.5]) parts.push(box(0.16, 4.9, 0.16, 0xd5d0c6, cx, 2.95, cz));
       for (const z of [-1.2, 1.2]) for (const y of [1.9, 4.0]) {
         parts.push(box(0.08, 1.25, 1.1, trim, 3.02, y, z), box(0.1, 1.0, 0.85, glassC, 3.04, y, z));
         parts.push(box(0.08, 1.25, 1.1, trim, -3.02, y, z), box(0.1, 1.0, 0.85, glassC, -3.04, y, z));
@@ -353,14 +362,37 @@ function build(type: PropType): THREE.BufferGeometry {
       return merge(parts);
     }
     case 'shop': {
-      const wall = 0xd9cbb4;
-      return merge([
-        box(8, 4.2, 6, wall, 0, 2.1, 0),
-        box(8.4, 0.6, 6.4, 0x4a4d52, 0, 4.5, 0),
-        box(6.6, 2.2, 0.1, 0x2c3a46, 0, 1.5, 3.02),
-        box(7.4, 0.12, 1.4, 0xb3473a, 0, 3.1, 3.6),
-        box(4, 0.7, 0.12, 0x23262b, 0, 3.75, 3.06),
-      ]);
+      // A corner shop with a flat above: a framed shopfront with a door, a striped awning, a sign
+      // board, sash windows upstairs and a cornice along the top
+      const wall = 0xe4d8c4, trim = 0xf4f1ea, glassC = 0x2c3a46, frame = 0x2f4a3e;
+      const parts = [
+        box(8, 6.6, 6, wall, 0, 3.3, 0),
+        box(8.3, 0.35, 6.3, trim, 0, 6.7, 0),
+        box(8.1, 0.5, 6.1, 0x54585e, 0, 7.05, 0),
+        // Shopfront: dark frame, big panes, a door, stall riser
+        box(7.2, 3.2, 0.14, frame, 0, 1.75, 3.0),
+        box(2.6, 2.1, 0.1, glassC, -2.1, 1.85, 3.06),
+        box(2.6, 2.1, 0.1, glassC, 2.1, 1.85, 3.06),
+        box(1.1, 2.5, 0.1, 0x22332c, 0, 1.4, 3.08),
+        box(0.7, 1.4, 0.08, glassC, 0, 1.75, 3.12),
+        box(7.2, 0.5, 0.2, 0x1f2b26, 0, 0.35, 3.05),
+        // Sign board with "lettering"
+        box(7.2, 0.7, 0.2, frame, 0, 3.75, 3.1),
+        box(4.2, 0.28, 0.06, 0xe9d9a8, 0, 3.75, 3.22),
+      ];
+      // Striped awning
+      for (let k = 0; k < 8; k++) {
+        const a = paint(new THREE.BoxGeometry(0.9, 0.06, 1.5), k % 2 ? 0xf2efe6 : 0xb3473a);
+        a.rotateX(0.32);
+        a.translate(-3.15 + k * 0.9, 3.05, 3.65);
+        parts.push(a);
+      }
+      // Upstairs windows with sills
+      for (const x of [-2.6, 0, 2.6]) {
+        parts.push(box(1.2, 1.5, 0.08, trim, x, 5.15, 3.02), box(0.95, 1.25, 0.1, glassC, x, 5.15, 3.05));
+        parts.push(box(1.35, 0.08, 0.22, 0xd9d6cf, x, 4.36, 3.1), box(0.95, 0.05, 0.12, trim, x, 5.15, 3.08));
+      }
+      return merge(parts);
     }
     case 'vines': {
       // A 2.4 m stretch of a vine row along z: posts, wire and a leafy hedge with grapes
@@ -503,8 +535,9 @@ export function litGeometry(type: PropType): THREE.BufferGeometry {
       pane(0.85, 1.0, -3.1, y, z, -Math.PI / 2);
     }
   } else if (type === 'shop') {
-    pane(6.6, 2.2, 0, 1.5, 3.1);
-    pane(4, 0.7, 0, 3.75, 3.14);
+    for (const x of [-2.1, 2.1]) pane(2.6, 2.1, x, 1.85, 3.13);
+    pane(4.2, 0.28, 0, 3.75, 3.26);
+    for (const x of [-2.6, 0, 2.6]) pane(0.95, 1.25, x, 5.15, 3.12);
   } else if (type === 'cabin') {
     pane(0.9, 0.8, 1.6, 2.1, 2.3);
     pane(0.9, 0.8, -1.6, 2.1, 2.3);

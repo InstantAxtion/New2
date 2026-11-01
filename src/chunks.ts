@@ -9,7 +9,10 @@ import { foliageParts, type FoliageMat } from './foliage';
 import { nightGlow, specialMaterial, specialParts, type SpecialMat } from './special';
 import type { BiomeId } from './world/biomes';
 import { vineField } from './world/biomes';
-import { cobbleTexture, glowTexture, gravelTexture, highwayTexture, roadTexture } from './textures';
+import { cobbleTexture, glowTexture, gravelTexture, highwayTexture, pavingTexture, roadTexture } from './textures';
+
+/** Soft paint colours for town houses (multiplied over the white walls). */
+const HOUSE_PAINT = [0xffffff, 0xfff1d8, 0xdfe9f4, 0xe2ecd9, 0xf6dcd6, 0xfbeab8, 0xe6e2dc, 0xd9c3b0, 0xcfe0e3];
 import { assets } from './assets';
 import { buildStop } from './stops';
 import { buildLandmark } from './landmarks';
@@ -38,8 +41,8 @@ export interface Quality {
 export const QUALITY: Record<'low' | 'medium' | 'high' | 'ultra', Quality> = {
   low: { reach: 380, props: 0.45, ahead: 6, behind: 3, fogFar: 330, pixelRatio: 1, shadows: 0, tier: 'basic', grass: 0, grassReach: 0 },
   medium: { reach: 760, props: 1, ahead: 8, behind: 4, fogFar: 620, pixelRatio: 1.5, shadows: 1024, tier: 'pbr', grass: 380, grassReach: 32 },
-  high: { reach: 1090, props: 1.8, ahead: 11, behind: 4, fogFar: 900, pixelRatio: 2, shadows: 2048, tier: 'pbr', grass: 900, grassReach: 55 },
-  ultra: { reach: 1450, props: 2.5, ahead: 14, behind: 5, fogFar: 1150, pixelRatio: 2.5, shadows: 4096, tier: 'pbr', grass: 1700, grassReach: 80 },
+  high: { reach: 1090, props: 1.8, ahead: 11, behind: 4, fogFar: 900, pixelRatio: 2, shadows: 2048, tier: 'pbr', grass: 1500, grassReach: 70 },
+  ultra: { reach: 1450, props: 2.5, ahead: 14, behind: 5, fogFar: 1150, pixelRatio: 2.5, shadows: 4096, tier: 'pbr', grass: 3000, grassReach: 105 },
 };
 
 /** Column offsets (x) from the road centre: fine near the road, coarse far away. */
@@ -272,6 +275,8 @@ export class ChunkManager {
     c.group.position.set(this.originX(i), 0, i * CHUNK);
     c.group.add(this.terrain(i));
     c.group.add(this.road(i));
+    const walk = this.pavements(i);
+    if (walk) c.group.add(walk);
     const extra = this.bridgesAndCrossings(i);
     if (extra) c.group.add(extra);
     // Stops beside the road, and road signs
@@ -402,7 +407,7 @@ export class ChunkManager {
       const dry = rgb[0] > 0.55 && rgb[1] > 0.45 && rgb[2] < 0.4 && rgb[0] - rgb[2] > 0.3;
       if (green < 0.08 && !dry) continue;
       if (rgb[0] > 0.8 && rgb[1] > 0.8) continue;
-      const s = 0.7 + r() * 0.7;
+      const s = 0.45 + r() * 0.6;
       qt.setFromAxisAngle(up, r() * Math.PI);
       m4.compose(new THREE.Vector3(x - ox, h - 0.05, z - z0), qt, new THREE.Vector3(s, s * (0.8 + r() * 0.5), s));
       mats.push(m4.clone());
@@ -464,6 +469,68 @@ export class ChunkManager {
     const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true;
     return m;
+  }
+
+  private pavingMat = new THREE.MeshStandardMaterial({ map: pavingTexture(), roughness: 0.9 });
+  private kerbMat = new THREE.MeshStandardMaterial({ color: 0xa9a7a2, roughness: 0.8 });
+
+  /** Kerbs and paved pavements along streets in towns and the city. */
+  private pavements(i: number): THREE.Group | null {
+    const w = this.world;
+    const z0 = i * CHUNK;
+    const ox = this.originX(i);
+    const step = 2;
+    const rows = CHUNK / step + 1;
+    const H = 0.11, Wd = 3.0, K = 0.16;
+    const urb: boolean[] = [];
+    let any = false;
+    for (let r = 0; r < rows; r++) {
+      const z = z0 + r * step;
+      const u = w.urban(z) > 0.5 && w.bridge(z) < 0.05 && w.tunnelAt(z) < 0.05 && w.highwayAt(z) < 0.3;
+      urb.push(u);
+      any ||= u;
+    }
+    if (!any) return null;
+    const g = new THREE.Group();
+    for (const side of [-1, 1]) {
+      // Kerb: a vertical face and a rounded-off top; pavement: from the kerb outwards
+      const kp: number[] = [], pp: number[] = [], puv: number[] = [];
+      for (let r = 0; r < rows; r++) {
+        const z = z0 + r * step;
+        const rx = w.roadX(z), ry = w.roadY(z);
+        const [tx, tz] = w.tangent(z);
+        const half = w.roadHalf(z);
+        const P = (o: number, y: number) => [rx - tz * o * side - ox, y, z + tx * o * side - z0];
+        kp.push(...P(half - 0.02, ry - 0.05), ...P(half, ry + H), ...P(half + K, ry + H));
+        pp.push(...P(half + K, ry + H + 0.002), ...P(half + K + Wd, ry + H + 0.002));
+        const v = (z - Math.floor(z0 / 2.4 / 64) * 2.4 * 64) / 2.4;
+        puv.push(0, v, Wd / 2.4, v);
+      }
+      const ki: number[] = [], pi: number[] = [];
+      for (let r = 0; r < rows - 1; r++) {
+        if (!urb[r] || !urb[r + 1]) continue;
+        for (let k = 0; k < 2; k++) {
+          const a = r * 3 + k, b = a + 1, c2 = a + 3, d = a + 4;
+          if (side > 0) ki.push(a, c2, b, b, c2, d); else ki.push(a, b, c2, b, d, c2);
+        }
+        const a = r * 2, b = a + 1, c2 = a + 2, d = a + 3;
+        if (side > 0) pi.push(a, c2, b, b, c2, d); else pi.push(a, b, c2, b, d, c2);
+      }
+      if (!pi.length) continue;
+      const kg = new THREE.BufferGeometry();
+      kg.setAttribute('position', new THREE.Float32BufferAttribute(kp, 3));
+      kg.setIndex(ki);
+      kg.computeVertexNormals();
+      const pg = new THREE.BufferGeometry();
+      pg.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3));
+      pg.setAttribute('uv', new THREE.Float32BufferAttribute(puv, 2));
+      pg.setIndex(pi);
+      pg.computeVertexNormals();
+      const km = new THREE.Mesh(kg, this.kerbMat), pm = new THREE.Mesh(pg, this.pavingMat);
+      km.receiveShadow = pm.receiveShadow = true;
+      g.add(km, pm);
+    }
+    return g;
   }
 
   private concreteMat = new THREE.MeshStandardMaterial({ color: 0x9b9a96, roughness: 0.85 });
@@ -846,10 +913,14 @@ export class ChunkManager {
           const [hmin, hmax] = spec.h ?? [0.6, Infinity];
           if (h < hmin || h > hmax) continue;
           const s = spec.scale[0] + (spec.scale[1] - spec.scale[0]) * r();
-          const rot = r() * Math.PI * 2;
+          // Town houses and shops face the street (with a little irregularity); everything else turns any way
+          const [ttx] = w.tangent(z);
+          const sg = Math.sign(u) || 1;
+          const rot = isTown && spec.type !== 'tree' ? Math.atan2(sg * tz, -sg * ttx) + (r() - 0.5) * 0.12 : r() * Math.PI * 2;
           const tint = put(spec.type, x, spec.float ? 0 : h - 0.15, z, s, rot);
-          // Old towns are built of warm stone
+          // Old towns are built of warm stone; elsewhere houses are painted in soft colours
           if (tint && isTown && w.oldTownAt(z) > 0.5) tint.setRGB(0.86, 0.76, 0.6);
+          else if (tint && spec.type === 'house') tint.setHex(HOUSE_PAINT[Math.floor(r() * HOUSE_PAINT.length)]);
           // Windows that light up at night
           if (spec.type === 'house' || spec.type === 'shop' || spec.type === 'cabin' || spec.type === 'farmhouse') lit.push({ type: spec.type, m: m4.clone(), on: r() });
         }

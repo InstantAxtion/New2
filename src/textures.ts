@@ -131,27 +131,34 @@ export function waterNormals(): THREE.Texture {
 let grass: THREE.Texture | null = null;
 export function grassTexture(): THREE.Texture {
   if (grass) return grass;
-  const { c, g } = canvas(128);
+  // Many fine, tapering blades, bunched towards the middle so a tuft has a ragged, natural outline
+  // (not a rectangle), lighter at the base so tufts don't read as dark blocks
+  const S = 256;
+  const { c, g } = canvas(S);
   const r = rng(5);
-  for (let i = 0; i < 46; i++) {
-    const x = 6 + r() * 116;
-    const h = 50 + r() * 76;
-    const lean = (r() - 0.5) * 36;
-    const w = 2.5 + r() * 3;
-    const shade = 150 + r() * 105;
-    const grad = g.createLinearGradient(0, 128, 0, 128 - h);
-    grad.addColorStop(0, `rgb(${shade * 0.45},${shade * 0.5},${shade * 0.4})`);
-    grad.addColorStop(1, `rgb(${shade},${shade},${shade * 0.85})`);
+  for (let i = 0; i < 150; i++) {
+    const gx = (r() + r() + r()) / 3;
+    const x = 10 + gx * (S - 20);
+    const centre = 1 - Math.abs(gx - 0.5) * 1.6;
+    const h = (60 + r() * 120) * (0.45 + 0.55 * centre) + 30;
+    const lean = (r() - 0.5) * 70 + (gx - 0.5) * 60;
+    const w = 1.6 + r() * 2.4;
+    const shade = 165 + r() * 90;
+    const grad = g.createLinearGradient(0, S, 0, S - h);
+    grad.addColorStop(0, `rgb(${shade * 0.66},${shade * 0.7},${shade * 0.56})`);
+    grad.addColorStop(0.6, `rgb(${shade * 0.92},${shade * 0.95},${shade * 0.78})`);
+    grad.addColorStop(1, `rgb(${shade},${shade},${shade * 0.8})`);
     g.fillStyle = grad;
     g.beginPath();
-    g.moveTo(x - w, 128);
-    g.quadraticCurveTo(x + lean * 0.3, 128 - h * 0.5, x + lean, 128 - h);
-    g.quadraticCurveTo(x + lean * 0.3 + w * 0.3, 128 - h * 0.5, x + w, 128);
+    g.moveTo(x - w, S);
+    g.quadraticCurveTo(x + lean * 0.3, S - h * 0.55, x + lean, S - Math.min(S - 2, h));
+    g.quadraticCurveTo(x + lean * 0.3 + w * 0.4, S - h * 0.55, x + w, S);
     g.closePath();
     g.fill();
   }
   grass = new THREE.CanvasTexture(c);
   grass.colorSpace = THREE.SRGBColorSpace;
+  grass.anisotropy = 4;
   return grass;
 }
 
@@ -262,12 +269,12 @@ export function gravelTexture(): THREE.Texture {
 
 /** Cobblestones for old town streets: rows of rounded setts with dark joints. 8.4 m wide, 9 m long. */
 export function cobbleTexture(): THREE.Texture {
-  const W = 512, H = 512;
+  const W = 1024, H = 1024;
   const { c, g } = canvas(W, H);
   g.fillStyle = '#3a352f';
   g.fillRect(0, 0, W, H);
   const r = rng(77);
-  const rows = 34, cols = 30;
+  const rows = 72, cols = 62;
   const rh = H / rows;
   for (let y = 0; y < rows; y++) {
     const off = (y % 2) * 0.5;
@@ -289,11 +296,50 @@ export function cobbleTexture(): THREE.Texture {
   }
   // Gutters at the edges
   g.fillStyle = 'rgba(30,26,22,0.6)';
-  g.fillRect(0, 0, 10, H);
-  g.fillRect(W - 10, 0, 10, H);
+  g.fillRect(0, 0, 20, H);
+  g.fillRect(W - 20, 0, 20, H);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = THREE.ClampToEdgeWrapping;
   t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+/** Pavement slabs: big pale squares with dark joints, a little weathered (tiles every 2.4 m). */
+export function pavingTexture(): THREE.Texture {
+  const S = 512;
+  const { c, g } = canvas(S);
+  const r = rng(913);
+  const n = 4;
+  const cs = S / n;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const t = 150 + r() * 26;
+      g.fillStyle = `rgb(${t},${t - 2},${t - 6})`;
+      g.fillRect(x * cs, y * cs, cs, cs);
+      // Speckle and the odd stain
+      for (let k = 0; k < 160; k++) {
+        const v = t + (r() - 0.5) * 40;
+        g.fillStyle = `rgba(${v},${v},${v - 4},0.5)`;
+        g.fillRect(x * cs + r() * cs, y * cs + r() * cs, 2, 2);
+      }
+      if (r() < 0.25) {
+        g.fillStyle = 'rgba(60,55,50,0.12)';
+        g.beginPath();
+        g.ellipse(x * cs + r() * cs, y * cs + r() * cs, 10 + r() * 20, 6 + r() * 14, r() * 3, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+  }
+  g.strokeStyle = 'rgba(55,52,48,0.9)';
+  g.lineWidth = 3;
+  for (let k = 0; k <= n; k++) {
+    g.beginPath(); g.moveTo(k * cs, 0); g.lineTo(k * cs, S); g.stroke();
+    g.beginPath(); g.moveTo(0, k * cs); g.lineTo(S, k * cs); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
   return t;
