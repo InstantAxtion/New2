@@ -119,6 +119,9 @@ export class UI {
       const label = stampLabel(key);
       if (label) this.toast(`New passport stamp<b>${label.icon} ${label.name}</b>`);
     };
+    game.onFerry = (on) => {
+      this.toast(on ? 'All aboard<b>⛴️ Sit back for the crossing</b>' : 'Ashore<b>⛴️ Drive safely</b>');
+    };
     game.onTrailAhead = (side) => {
       this.toast(`Off-road trail ahead<b>🌲 Turn-off on the ${side > 0 ? 'right' : 'left'}</b>${this.s.auto ? '' : '<small>Steer onto it to explore, it rejoins the road later</small>'}`);
     };

@@ -172,7 +172,8 @@ export class Traffic {
       c.z += c.dir * c.v * dt;
       c.dist += c.v * dt;
       const rel = (c.z - me.z) * fwd;
-      if (rel < -150 || rel > 750 || !this.enabled) {
+      // (nobody drives across the water at a ferry crossing: they're on another sailing)
+      if (rel < -150 || rel > 750 || !this.enabled || this.world.ferryWater(c.z) > 0.3) {
         c.active = false;
         c.user.group.visible = false;
         continue;

@@ -304,6 +304,9 @@ export class World {
       // Seaside clifftops lift the road high above the water
       if (biome.id === 'seaside') y += w * cliffAt(z, this.seed) * 26;
     }
+    // Down to the slipway for a ferry crossing (and across at deck height)
+    const f = this.ferry(z);
+    if (f) y += (1.6 - y) * f.ramp;
     return y;
   }
 
@@ -403,6 +406,9 @@ export class World {
       const k = Math.max(disc, toRoad) * (a > flat - 0.5 ? 1 : 0);
       if (k > 0) h = h + (ry - 0.14 - h) * k;
     }
+    // A ferry crossing: open water right across
+    const fy = this.ferry(z);
+    if (fy && fy.water > 0) h += (Math.min(h, -6) - h) * fy.water;
     // An off-road trail: the ground levels out along it so you can drive it
     const tr = this.trail(z);
     if (tr) {
@@ -444,7 +450,7 @@ export class World {
       else if (b === 'alpine' || b === 'canyon') kind = r < 0.6 ? 'viewpoint' : r < 0.8 ? 'fuel' : b === 'alpine' ? 'campsite' : 'diner';
       else if (b === 'forest' || b === 'lakes' || b === 'rainforest') kind = r < 0.5 ? 'campsite' : r < 0.8 ? 'fuel' : 'viewpoint';
       else if (b !== 'city' && b !== 'metro') kind = r < 0.3 ? 'viewpoint' : r < 0.5 ? 'diner' : r < 0.62 ? 'drivein' : 'fuel';
-      const clear = (zz: number) => this.urban(zz) < 0.01 && this.bridgeRaw(zz) < 0.01 && this.tunnelAt(zz) < 0.01;
+      const clear = (zz: number) => this.urban(zz) < 0.01 && this.bridgeRaw(zz) < 0.01 && this.tunnelAt(zz) < 0.01 && !this.ferry(zz);
       if (kind && clear(z - 90) && clear(z) && clear(z + 90) && !(highway && this.highwayAt(z) < 0.99)) {
         let side = h(604) < 0.5 ? -1 : 1;
         // The harbour is on the sea side of the road
@@ -513,7 +519,7 @@ export class World {
       else if (fall && (r < 0.6 || !castle)) kind = 'waterfall';
       else if (castle && (r < 0.75 || !ruin)) kind = 'castle';
       else if (ruin) kind = 'ruin';
-      const clear = [-150, 0, 150].every((d) => this.urban(z + d) < 0.01 && this.bridgeRaw(z + d) < 0.01 && this.tunnelAt(z + d) < 0.01) && !this.stopNear(z, 120);
+      const clear = [-150, 0, 150].every((d) => this.urban(z + d) < 0.01 && this.bridgeRaw(z + d) < 0.01 && this.tunnelAt(z + d) < 0.01 && !this.ferry(z + d)) && !this.stopNear(z, 120);
       if (kind && clear) {
         const side = h(804) < 0.5 ? -1 : 1;
         const dist = kind === 'castle' ? 130 + h(805) * 70 : kind === 'ruin' ? 45 + h(805) * 40 : kind === 'fair' ? 42 + h(805) * 15
@@ -703,6 +709,43 @@ export class World {
   /** Height of the trail surface at z (a smoothed version of the land, never far from the road's level). */
   trailY(z: number): number {
     return this.roadY(z) - 0.1 + noise1(z / 160, this.seed + 446) * 1.6 * (this.trail(z)?.e ?? 0);
+  }
+
+  /**
+   * A ferry crossing now and then on the coast, the lakes and the islands: the road runs down to a
+   * slipway, then open water (a ferry carries you over), then up from the far slipway.
+   * `ramp` 0..1 brings the road down to the dock; `water` 0..1 is the crossing itself.
+   */
+  ferry(z: number): { ramp: number; water: number; start: number; end: number; id: number } | null {
+    const cell = 26000, c0 = Math.floor(z / cell);
+    const key = Math.round(z);
+    const hit = this.ferryMemo.get(key);
+    if (hit !== undefined) return hit;
+    let out: { ramp: number; water: number; start: number; end: number; id: number } | null = null;
+    for (const c of [c0 - 1, c0, c0 + 1]) {
+      if (hash1(c, this.seed + 451) > 0.55) continue;
+      const L = 650 + 450 * hash1(c, this.seed + 452);
+      const start = c * cell + 2000 + hash1(c, this.seed + 453) * (cell - L - 4000);
+      const end = start + L;
+      if (z < start - 300 || z > end + 300) continue;
+      const mid = (start + end) / 2;
+      if (!['seaside', 'lakes', 'tropical'].includes(this.dominant(mid).id)) continue;
+      if (!['seaside', 'lakes', 'tropical'].includes(this.dominant(start - 300).id) || !['seaside', 'lakes', 'tropical'].includes(this.dominant(end + 300).id)) continue;
+      const clear = (zz: number) => this.urban(zz) < 0.01 && this.bridgeRaw(zz) < 0.01 && this.highwayAt(zz) < 0.01;
+      if (![start - 300, start, mid, end, end + 300].every(clear)) continue;
+      const ramp = smoothstep(start - 280, start - 20, z) * (1 - smoothstep(end + 20, end + 280, z));
+      const water = smoothstep(start - 10, start + 30, z) * (1 - smoothstep(end - 30, end + 10, z));
+      out = { ramp, water, start, end, id: c };
+      break;
+    }
+    if (this.ferryMemo.size > 20000) this.ferryMemo.clear();
+    this.ferryMemo.set(key, out);
+    return out;
+  }
+  private ferryMemo = new Map<number, { ramp: number; water: number; start: number; end: number; id: number } | null>();
+  /** 0..1: open water for a ferry crossing here. */
+  ferryWater(z: number): number {
+    return this.ferry(z)?.water ?? 0;
   }
 
   /** 0..1: the road goes through a tunnel under a ridge. */

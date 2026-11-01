@@ -459,6 +459,8 @@ export class ChunkManager {
     }
     const idx: number[] = [];
     for (let r = 0; r < rows - 1; r++) {
+      // No road across the water at a ferry crossing
+      if (w.ferryWater(z0 + r * step) > 0.5 && w.ferryWater(z0 + (r + 1) * step) > 0.5) continue;
       const a = r * 2, b = a + 1, c2 = a + 2, d = a + 3;
       idx.push(a, b, c2, b, d, c2);
     }
@@ -897,7 +899,7 @@ export class ChunkManager {
         // The lamp's arm (local +z) reaches out over the road
         put('lamp', rx - tz * o, ry - 0.1, z + tx * o, 1, Math.atan2(tz * side, -tx * side));
       } else if (z % 32 < 28 && Math.round(z / 28) % 8 !== 3) {
-        if (w.tunnelAt(z) > 0.2) continue;
+        if (w.tunnelAt(z) > 0.2 || w.ferryWater(z) > 0.05) continue;
         const hw = w.roadHalf(z) + 1.1;
         for (const o of [-hw, hw]) put('post', rx - tz * o, ry - 0.1, z + tx * o, 1, 0);
       }

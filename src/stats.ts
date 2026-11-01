@@ -40,6 +40,8 @@ export const STAMPS: { key: string; icon: string; name: string }[] = [
   { key: 'sight:bridge', icon: '🌉', name: 'A great suspension bridge' },
   { key: 'sight:tunnel', icon: '🚇', name: 'Through a mountain tunnel' },
   { key: 'sight:oldtown', icon: '🏘️', name: 'A cobbled old town' },
+  { key: 'sight:ferry', icon: '⛴️', name: 'A ferry crossing' },
+  { key: 'sight:trail', icon: '🌲', name: 'An off-road trail' },
   { key: 'sight:cliffs', icon: '🌊', name: 'Along the sea cliffs' },
   { key: 'sight:highway', icon: '🛣️', name: 'Out on the highway' },
   { key: 'stop:fuel', icon: '⛽', name: 'Filled up at a station' },

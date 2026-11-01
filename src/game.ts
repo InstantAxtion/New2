@@ -23,6 +23,7 @@ import { hash1 } from './world/noise';
 import { updateFilm } from './stops';
 import { drawVisualizer } from './map';
 import { AtmosphereShader, makeLensflare } from './post';
+import { Ferry } from './ferry';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import type { AmbientMix } from './audio';
 import { drawNav } from './map';
@@ -110,6 +111,11 @@ export class Game {
   pipY = 124;
   /** Auto-drive overtaking: cruising in lane, or out passing someone. */
   private passing = false;
+  private ferry: Ferry | null = null;
+  /** On the ferry's deck, crossing the water. */
+  aboard = false;
+  /** Told when you drive onto (true) or off (false) a ferry. */
+  onFerry: (on: boolean) => void = () => {};
   /** Following an off-road trail (set where auto-drive turned onto it). */
   private trailKey: number | null = null;
   private trailDir = 1;
@@ -553,6 +559,12 @@ export class Game {
         }
       }
       let c = s.auto || this.sleeping ? this.autoDrive(dt) : this.manual(dt);
+      // On the ferry: it carries you across, steady and slow, whoever is driving
+      if (this.aboard) {
+        v.path = null;
+        v.lane = 1;
+        c = v.autopilot({ leader: null, limit: 8, stopIn: null }, STYLES.relaxed, dt);
+      }
       // Out of fuel: limp along gently to the next station
       if (this.fuel <= 0 && Math.abs(v.v) > 11) c = { ...c, throttle: 0 };
       this.applied = c;
@@ -578,6 +590,19 @@ export class Game {
     if (garage) {
       this.showroom.update(dt, new THREE.Vector3(v.x, v.y, v.z));
       this.car.group.rotation.y = this.showroom.angle;
+    }
+    // The ferry at a crossing: docked, or carrying the car over the water
+    if (!this.ferry) {
+      this.ferry = new Ferry(this.world);
+      this.scene.add(this.ferry.group);
+    }
+    this.ferry.world = this.world;
+    if (garage) this.ferry.group.visible = false;
+    else this.ferry.update(v.z, Math.cos(v.heading) >= 0 ? 1 : -1);
+    const aboard = !garage && this.world.ferryWater(v.z) > 0.5;
+    if (aboard !== this.aboard) {
+      this.aboard = aboard;
+      this.onFerry(aboard);
     }
     if (this.trailer.kind !== 'none') {
       // The tow ball just behind the back bumper
@@ -998,6 +1023,9 @@ export class Game {
     if (span && span.len > 280) stamp('sight:bridge');
     if (w.tunnelAt(v.z) > 0.6) stamp('sight:tunnel');
     if (w.oldTownAt(v.z) > 0.5) stamp('sight:oldtown');
+    if (this.aboard) stamp('sight:ferry');
+    const trl = w.trail(v.z);
+    if (trl && Math.abs(w.lateral(v.x, v.z) - trl.u) < 4 && trl.e > 0.5) stamp('sight:trail');
     if (w.highwayAt(v.z) > 0.6) stamp('sight:highway');
     if (this.region?.id === 'seaside' && w.roadY(v.z) > 20) stamp('sight:cliffs');
     if (this.sky.aurora * this.sky.night > 0.5 && this.weather.look.cover < 0.4) stamp('sky:aurora');
@@ -1119,6 +1147,15 @@ export class Game {
         this.trailDir = fwd;
       }
     } else this.trailKey = null;
+    // Slow right down to drive onto a ferry
+    {
+      const fz = this.world.ferry(v.z + 150 * fwd);
+      if (fz && !this.aboard) {
+        const dock = fwd > 0 ? fz.start : fz.end;
+        const d = (dock - v.z) * fwd;
+        if (d > -5 && d < 200) env.limit = Math.min(env.limit, Math.max(7, Math.sqrt(49 + 2 * 1.8 * Math.max(0, d))));
+      }
+    }
     // Slow down for the turn-off
     if (this.trailKey === null && !this.passing) {
       const soon = this.world.trail(v.z + 120 * fwd);
