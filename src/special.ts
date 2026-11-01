@@ -106,10 +106,12 @@ export function specialParts(type: PropType): SpecialPart[] | null {
   return parts;
 }
 
+const NEON_WORDS = 16;
+
 /** A sign face: dark panel with neon-tube words and a border (the tube colour comes per instance). */
 function neonSign(): { base: THREE.Texture; glow: THREE.Texture } {
   const W = 512, H = 256;
-  const words = ['OPEN 24H', 'NOODLES', 'HOTEL', 'DRIVE', 'ARCADE', 'DINER', 'CINEMA', 'KARAOKE'];
+  const words = ['OPEN 24H', 'NOODLES', 'HOTEL', 'DRIVE', 'ARCADE', 'DINER', 'CINEMA', 'KARAOKE', 'RAMEN', 'JAZZ BAR', 'MOTEL', 'BOWLING', 'PIZZA', 'NIGHT CLUB', 'COFFEE', 'RECORDS'];
   const draw = (lit: boolean) => {
     const c = document.createElement('canvas');
     c.width = W;
@@ -137,8 +139,9 @@ function neonSign(): { base: THREE.Texture; glow: THREE.Texture } {
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     // One word per sign: show an eighth of the strip
+    // (each sign picks its own word in the shader, from where it stands)
     t.repeat.set(1, 1 / words.length);
-    t.offset.set(0, Math.floor(Math.random() * words.length) / words.length);
+    t.wrapT = THREE.RepeatWrapping;
     return t;
   };
   return { base: draw(false), glow: draw(true) };
@@ -163,6 +166,16 @@ export function specialMaterial(kind: SpecialMat): THREE.Material {
       const sign = neonSign();
       m = new THREE.MeshStandardMaterial({ color: 0xffffff, map: sign.base, emissive: 0xffffff, emissiveMap: sign.glow, roughness: 0.45 });
       m.onBeforeCompile = (sh) => {
+        // A different word on each sign: chosen from a hash of where it stands
+        sh.vertexShader = sh.vertexShader.replace(
+          '#include <uv_vertex>',
+          `#include <uv_vertex>
+          #ifdef USE_INSTANCING
+            float wsel = floor(fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453) * ${NEON_WORDS}.0);
+            vMapUv.y += wsel / ${NEON_WORDS}.0;
+            vEmissiveMapUv.y += wsel / ${NEON_WORDS}.0;
+          #endif`,
+        );
         sh.fragmentShader = sh.fragmentShader.replace(
           '#include <emissivemap_fragment>',
           '#include <emissivemap_fragment>\n#ifdef USE_INSTANCING_COLOR\n totalEmissiveRadiance *= vColor;\n#endif',

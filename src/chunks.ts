@@ -765,9 +765,9 @@ export class ChunkManager {
     }
     // Neon blade signs along the roadside
     const blades = new Map<number, THREE.BufferGeometry[]>();
-    for (let z = Math.ceil(z0 / 55) * 55; z < z0 + CHUNK; z += 55) {
+    for (let z = Math.ceil(z0 / 140) * 140; z < z0 + CHUNK; z += 140) {
       if (!clear(z)) continue;
-      const k = Math.round(z / 55);
+      const k = Math.round(z / 140);
       const sd = k % 2 ? 1 : -1;
       const off = sd * (w.roadHalf(z) + 10 + (k * 7.3) % 10);
       const p = at(z, off, w.roadY(z));
