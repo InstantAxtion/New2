@@ -202,7 +202,7 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
     // A small, tight glow at the lamp itself (no big haze)
     glow(V(hx, lampY, hz + 0.05), 0xfff1d6, 0.42, 0.55);
     // Tail lamps
-    const tx = side * W * 0.34;
+    const tx = side * W * 0.3;
     const tz = tailZ(tx);
     if (s.lights === 'round' || s.lights === 'quad') {
       const t = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.04, 20).rotateX(Math.PI / 2), M.tail);
@@ -215,9 +215,9 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
       // and an amber indicator, wrapping a little round the corner
       const tall = s.lights === 'square' ? 1.35 : 0.8;
       const unit = new THREE.Group();
-      unit.position.set(tx, tailY, tz + 0.025);
-      unit.rotation.y = -side * 0.2;
-      const housing = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.3, 5, 14).rotateZ(Math.PI / 2).scale(1, tall, 0.45), tailLensM);
+      unit.position.set(tx, tailY, tz + 0.004);
+      unit.rotation.y = side * 0.22;
+      const housing = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.34, 5, 14).rotateZ(Math.PI / 2).scale(1, tall, 0.45), tailLensM);
       const bar = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.26, 3, 8).rotateZ(Math.PI / 2), M.tail);
       bar.position.set(0, 0.012 * tall, -0.022);
       const ring = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.006, 6, 18), M.tail);
@@ -263,6 +263,32 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
       const bar = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, W * 0.86, 4, 8).rotateZ(Math.PI / 2), M.chrome);
       bar.position.set(0, y, z);
       b.add(bar);
+    }
+  }
+  // A dark splitter under the nose, a diffuser under the tail and sill skirts between the wheels:
+  // they ground the car visually and give the lower body some definition
+  if (!has('chrome') && s.cabin !== 'classic') {
+    const split = new THREE.Mesh(new RoundedBoxGeometry(W * 0.8, 0.025, 0.12, 2, 0.01), M.dark);
+    split.position.set(0, s.sill + 0.015, noseZ(W * 0.4) - 0.03);
+    const diff = new THREE.Mesh(new RoundedBoxGeometry(W * 0.7, 0.07, 0.1, 2, 0.02), M.dark);
+    diff.position.set(0, s.sill + 0.05, tailZ(W * 0.35) + 0.03);
+    b.add(split, diff);
+    for (let k = -2; k <= 2; k++) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.06, 0.12), M.dark);
+      fin.position.set(k * W * 0.12, s.sill + 0.05, tailZ(W * 0.35) + 0.02);
+      b.add(fin);
+    }
+  }
+  {
+    const fa = s.axles[0], ra = s.axles[s.axles.length - 1];
+    const x0 = ra + s.wheel + 0.12, x1 = fa - s.wheel - 0.12;
+    if (x1 > x0 + 0.3) {
+      const mid = (x0 + x1) / 2;
+      for (const sd of [-1, 1]) {
+        const skirt = new THREE.Mesh(new RoundedBoxGeometry(0.04, 0.07, x1 - x0, 2, 0.015), M.dark);
+        skirt.position.set(sd * (P.half(mid) * 0.92), P.bottom(mid) + 0.04, mid);
+        b.add(skirt);
+      }
     }
   }
   const reg = c.plate || defaultPlate(s.id);
@@ -682,10 +708,17 @@ export function buildWheel(s: CarSpec, c: Custom, side: number, front: boolean, 
     return o;
   };
   const spokes = (n: number, w: number, depth = 0.07) => {
-    const g = new THREE.BoxGeometry(0.035, rr * 0.92, w);
+    // Tapered spokes that widen towards the rim and dish inwards towards the hub (a concave face)
+    const g = new THREE.BoxGeometry(0.035, rr * 0.92, w, 1, 6, 1);
     g.translate(0, rr * 0.5, 0);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const t = Math.min(1, Math.max(0, (p.getY(i) - rr * 0.04) / (rr * 0.92)));
+      p.setZ(i, p.getZ(i) * (0.55 + 0.75 * t));
+      p.setX(i, p.getX(i) - side * depth * 0.5 * (1 - t) * (1 - t));
+    }
+    g.computeVertexNormals();
     for (let k = 0; k < n; k++) add(g, rimM, (k / n) * Math.PI * 2);
-    void depth;
   };
   const ring = (rad: number, t: number) => add(new THREE.TorusGeometry(rad, t, 6, 32).rotateY(Math.PI / 2));
   switch (c.rim) {
@@ -722,12 +755,25 @@ export function buildWheel(s: CarSpec, c: Custom, side: number, front: boolean, 
       break;
     }
   }
-  add(new THREE.CylinderGeometry(r * 0.12, r * 0.14, 0.05, 16).rotateZ(Math.PI / 2), c.rim === 'steel' ? M.chrome : rimM, 0, face + side * 0.01);
+  add(new THREE.CylinderGeometry(r * 0.12, r * 0.14, 0.05, 16).rotateZ(Math.PI / 2), c.rim === 'steel' ? M.chrome : rimM, 0, face + side * 0.01 - (c.rim === 'five' || c.rim === 'multi' || c.rim === 'beadlock' ? side * 0.03 : 0));
+  // Wheel nuts round the hub, and a bright machined lip round the rim's edge
+  if (c.rim !== 'steel' && c.rim !== 'turbine') {
+    const nut = new THREE.CylinderGeometry(0.011, 0.011, 0.025, 6).rotateZ(Math.PI / 2);
+    nut.translate(0, r * 0.19, 0);
+    const recess = c.rim === 'five' || c.rim === 'multi' || c.rim === 'beadlock' ? side * 0.025 : 0;
+    for (let k = 0; k < 5; k++) add(nut, M.chrome, (k / 5) * Math.PI * 2 + 0.3, face + side * 0.02 - recess);
+  }
+  if (pbr) {
+    const lipM = new THREE.MeshStandardMaterial({ color: 0xd8dade, metalness: 1, roughness: 0.18 });
+    add(new THREE.TorusGeometry(rr * 0.995, 0.009, 6, 40).rotateY(Math.PI / 2), lipM, 0, face + side * 0.012);
+  }
   // Disc spins with the wheel; the calliper stays put
   const discM = pbr ? new THREE.MeshStandardMaterial({ color: 0x6d6e72, metalness: 0.8, roughness: 0.45 }) : M.dark;
   add(new THREE.CylinderGeometry(rr * 0.8, rr * 0.8, 0.03, 24).rotateZ(Math.PI / 2), discM, 0, face - side * 0.06);
   const sporty = s.cabin === 'sport';
-  const cal = new THREE.Mesh(new THREE.BoxGeometry(0.05, rr * 0.45, rr * 0.6), new THREE.MeshStandardMaterial({ color: sporty ? 0xc0201a : 0x3a3b40, roughness: 0.4 }));
+  // Disc face with drilled/vented look: a darker hat in the middle
+  add(new THREE.CylinderGeometry(rr * 0.42, rr * 0.42, 0.035, 20).rotateZ(Math.PI / 2), M.dark, 0, face - side * 0.055);
+  const cal = new THREE.Mesh(new RoundedBoxGeometry(0.06, rr * 0.45, rr * 0.62, 2, 0.015), new THREE.MeshStandardMaterial({ color: sporty ? 0xc0201a : 0x3a3b40, roughness: 0.4 }));
   cal.position.set(face - side * 0.04, rr * 0.5, (front ? 1 : -1) * rr * 0.25);
   return { wheel, fixed: [cal] };
 }

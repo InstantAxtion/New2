@@ -87,9 +87,20 @@ export function profile(s: BodyShape): BodyProfile {
     }
     return b;
   };
+  // Seen from above: straight sides, rounded corners and a fairly flat nose and tail (not a
+  // pointed egg), closing off in the last few centimetres. The wheel arches flare out a little.
+  const rc = Math.min(0.55, s.width * 0.3);
   const half = (x: number) => {
-    const t = Math.abs(x) / (s.length / 2);
-    return (s.width / 2) * Math.sqrt(Math.max(0, 1 - Math.pow(t, 9)));
+    const L = s.length / 2;
+    const t = Math.abs(x) / L;
+    const dx = Math.max(0, Math.abs(x) - (L - rc));
+    let hw = s.width / 2 - rc + Math.sqrt(Math.max(0, rc * rc - dx * dx)) * 1.0;
+    // The very nose: from the corner radius, a gently curved face across the front
+    hw = Math.max(hw * 0.25, hw);
+    hw *= Math.sqrt(Math.max(0, 1 - Math.pow(t, 60)));
+    let flare = 0;
+    for (const ax of s.axles) flare = Math.max(flare, smooth(1 - Math.abs(x - ax) / (s.wheel * 1.9)));
+    return hw * (1 + 0.035 * flare);
   };
   return { top, belt: beltAt, bottom, half, front, rear };
 }
@@ -116,13 +127,15 @@ export function bodyGeometry(s: BodyShape): THREE.BufferGeometry {
     const cabin = !s.open && top > belt + 0.06 && x < s.A + 0.02 && x > (s.bed ? s.D - 0.01 : s.D - 0.02);
     zone.push(cabin ? (x > s.B || x < s.C ? 2 : 1) : 0);
     const mid = (bot + belt) / 2;
+    // Cross-section: a tucked-in sill, a full side, then a crisp shoulder crease under the belt
+    const sh = Math.min(0.09, (belt - bot) * 0.22);
     const ring: [number, number][] = [
       [0, bot],
-      [hw * 0.82, bot],
-      [hw * 0.97, bot + Math.min(0.08, (belt - bot) * 0.2)],
-      [hw * 1.0, mid],
-      [hw * 0.99, belt - 0.06],
-      [hw * 0.95, belt],
+      [hw * 0.84, bot],
+      [hw * 0.955, bot + Math.min(0.09, (belt - bot) * 0.22)],
+      [hw * 0.995, mid],
+      [hw * 1.0, belt - sh],
+      [hw * 0.955, belt],
     ];
     // Open cars: the top dips into a cockpit tub between the windscreen and the rear deck
     const tub = s.open ? Math.min(smooth((s.A - x) / 0.18), smooth((x - (s.A - 1.75)) / 0.25)) : 0;
