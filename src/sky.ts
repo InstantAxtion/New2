@@ -56,6 +56,11 @@ uniform float flash;
 uniform float aurora;
 uniform float rainbow;
 uniform float meteors;
+uniform float distantStorm;
+uniform float stormAz;
+uniform float bolt;
+uniform float boltOff;
+uniform float boltSeed;
 varying vec3 vDir;
 
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -81,14 +86,32 @@ void main() {
   float up = smoothstep(-0.12, 0.02, sunDir.y);
   col += sunColor * (pow(sd, 6.0) * 0.22 + pow(sd, 64.0) * 0.5) * up;
   col += sunColor * smoothstep(0.99935, 0.9997, sd) * 6.0 * up;
-  // Moon (opposite the sun)
-  float md = max(dot(d, normalize(-sunDir)), 0.0);
-  col += vec3(0.9, 0.92, 1.0) * smoothstep(0.9994, 0.9996, md) * night;
-  // Stars
-  if (night > 0.01 && d.y > 0.0) {
+  // Moon (opposite the sun): a big full moon with its seas, rising orange at dusk, with a soft halo
+  vec3 mdir = normalize(-sunDir);
+  float md = max(dot(d, mdir), 0.0);
+  float moonUp = smoothstep(-0.03, 0.02, mdir.y);
+  if (moonUp > 0.0 && md > 0.99) {
+    vec3 mx = normalize(cross(mdir, vec3(0.0, 1.0, 0.0)));
+    vec3 my = cross(mx, mdir);
+    vec2 mp = vec2(dot(d, mx), dot(d, my)) / 0.024;
+    float disc = smoothstep(1.0, 0.92, length(mp));
+    float seas = smoothstep(0.45, 0.62, fbm(mp * 1.6 + 4.0)) * 0.35 + smoothstep(0.6, 0.8, n(mp * 7.0)) * 0.1;
+    vec3 mc = mix(vec3(1.0, 0.68, 0.42), vec3(0.93, 0.95, 1.0), smoothstep(0.02, 0.22, mdir.y));
+    col = mix(col, mc * (1.15 - seas) * (0.55 + 0.6 * night), disc * moonUp * (0.35 + 0.65 * night));
+  }
+  col += mix(vec3(1.0, 0.75, 0.5), vec3(0.75, 0.8, 1.0), smoothstep(0.02, 0.22, mdir.y)) * pow(md, 300.0) * 0.3 * night * moonUp;
+  // Stars, coming out at dusk; and the evening star low in the west soon after sunset
+  float dusk = max(night, smoothstep(0.02, -0.1, sunDir.y) * 0.75);
+  if (dusk > 0.01 && d.y > 0.0) {
     vec2 sp = floor(d.xz / (d.y + 0.6) * 220.0);
     float s = h(sp);
-    col += vec3(step(0.9965, s) * night * (0.5 + 0.5 * sin(time * 2.0 + s * 90.0)));
+    float bright = step(0.9965, s) * (0.5 + 0.5 * sin(time * 2.0 + s * 90.0));
+    // The faint ones only once it's properly dark
+    bright *= mix(step(0.9992, s), 1.0, night);
+    col += vec3(bright * dusk);
+    vec3 venus = normalize(sunDir + vec3(0.0, 0.32, 0.0) + normalize(cross(sunDir, vec3(0.0, 1.0, 0.0))) * 0.12);
+    float vd = max(dot(d, venus), 0.0);
+    col += vec3(1.0, 0.97, 0.9) * (smoothstep(0.99993, 0.99998, vd) * 1.6 + pow(vd, 9000.0) * 0.35) * smoothstep(0.0, -0.08, sunDir.y) * (1.0 - cover);
   }
   // Milky Way: a soft, dusty band of faint stars tilted across the sky
   if (night > 0.01 && d.y > 0.0) {
@@ -163,6 +186,38 @@ void main() {
     // Thin wispy high layer
     float wisp = smoothstep(0.55, 0.85, fbm(vec2(cp.x * 0.4, cp.y * 2.4) + 9.0));
     col = mix(col, lit * (1.0 - night * 0.85), wisp * 0.25 * clouds * smoothstep(0.05, 0.3, d.y));
+    // The kind of sky drifts over time: streaky cirrus, a rippled mackerel sky, or towering cumulus
+    float kc = n(vec2(time * 0.0016, 1.7)), km = n(vec2(time * 0.0013, 5.3)), kt = n(vec2(time * 0.0011, 8.9));
+    vec3 hiLit = mix(lit, warm, gold * 0.9) * (1.0 - night * 0.85);
+    float cir = smoothstep(0.5, 0.9, fbm(vec2(cp.x * 0.25 + cp.y * 0.6, cp.y * 5.0) + 21.0)) * smoothstep(0.5, 0.7, kc);
+    col = mix(col, hiLit * 1.05, cir * 0.55 * clouds * smoothstep(0.08, 0.35, d.y));
+    vec2 mk = cp * 7.0 + vec2(fbm(cp * 0.7) * 3.0, 0.0);
+    float mack = smoothstep(0.5, 0.78, n(mk)) * smoothstep(0.45, 0.7, fbm(cp * 0.6 + 33.0)) * smoothstep(0.55, 0.75, km);
+    col = mix(col, mix(hiLit, shade, 0.25), mack * 0.6 * clouds * smoothstep(0.1, 0.35, d.y));
+    // Towering cumulus heaped up along the horizon, bright tops and shaded bases
+    float az = atan(d.x, d.z);
+    float tower = fbm(vec2(az * 3.0, 2.0)) * 0.22 + fbm(vec2(az * 9.0, time * 0.002)) * 0.06;
+    float tc = smoothstep(tower, tower - 0.03, d.y) * smoothstep(-0.01, 0.03, d.y) * smoothstep(0.55, 0.75, kt);
+    float topLight = smoothstep(0.0, tower, d.y);
+    vec3 tcol = mix(shade * 0.85, mix(lit, warm, gold) * (1.0 - night * 0.85), topLight * (0.5 + 0.5 * sd));
+    col = mix(col, tcol, tc * clouds * (1.0 - cover * 0.5));
+  }
+  // A storm far off on the horizon: a dark anvil cloud, and lightning flickering inside and under it
+  if (distantStorm > 0.01) {
+    float az = atan(d.x, d.z);
+    float daz = abs(mod(az - stormAz + 3.14159, 6.28318) - 3.14159);
+    float topH = 0.2 + fbm(vec2(az * 5.0, 1.0)) * 0.16 + smoothstep(0.5, 0.0, daz) * 0.12;
+    float anvil = (1.0 - smoothstep(0.25, 0.85, daz)) * (1.0 - smoothstep(topH - 0.08, topH, d.y)) * smoothstep(-0.01, 0.02, d.y);
+    anvil *= 0.75 + 0.25 * fbm(vec2(az * 14.0, d.y * 20.0));
+    float gold2 = smoothstep(0.32, 0.02, sunDir.y) * smoothstep(-0.14, 0.0, sunDir.y);
+    vec3 ac = mix(vec3(0.16, 0.15, 0.19), sunColor * 0.5, gold2 * 0.4 * smoothstep(0.05, 0.2, d.y));
+    col = mix(col, ac * (1.0 - night * 0.7), anvil * distantStorm * 0.92);
+    col += vec3(0.65, 0.7, 1.0) * anvil * bolt * distantStorm * 0.6;
+    // The bolt itself: a jagged line from the cloud base down to the ground
+    float ba = stormAz + boltOff;
+    float bx = (az - ba) * 40.0 + (n(vec2(d.y * 60.0, boltSeed)) - 0.5) * 2.2 + (n(vec2(d.y * 200.0, boltSeed + 3.0)) - 0.5) * 0.6;
+    float line = smoothstep(0.35, 0.0, abs(bx)) * step(0.0, d.y) * step(d.y, 0.11);
+    col += vec3(0.85, 0.9, 1.0) * line * bolt * distantStorm * 3.0;
   }
   // Overcast: a grey, flatter sky
   float lum = dot(col, vec3(0.3, 0.55, 0.15));
@@ -214,6 +269,11 @@ export class Sky {
       aurora: { value: 0 },
       rainbow: { value: 0 },
       meteors: { value: 0 },
+      distantStorm: { value: 0 },
+      stormAz: { value: 0 },
+      bolt: { value: 0 },
+      boltOff: { value: 0 },
+      boltSeed: { value: 0 },
     };
     const mat = new THREE.ShaderMaterial({
       uniforms: this.uniforms,
@@ -249,7 +309,43 @@ export class Sky {
   rainbow = 0;
   meteors = 0;
 
+  /** A storm far off on the horizon (0..1): set by the weather; evenings sometimes bring one too. */
+  stormFar = 0;
+  private stormLevel = 0;
+  private boltTimer = 3;
+  private days = 0;
+  private lastHour = 0;
+
+  private distantStorms(hour: number, dt: number) {
+    if (hour < this.lastHour - 12) this.days++;
+    this.lastHour = hour;
+    // Some evenings a thunderstorm builds far off, lighting up the sunset
+    const r = Math.abs(Math.sin(this.days * 12.9898 + 4.1) * 43758.5453) % 1;
+    const evening = r < 0.4 ? Math.min(THREE.MathUtils.smoothstep(hour, 16.5, 17.5), 1 - THREE.MathUtils.smoothstep(hour, 20, 21)) : 0;
+    const target = Math.max(this.stormFar, evening);
+    this.stormLevel += (target - this.stormLevel) * (1 - Math.exp(-dt * 0.2));
+    const u = this.uniforms;
+    u.distantStorm.value = this.stormLevel;
+    u.stormAz.value = 2.1 + Math.sin(this.days * 7.7) * 1.2;
+    this.boltTimer -= dt;
+    if (this.boltTimer <= 0 && this.stormLevel > 0.2) {
+      this.boltTimer = 1.5 + Math.random() * 6;
+      u.bolt.value = 1;
+      u.boltOff.value = (Math.random() - 0.5) * 0.9;
+      u.boltSeed.value = Math.random() * 100;
+      this.onBolt();
+    }
+    // Flicker and fade
+    u.bolt.value *= Math.exp(-dt * (u.bolt.value > 0.5 ? 9 : 5));
+    if (Math.random() < 0.05 && u.bolt.value > 0.1) u.bolt.value = Math.min(1, u.bolt.value + 0.6);
+  }
+  /** Called for each far-off lightning bolt (for a distant rumble). */
+  onBolt: () => void = () => {};
+  private lastElapsed = 0;
+
   update(hour: number, elapsed: number, target: THREE.Vector3, pbr = false) {
+    this.distantStorms(((hour % 24) + 24) % 24, Math.min(0.1, Math.max(0, elapsed - this.lastElapsed)));
+    this.lastElapsed = elapsed;
     this.hour = ((hour % 24) + 24) % 24;
     let i = 0;
     while (i < KEYS.length - 2 && KEYS[i + 1].t <= this.hour) i++;

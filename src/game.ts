@@ -189,6 +189,8 @@ export class Game {
     this.weather = new Weather(settings.quality === 'low' ? 1500 : 3500);
     this.weather.kind = settings.weather;
     this.weather.onThunder = (s) => this.engine.thunder?.(s);
+    // Lightning far off: a low, late rumble
+    this.sky.onBolt = () => { const d = 2 + Math.random() * 4; window.setTimeout(() => this.engine.thunder?.(0.25), d * 1000); };
     this.scene.add(this.weather.group);
     this.scene.add(this.effects.group);
     this.scene.add(this.drift.group);
@@ -249,6 +251,9 @@ export class Game {
   private flareOn = false;
   private parkedTime = 0;
   private leafLevel = 0;
+  private gust = 0;
+  private gustOn = false;
+  private gustTimer = 40;
   private petalLevel = 0;
   /** Sun visors flipped down. */
   visorDown = false;
@@ -270,6 +275,10 @@ export class Game {
     const gold = THREE.MathUtils.smoothstep(0.32 - sunDir.y, 0, 0.3) * THREE.MathUtils.smoothstep(sunDir.y, -0.1, 0.02);
     a.uniforms.uSunOn.value = (this.phase === 'garage' ? 0 : 1) * up * onScreen * (1 - this.sky.night) * (this.car.inside ? 0.8 : 1) * (1 + gold * 0.4);
     a.uniforms.uThresh.value = 0.85 - gold * 0.08;
+    // In the woods the sun streams through the trees in shafts
+    let woods = 0;
+    for (const { biome, w } of this.world.weights(v.z)) if (['forest', 'pnw', 'rainforest', 'autumn', 'blossom'].includes(biome.id)) woods += w;
+    a.uniforms.uSunOn.value *= 1 + woods * 0.8;
     a.uniforms.uGlare.value = this.car.inside && this.phase !== 'garage' && !this.visorDown ? up * onScreen * (0.15 + gold * 0.4) * (1 - this.sky.night) : 0;
     a.uniforms.uSunColor.value.copy(this.sky.sun.color);
     a.uniforms.uTime.value = this.elapsed;
@@ -752,6 +761,7 @@ export class Game {
     wx.update(dt, this.elapsed, this.camera.position);
     this.sky.cover = wx.look.cover;
     this.sky.flash = wx.flash;
+    this.sky.stormFar = wx.kind === 'storm' ? 0.8 : wx.look.cover > 0.6 ? 0.3 : 0;
     // Night-sky extras: shooting stars anywhere it's clear, northern lights up north,
     // and a rainbow for a minute or two when a shower clears
     this.sky.meteors = 1 - this.world.urban(v.z);
@@ -800,7 +810,16 @@ export class Game {
     }
     const sandTarget = desert * (this.sandOn || wx.kind === 'storm' ? 1 : 0) * (1 - wx.look.rain);
     this.sand += (sandTarget - this.sand) * (1 - Math.exp(-dt * (sandTarget > this.sand ? 0.25 : 0.7)));
-    const windTarget = 1 + wx.look.cover * 0.6 + (wx.kind === 'storm' ? 1.4 : 0) + this.sand * 2.2;
+    // Autumn gusts: every so often the wind gets up and a storm of leaves blows across the road
+    const leafy = Math.max(leaves, season === 'autumn' ? 0.6 : 0);
+    this.gustTimer -= dt;
+    if (this.gustTimer <= 0) {
+      this.gustOn = !this.gustOn && leafy > 0.3 && wx.look.snow < 0.2;
+      this.gustTimer = this.gustOn ? 14 + Math.random() * 12 : 50 + Math.random() * 70;
+    }
+    this.gust += ((this.gustOn ? 1 : 0) - this.gust) * (1 - Math.exp(-dt * 0.6));
+    leaves = Math.max(leaves, season === 'autumn' ? 0.35 : 0) + this.gust * leafy * 2.2;
+    const windTarget = 1 + wx.look.cover * 0.6 + (wx.kind === 'storm' ? 1.4 : 0) + this.sand * 2.2 + this.gust * 1.6;
     shared.wind.value += (windTarget - shared.wind.value) * (1 - Math.exp(-dt * 0.5));
     const wa = this.elapsed * 0.01 + 0.8;
     const ws = 1.5 + shared.wind.value * 2.5;

@@ -39,6 +39,7 @@ const frag = /* glsl */ `
 uniform vec3 uColorA;
 uniform vec3 uColorB;
 uniform float uAmount;
+uniform float uCount;
 uniform float uSand;
 varying float vSpin;
 varying float vTone;
@@ -55,7 +56,7 @@ void main() {
     r.y /= max(0.25, abs(sin(vSpin * 0.7)));
     a = smoothstep(0.5, 0.42, length(r * vec2(1.0, 1.8)));
   }
-  a *= uAmount * vFade * step(vTone, uAmount * 1.2 + 0.05);
+  a *= min(uAmount, 1.0) * vFade * step(vTone, uCount);
   if (a < 0.02) discard;
   gl_FragColor = vec4(mix(uColorA, uColorB, vTone), a);
   #include <colorspace_fragment>
@@ -93,13 +94,14 @@ export class Drift {
   constructor() {
     const mk = (size: number, fall: number, sand: number) => ({
       uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uWind: { value: new THREE.Vector2() },
-      uFall: { value: fall }, uSize: { value: size }, uAmount: { value: 0 }, uSand: { value: sand },
+      uFall: { value: fall }, uSize: { value: size }, uAmount: { value: 0 }, uCount: { value: 0 }, uSand: { value: sand },
       uColorA: { value: new THREE.Color() }, uColorB: { value: new THREE.Color() },
     });
     this.lu = mk(140, 0.9, 0);
     this.su = mk(150, 0.4, 1);
     const mat = (u: typeof this.lu) => new THREE.ShaderMaterial({ uniforms: u, vertexShader: vert, fragmentShader: frag, transparent: true, depthWrite: false });
-    this.leaf = new THREE.Points(cloud(260, 5), mat(this.lu));
+    // (a leaf storm can fill the air: most of these only show when it blows)
+    this.leaf = new THREE.Points(cloud(900, 5), mat(this.lu));
     this.sand = new THREE.Points(cloud(2200, 6), mat(this.su));
     for (const p of [this.leaf, this.sand]) {
       p.frustumCulled = false;
@@ -115,6 +117,8 @@ export class Drift {
     lu.uCam.value.copy(cam);
     lu.uWind.value.copy(look.wind);
     lu.uAmount.value = leafy;
+    // About as many as before in a breeze (a quarter of them), all of them in a leaf storm
+    lu.uCount.value = Math.min(1, (leafy * 1.2 + 0.05) * 0.29 + Math.max(0, leafy - 1) * 0.4);
     if (look.petals >= look.leaves) {
       lu.uColorA.value.setRGB(1, 0.78, 0.86);
       lu.uColorB.value.setRGB(1, 0.93, 0.95);
@@ -128,6 +132,7 @@ export class Drift {
     su.uCam.value.copy(cam);
     su.uWind.value.copy(look.wind).multiplyScalar(2.5);
     su.uAmount.value = look.sand;
+    su.uCount.value = look.sand * 1.2 + 0.05;
     su.uColorA.value.setRGB(0.82, 0.64, 0.42);
     su.uColorB.value.setRGB(0.92, 0.78, 0.56);
     this.sand.visible = look.sand > 0.01;
