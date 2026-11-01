@@ -1,6 +1,6 @@
 import { fbm2, noise2, ridged2, smoothstep, clamp, lerp } from './noise';
 
-export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon' | 'blossom' | 'tropical' | 'vineyard' | 'pnw';
+export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon' | 'blossom' | 'tropical' | 'vineyard' | 'pnw' | 'metro';
 
 export type PropType =
   | 'pine' | 'pineSnow' | 'tree' | 'treeAutumn' | 'bush' | 'palm' | 'cactus' | 'rock' | 'rockSnow'
@@ -353,6 +353,26 @@ export const BIOMES: Record<BiomeId, Biome> = {
     ],
     haze: [0.45, 0.35, 0.65, 0.35],
     verge: [0.46, 0.46, 0.48],
+  },
+  metro: {
+    // A big multi-lane highway at night: through a glittering skyline, under rows of street lights
+    id: 'metro', name: 'Night Metro', emoji: '🌆', roadBase: 7, roadAmp: 2, relief: 0, night: true, fog: 0.85,
+    height(x, z, c) {
+      return c.roadY + 0.2 + fbm2(x / 500, z / 500, 2, 95) * 2 * ramp(c.u, 80, 260);
+    },
+    color(x, z, h, rel, c, out) {
+      const n = noise2(x / 24, z / 24, 96) * 0.5 + 0.5;
+      set(out, 0.36 + n * 0.07, 0.37 + n * 0.07, 0.4 + n * 0.07);
+      if (Math.abs(c.u) > 30 && Math.abs(c.u) < 70 && noise2(x / 120, z / 120, 97) > 0.2) set(out, 0.26, 0.36, 0.22); // grass embankments
+    },
+    props: [
+      { type: 'tower1', n: 4, u: [55, 160], scale: [1.1, 1.6] },
+      { type: 'tower2', n: 4, u: [70, 220], scale: [1.2, 1.8] },
+      { type: 'tower3', n: 7, u: [110, 480], scale: [1.2, 2.2] },
+      { type: 'billboard', n: 0.5, u: [24, 40], scale: [1.1, 1.4] },
+    ],
+    haze: [0.42, 0.32, 0.6, 0.4],
+    verge: [0.4, 0.4, 0.43],
   },
   rainforest: {
     id: 'rainforest', name: 'Rainforest', emoji: '🌴', roadBase: 9, roadAmp: 8, relief: 0.7, fog: 0.62,

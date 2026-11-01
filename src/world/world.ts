@@ -114,6 +114,23 @@ export class World {
     return [{ biome: here, w: 1, k }];
   }
 
+  private roadWeights(z: number): { biome: Biome; w: number }[] {
+    const B = 700;
+    const k = Math.floor(z / SEGMENT);
+    const t = z - k * SEGMENT;
+    const out = [{ biome: BIOMES[this.regionBiome(k)], w: 1 }];
+    if (t < B) {
+      const wp = 1 - smoothstep(-B, B, t);
+      out[0].w -= wp;
+      out.push({ biome: BIOMES[this.regionBiome(k - 1)], w: wp });
+    } else if (t > SEGMENT - B) {
+      const wn = 1 - smoothstep(-B, B, SEGMENT - t);
+      out[0].w -= wn;
+      out.push({ biome: BIOMES[this.regionBiome(k + 1)], w: wn });
+    }
+    return out;
+  }
+
   /** The biome that is mostly in charge at z. */
   dominant(z: number): Biome {
     const ws = this.weights(z);
@@ -279,7 +296,9 @@ export class World {
 
   roadY(z: number): number {
     let y = this.elevation(z);
-    for (const { biome, w } of this.weights(z)) {
+    // (the road's base height blends between regions over a longer stretch than the scenery does,
+    // so going from the mountains down to the sea is a long descent, never a steep ramp)
+    for (const { biome, w } of this.roadWeights(z)) {
       const n = noise1(z / 520, this.seed + 7) * 0.75 + noise1(z / 190, this.seed + 8) * 0.25;
       y += w * (biome.roadBase + biome.roadAmp * (0.5 + 0.5 * n));
       // Seaside clifftops lift the road high above the water
@@ -417,7 +436,7 @@ export class World {
       else if (b === 'desert' || b === 'flatlands') kind = r < 0.35 ? 'diner' : r < 0.6 ? 'drivein' : 'fuel';
       else if (b === 'alpine' || b === 'canyon') kind = r < 0.6 ? 'viewpoint' : r < 0.8 ? 'fuel' : b === 'alpine' ? 'campsite' : 'diner';
       else if (b === 'forest' || b === 'lakes' || b === 'rainforest') kind = r < 0.5 ? 'campsite' : r < 0.8 ? 'fuel' : 'viewpoint';
-      else if (b !== 'city') kind = r < 0.3 ? 'viewpoint' : r < 0.5 ? 'diner' : r < 0.62 ? 'drivein' : 'fuel';
+      else if (b !== 'city' && b !== 'metro') kind = r < 0.3 ? 'viewpoint' : r < 0.5 ? 'diner' : r < 0.62 ? 'drivein' : 'fuel';
       const clear = (zz: number) => this.urban(zz) < 0.01 && this.bridgeRaw(zz) < 0.01 && this.tunnelAt(zz) < 0.01;
       if (kind && clear(z - 90) && clear(z) && clear(z + 90) && !(highway && this.highwayAt(z) < 0.99)) {
         let side = h(604) < 0.5 ? -1 : 1;
@@ -610,11 +629,20 @@ export class World {
   /** 0..1: a four-lane highway with a central barrier. */
   highwayAt(z: number): number {
     return this.cached('h', z, () =>
-      this.feature(z, 9000, 401, 0.65, [1800, 3400], (c) => {
-        const b = this.dominant(c).id;
-        return ['flatlands', 'hills', 'desert', 'autumn', 'seaside', 'city'].includes(b) && this.bridgeRaw(c) < 0.01;
-      }),
+      Math.max(
+        this.feature(z, 9000, 401, 0.65, [1800, 3400], (c) => {
+          const b = this.dominant(c).id;
+          return ['flatlands', 'hills', 'desert', 'autumn', 'seaside', 'city'].includes(b) && this.bridgeRaw(c) < 0.01;
+        }),
+        // The Night Metro is one long highway
+        smoothstep(0.35, 0.7, this.metroAt(z)),
+      ),
     );
+  }
+
+  /** 0..1: in the Night Metro. */
+  metroAt(z: number): number {
+    return this.weights(z).reduce((m, x) => m + (x.biome.id === 'metro' ? x.w : 0), 0);
   }
 
   /** 0..1: an unsealed gravel road. */
@@ -807,6 +835,7 @@ export class World {
         case 'pnw': add(0, 0.4); add(2, 0.6); break;
         case 'winter': add(5, 1); break;
         case 'city': add(4, 0.85); add(3, 0.15); break;
+        case 'metro': add(4, 0.8); add(0, 0.2); break;
         case 'rainforest': add(2, 0.5); add(0, 0.5); break;
         case 'lakes':
           if (h < 1.6) add(3, 1);

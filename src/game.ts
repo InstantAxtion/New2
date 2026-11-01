@@ -604,6 +604,8 @@ export class Game {
       }
     }
 
+    // The Night Metro is always busy, whatever the traffic setting
+    this.traffic.minDensity = this.world.metroAt(v.z) * this.world.highwayAt(v.z) * 0.6;
     if (this.phase === 'drive') this.traffic.update(dt, v, night, (z) => this.speedLimit(z));
     this.peds.update(v.z, this.elapsed);
     // Driving through a puddle: a big splash out to the sides
@@ -927,6 +929,7 @@ export class Game {
       if (id === 'rainforest') m.insects += k;
       if (['alpine', 'winter', 'canyon', 'desert'].includes(id)) m.wind += k;
       if (id === 'city') m.city += k;
+      if (id === 'metro') m.city += k * 0.6;
       if (['hills', 'flatlands', 'autumn', 'seaside'].includes(id)) m.crickets += k * night;
     }
     m.city = Math.max(m.city, w.townAt(v.z) * 0.5);

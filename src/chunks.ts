@@ -835,7 +835,13 @@ export class ChunkManager {
       const [tx, tz] = w.tangent(z);
       const rx = w.roadX(z), ry = w.roadY(z);
       if (w.bridge(z) > 0.3) continue;
-      if (w.urban(z) > 0.5) {
+      if (w.metroAt(z) > 0.5 && w.highwayAt(z) > 0.9) {
+        // Highway lights on both sides, reaching out over the carriageways
+        for (const side of [-1, 1]) {
+          const o = side * (w.roadHalf(z) + 1.4);
+          put('lamp', rx - tz * o, ry - 0.1, z + tx * o, 1.35, Math.atan2(tz * side, -tx * side));
+        }
+      } else if (w.urban(z) > 0.5) {
         const side = Math.round(z / 28) % 2 === 0 ? 1 : -1;
         const o = side * (w.roadHalf(z) + 1.8);
         // The lamp's arm (local +z) reaches out over the road

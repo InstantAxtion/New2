@@ -74,8 +74,14 @@ export class Traffic {
     }
   }
 
+  /** Somewhere that's always busy (the Night Metro) can raise the traffic above the setting. */
+  minDensity = 0;
+  private get dens() {
+    return Math.max(this.density, this.minDensity);
+  }
+
   get enabled() {
-    return this.density > 0.01;
+    return this.dens > 0.01;
   }
 
   clear() {
@@ -104,11 +110,11 @@ export class Traffic {
 
   update(dt: number, me: Vehicle, night: boolean, limitAt: (z: number) => number) {
     const fwd = Math.cos(me.heading) >= 0 ? 1 : -1;
-    const max = Math.round(2 + this.density * 9);
+    const max = Math.round(2 + this.dens * 9);
     const active = this.pool.filter((c) => c.active);
     this.timer -= dt;
     if (this.enabled && this.timer <= 0 && active.length < max) {
-      this.timer = 2 + (1 - this.density) * 11 * Math.random() + 1;
+      this.timer = 2 + (1 - this.dens) * 11 * Math.random() + 1;
       const c = this.pick();
       if (c) {
         // Two in five go your way (ahead, a bit slower); the rest come towards you
