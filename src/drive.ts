@@ -12,12 +12,14 @@ export interface DriveStyle {
   gap: number;
   /** Overtake when the car ahead is at least this much slower (m/s). */
   overtake: number;
+  /** Auto-drive pace relative to the set cruise speed. */
+  pace: number;
 }
 
 export const STYLES: Record<'relaxed' | 'normal' | 'sporty', DriveStyle> = {
-  relaxed: { lat: 0.3, throttle: 0.45, brake: 0.5, gap: 2.6, overtake: Infinity },
-  normal: { lat: 0.42, throttle: 0.8, brake: 0.75, gap: 1.9, overtake: 12 / 3.6 },
-  sporty: { lat: 0.62, throttle: 1, brake: 1, gap: 1.2, overtake: 5 / 3.6 },
+  relaxed: { lat: 0.36, throttle: 0.5, brake: 0.55, gap: 2.4, overtake: 18 / 3.6, pace: 1 },
+  normal: { lat: 0.52, throttle: 0.85, brake: 0.8, gap: 1.7, overtake: 7 / 3.6, pace: 1.06 },
+  sporty: { lat: 0.74, throttle: 1, brake: 1, gap: 1.1, overtake: 3 / 3.6, pace: 1.22 },
 };
 
 /** What auto-drive needs to know about the road around it. */
@@ -148,17 +150,25 @@ export class Vehicle {
     const w = this.world;
     let k = 0;
     const dir = Math.cos(this.heading) >= 0 ? 1 : -1;
-    const span = 25 + Math.abs(this.v) * 2.5;
-    for (let d = 0; d <= span; d += 8) k = Math.max(k, Math.abs(w.curvature(this.z + d * dir)));
+    // Look far enough ahead to slow down gently: each bend allows a speed that we can brake
+    // down to (at a comfortable 2.2 m/s²) by the time we get there, so slowing starts early and smoothly
     const lat = this.spec.grip * latShare;
-    return Math.sqrt(lat / Math.max(k, 1e-4));
+    const span = 40 + Math.abs(this.v) * 4;
+    let best = Infinity;
+    for (let d = 0; d <= span; d += 3) {
+      k = Math.abs(w.curvature(this.z + d * dir));
+      const vb = Math.sqrt(lat / Math.max(k, 1e-4));
+      best = Math.min(best, Math.sqrt(vb * vb + 2 * 2.2 * Math.max(0, d - 8)));
+    }
+    return best;
   }
 
   /** Controls the autopilot would use right now. */
-  autopilot(env: AutoEnv | null = null, style: DriveStyle = STYLES.normal): Controls {
+  autopilot(env: AutoEnv | null = null, style: DriveStyle = STYLES.normal, dt = 1 / 60): Controls {
     // Work out what's holding the speed down (shown under the speedometer)
-    let target = Math.min(this.cruise, this.vmax * 0.97);
-    let why: CruiseLimit = target < this.cruise - 0.5 ? 'top' : null;
+    const want = this.cruise * style.pace;
+    let target = Math.min(want, this.vmax * 0.97);
+    let why: CruiseLimit = target < want - 0.5 ? 'top' : null;
     const lim = (v: number, w: CruiseLimit) => {
       if (v < target - 0.3) {
         target = v;
@@ -180,8 +190,15 @@ export class Vehicle {
     this.limitedBy = why;
     const c = this.holdSpeed(target, style.throttle, style.brake);
     if (urgent) c.brake = clamp(c.brake + 0.4, 0, 1);
-    return { steer: this.pursuit(this.lane), throttle: urgent ? 0 : c.throttle, brake: c.brake };
+    // Ease the pedals in and out like a calm driver (but stamp on the brake when it's urgent)
+    const ease = (from: number, to: number, up: number, down: number) => from + clamp(to - from, -down * dt, up * dt);
+    this.autoT = urgent || c.brake > 0 ? Math.min(this.autoT, c.throttle) : ease(this.autoT, c.throttle, 0.7, 3);
+    this.autoB = urgent || why === 'traffic' || why === 'stop' ? c.brake : ease(this.autoB, c.brake, 3, 3);
+    return { steer: this.pursuit(this.lane), throttle: this.autoT, brake: this.autoB };
   }
+
+  private autoT = 0;
+  private autoB = 0;
 
   /** Why auto-drive (or cruise control) is going slower than the set speed. */
   limitedBy: CruiseLimit = null;

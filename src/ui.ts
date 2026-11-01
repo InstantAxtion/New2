@@ -209,24 +209,20 @@ export class UI {
 <section id="hud" class="screen">
   <div class="hud-tl">
     <div class="pill" id="region"></div>
-    <div class="pill small info-pill"><span id="odo">0.0 mi</span> · <span id="clock">09:00</span> · <span id="fuel">⛽ 100%</span></div>
-    <div class="pill small info-pill" id="compass-pill"><span id="compass">N</span> · <span id="alt">0 m</span>
-      <button class="link-btn" id="trip-btn">TRIP <b id="trip">0.0</b></button>
-      <button class="link-btn" id="fav-btn" aria-label="Save this place">☆</button></div>
+    <div class="pill small info-pill"><span id="odo">0.0 mi</span> · <span id="clock">09:00</span> · <span id="fuel">⛽ 100%</span> · <span id="compass">N</span><span class="alt-hide" id="alt">0 m</span></div>
     <div class="nowbar" id="nowbar"><span id="nowbar-text"></span>
-      <button class="icon tiny" id="nb-next" aria-label="Next song">⏭</button>
+      <button class="icon tiny" id="top-play" aria-label="Play or pause">⏸</button>
+      <button class="icon tiny" id="nb-next" aria-label="Next">⏭</button>
       <button class="icon tiny" id="nb-video" aria-label="Show or hide the video">📺</button></div>
   <button class="pip-x" id="pip-x" aria-label="Hide the video">✕</button>
   </div>
   <div class="hud-tr">
-    <button class="icon" id="top-play" aria-label="Play or pause the music">⏯</button>
     <button class="icon" data-open="music" aria-label="Music">🎵</button>
     <button class="icon wide" id="cam-btn">🎥 <span class="lbl" id="cam-label"></span></button>
     <button class="icon" id="menu-btn" aria-label="Menu">☰</button>
   </div>
   <div class="hud-menu card" id="hud-menu">
     <div class="menu-grid">
-      <button class="pad small" data-open="music" aria-label="Music">🎵<span>Music</span></button>
       <button class="pad small" id="tv-btn" aria-label="Watch the music video">📺<span>Watch</span></button>
       <button class="pad small" id="zen-btn" aria-label="Hide controls">👁️<span>Hide all</span></button>
       <button class="pad small" id="pause-btn" aria-label="Pause">⏸<span>Pause</span></button>
@@ -234,6 +230,9 @@ export class UI {
       <button class="pad small" data-open="settings" aria-label="Settings">⚙️<span>Settings</span></button>
       <button class="pad small" data-open="stats" aria-label="Trips and passport">🛂<span>Passport</span></button>
       <button class="pad small" id="menu-garage" aria-label="Garage">🚗<span>Garage</span></button>
+      <button class="pad small" id="trip-btn" aria-label="Trip meter">🧭<span>Trip <b id="trip">0.0</b></span></button>
+      <button class="pad small" id="fav-btn" aria-label="Save this place"><b id="fav-ico">☆</b><span>Save spot</span></button>
+      <button class="pad small manual-only" id="assist-btn" aria-label="Steering assist">🛟<span id="assist-lbl">Assist</span></button>
     </div>
     <div class="menu-auto">
       <div class="menu-grid">
@@ -260,7 +259,6 @@ export class UI {
     <div class="mid-pads">
       <button class="pad auto-pad" id="auto-on" aria-label="Turn on auto-drive">🤖<span>AUTO</span></button>
       <button class="pad auto-pad" id="cc-btn" aria-label="Cruise control">⏱️<span>CRUISE</span></button>
-      <button class="pad auto-pad" id="assist-btn" aria-label="Steering assist">🛟<span id="assist-lbl">ASSIST</span></button>
     </div>
     <div class="pedals">
       <button class="pad brake" data-hold="brake" aria-label="Brake">BRAKE</button>
@@ -321,16 +319,24 @@ export class UI {
 <aside id="music" class="sheet hidden">
   <div class="sheet-head"><h2>Music</h2><button class="icon" data-close="music" aria-label="Close">✕</button></div>
   <div class="tabs">
-    <button class="tab" data-mtab="spotify"><i>🎧</i>Spotify</button>
-    <button class="tab" data-mtab="videos"><i>📺</i>Videos</button>
+    <button class="tab" data-mtab="videos"><i>📺</i>YouTube</button>
     <button class="tab" data-mtab="radio"><i>📻</i>Radio</button>
-    <button class="tab" data-mtab="podcasts"><i>🎙️</i>Talk & books</button>
+    <button class="tab" data-mtab="podcasts"><i>🎙️</i>Talk</button>
+    <button class="tab" data-mtab="spotify"><i>🎧</i>Spotify</button>
+  </div>
+  <div class="mnow" id="mnow">
+    <div class="mnow-txt"><b id="mnow-title">Nothing playing</b><span id="mnow-sub">Pick something below</span></div>
+    <div class="mnow-btns">
+      <button class="icon" id="mnow-prev" aria-label="Previous">⏮</button>
+      <button class="icon mnow-play" id="mnow-play" aria-label="Play or pause">▶</button>
+      <button class="icon" id="mnow-next" aria-label="Next">⏭</button>
+    </div>
   </div>
   <div class="sheet-body">
-    <div class="row"><input id="sp-input" type="url" inputmode="url" placeholder="Paste a Spotify or YouTube link" autocomplete="off" />
-      <button class="go small" id="sp-load">Play</button></div>
-    <p class="error" id="sp-error"></p>
     <div class="mpane" data-pane="spotify">
+      <div class="row"><input id="sp-input" type="url" inputmode="url" placeholder="Paste a Spotify or YouTube link" autocomplete="off" />
+        <button class="go small" id="sp-load">Play</button></div>
+      <p class="error" id="sp-error"></p>
       <div class="row"><input id="sps-q" type="search" placeholder="Search Spotify" autocomplete="off" /><button class="go small" id="sps-go">Search</button></div>
       <div class="row"><button class="ghost small" id="sp-paste">📋 Paste</button>
         <button class="ghost small" id="sp-app" disabled>Open in Spotify app ↗</button></div>
@@ -355,34 +361,29 @@ export class UI {
       <div id="pc-list"><p class="hint">Search for a show, then pick an episode. Episodes stream while you drive.</p></div>
     </div>
     <div class="mpane" data-pane="radio">
-      <h3>Soundscapes <small>instead of music</small></h3>
-      <div class="scapes">${SCAPES.map((x) => `<button class="rtile" data-scape="${x.id}"><i>${x.icon}</i><span>${x.name}</span></button>`).join('')}</div>
-      <h3>Radio stations</h3>
+      <h3>Stations</h3>
       <p class="now-status" id="rd-status"></p>
       <div id="rd-list">${STATIONS.map((st) => `<button class="song" data-station="${st.id}"><b>${st.name}</b><span>${st.about}</span></button>`).join('')}</div>
       <div class="row"><button class="ghost small" id="rd-stop">⏹ Stop</button></div>
       <p class="hint">Free internet radio from <a href="#" id="rd-soma">SomaFM</a>, listener-supported and ad-free.</p>
+      <h3>Soundscapes <small>instead of music</small></h3>
+      <div class="scapes">${SCAPES.map((x) => `<button class="rtile" data-scape="${x.id}"><i>${x.icon}</i><span>${x.name}</span></button>`).join('')}</div>
     </div>
     <div class="mpane" data-pane="videos">
       <div class="row"><input id="yt-q" type="search" placeholder="Search YouTube" autocomplete="off" /><button class="go small" id="yt-go">Search</button></div>
       <div class="chips" id="yt-kind"><button class="chip" data-ytk="video">🎬 Videos</button><button class="chip" data-ytk="playlist">📃 Playlists</button><button class="chip" data-ytk="mine">👤 My YouTube</button></div>
       <div id="yt-results"></div>
-      <div class="now-card">
-        <div class="now-song" id="mv-song">Nothing playing yet</div>
-        <div class="now-video" id="mv-video"></div>
+      <div class="now-card slim">
+        <div class="dup" hidden><span id="mv-song"></span><span id="mv-video"></span>
+          <button id="mv-prev"></button><button id="mv-toggle"></button><button id="mv-next"></button></div>
         <div class="now-status" id="mv-status"></div>
-        <div class="row controls">
-          <button class="icon" id="mv-prev" aria-label="Previous">⏮</button>
-          <button class="icon" id="mv-toggle" aria-label="Play or pause">⏯</button>
-          <button class="icon" id="mv-next" aria-label="Next">⏭</button>
-          <button class="ghost small" id="mv-other">🎞️ Other video</button>
-        </div>
-        <div class="row controls">
+        <div class="chips">
+          <button class="chip" id="mv-watch">📺 Watch</button>
           <button class="chip" id="mv-shuffle">🔀 Shuffle</button>
           <button class="chip" id="mv-repeat">🔁 Repeat all</button>
           <button class="chip" id="mv-lyrics">🎤 Lyrics</button>
+          <button class="chip" id="mv-other">🎞️ Other video</button>
         </div>
-        <button class="ghost small wide-btn" id="mv-watch">📺 Watch on the car's screen</button>
       </div>
       <details class="fix">
         <summary>Wrong video?</summary>
@@ -1173,8 +1174,8 @@ export class UI {
       this.s.favourites.unshift({ name, seed: g.seed, themes: [...this.s.themes], z: v.z, hour: g.hour, region: b ? `${b.emoji} ${b.name}` : '', at: Date.now() });
       this.s.favourites = this.s.favourites.slice(0, 30);
       this.save();
-      $('#fav-btn').textContent = '★';
-      window.setTimeout(() => ($('#fav-btn').textContent = '☆'), 2500);
+      $('#fav-ico').textContent = '★';
+      window.setTimeout(() => ($('#fav-ico').textContent = '☆'), 2500);
       this.toast(`Saved<b>★ ${esc(name)}</b>`);
     };
     // Hide the small video (the music keeps playing); 📺 in the now-playing bar brings it back
@@ -1195,6 +1196,17 @@ export class UI {
         this.save();
         this.toast(this.s.fpVideo === 'ahead' ? '📺 Video over the road ahead' : '📺 Video on the dashboard screen');
       } else pipToggle(!this.s.pip);
+    };
+    $('#mnow-play', r).onclick = () => (this.audioSource() ? this.toggleAudio() : $<HTMLElement>('#mv-toggle').click());
+    $('#mnow-next', r).onclick = () => $<HTMLElement>('#nb-next').click();
+    $('#mnow-prev', r).onclick = () => {
+      const src = this.audioSource();
+      if (src === 'videos') this.videos.previous();
+      else if (src === 'podcasts') this.podcasts.skip(-15);
+      else if (src === 'radio' && this.radio.station) {
+        const i = STATIONS.indexOf(this.radio.station);
+        this.radio.play(STATIONS[(i + STATIONS.length - 1) % STATIONS.length]);
+      }
     };
     $('#nb-next', r).onclick = () => {
       const src = this.audioSource();
@@ -1442,7 +1454,7 @@ export class UI {
   private refreshHud() {
     $('#cam-label').textContent = CAM_LABEL[this.s.cam];
     $('#assist-btn').classList.toggle('on', this.s.assist);
-    $('#assist-lbl').textContent = this.s.assist ? 'ASSIST' : 'NO ASSIST';
+    $('#assist-lbl').textContent = this.s.assist ? 'Assist on' : 'Assist off';
     $('#tv-btn').classList.toggle('on', this.game.theatre);
     $('#lights-lbl').textContent = this.s.lights === 'on' ? 'On' : this.s.lights === 'off' ? 'Off' : 'Auto';
     document.body.classList.toggle('driver-view', this.s.cam === 'hood');
@@ -1525,7 +1537,7 @@ export class UI {
     // Compass, altitude and the trip meter
     const bearing = ((Math.atan2(Math.sin(v.heading), -Math.cos(v.heading)) * 180) / Math.PI + 360) % 360;
     const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-    $('#compass').textContent = `🧭 ${dirs[Math.round(bearing / 45) % 8]} ${Math.round(bearing)}°`;
+    { const cp = `${dirs[Math.round(bearing / 45) % 8]}`; if ($('#compass').textContent !== cp) $('#compass').textContent = cp; }
     const mi = this.s.units === 'mph';
     $('#alt').textContent = `⛰ ${mi ? Math.round(Math.max(0, v.y) * 3.281) + ' ft' : Math.round(Math.max(0, v.y)) + ' m'}`;
     const moved = v.odometer - this.lastOdo;
@@ -1574,7 +1586,19 @@ export class UI {
     const tp = $('#top-play');
     const tpIco = !src ? '▶' : src === 'videos' ? (this.videos.screen.paused ? '▶' : '⏸') : ico;
     if (tp.textContent !== tpIco) tp.textContent = tpIco;
-    $('#nb-next').style.display = src === 'spotify' ? 'none' : '';
+    $('#nb-next').style.display = src === 'spotify' || src === 'scape' ? 'none' : '';
+    // The music sheet's own now-playing strip
+    if ($('#music').classList.contains('hidden') === false) {
+      const [t1, t2] = label ? [label.replace(/^\S+\s/, '').split(' · ')[0], label.split(' · ')[1] ?? (src === 'radio' ? 'Live radio' : src === 'podcasts' ? this.podcasts.show?.name ?? '' : '')] : ['Nothing playing', 'Pick something below'];
+      if ($('#mnow-title').textContent !== t1) $('#mnow-title').textContent = t1;
+      if ($('#mnow-sub').textContent !== t2) $('#mnow-sub').textContent = t2;
+      const mp = $('#mnow-play'), mi = !src ? '▶' : tpIco;
+      if (mp.textContent !== mi) mp.textContent = mi;
+      $('#mnow').classList.toggle('idle', !src);
+      const noSkip = !src || src === 'spotify' || src === 'scape';
+      $('#mnow-prev').style.display = noSkip ? 'none' : '';
+      $('#mnow-next').style.display = noSkip ? 'none' : '';
+    }
     $('#nb-video').style.display = src === 'videos' ? '' : 'none';
     $('#nb-video').classList.toggle('on', this.s.cam === 'hood' ? this.s.fpVideo === 'ahead' : this.s.pip);
     // Keep the ✕ on the small video's corner

@@ -673,3 +673,43 @@ body.pip-mode #view { visibility: hidden; }
 body.pip-mode #video { box-shadow: none; border-radius: 0 !important; }
 /* The road-ahead screen lets a hint of the world through */
 body.driver-view #video:not(.theatre):not(.pip) { box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+
+/* ---------- Polish: one now-playing strip, fewer HUD buttons, text sizing ---------- */
+.mnow { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 10px 12px; border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255,255,255,.12), rgba(255,255,255,.05)); border: 1px solid var(--line); }
+.mnow-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mnow-txt b { font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mnow-txt span { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mnow-btns { display: flex; gap: 6px; }
+.mnow-btns .icon { height: 42px; min-width: 42px; border-radius: 50%; font-size: 16px; }
+.mnow .mnow-play { background: #f4f5f7; color: #0b0e14; min-width: 48px; height: 48px; font-size: 18px; }
+.mnow.idle .mnow-txt b { color: var(--muted); font-weight: 500; }
+.now-card.slim { padding: 8px 0; background: none; border: 0; }
+.now-card.slim .chips { flex-wrap: wrap; }
+.alt-hide { display: none; }
+body.auto-mode .manual-only { display: none; }
+.nowbar .icon.tiny { min-width: 30px; height: 30px; font-size: 12px; border-radius: 50%; }
+
+/* Bigger, easier text in menus and sheets */
+.sheet-body, .pause-card, .settings-card, .sheet .tabs { font-size: 16px; }
+.sheet h3, .world-card h3 { font-size: 14px; }
+.sheet .chip, .pause-card .chip { font-size: 15px; padding: 8px 13px; }
+.sheet .hint, .pause-card .hint { font-size: 14px; }
+.sheet input, .sheet select { font-size: 16px; }
+.sheet .tab { font-size: 15px; }
+.song b { font-size: 16px; }
+.song span { font-size: 13px; }
+.srow > span { font-size: 15px; }
+.sheet-head h2 { font-size: 24px; }
+
+/* Smaller, quieter text while driving */
+.pill { font-size: 14px; padding: 5px 12px; }
+.pill.small { font-size: 12px; padding: 3px 10px; }
+.speedo b { font-size: 42px; }
+.speedo span { font-size: 12px; }
+.nowbar { font-size: 13px; }
+.lyrics b { font-size: clamp(16px, 3.8vw, 22px); }
+.lyrics span { font-size: clamp(12px, 2.6vw, 14px); }
+.toast b { font-size: 19px; }
+@media (orientation: portrait) { .speedo b { font-size: 34px; } }
+.menu-grid .pad.small span b#trip { font-size: 11px; font-weight: 600; color: var(--text); }

@@ -582,6 +582,12 @@ export class Game {
     this.car.headlight.intensity = this.lightsOn ? 230 * (0.4 + 0.6 * dark) : 0;
     this.car.setLights(this.lightsOn && !pbrLights ? 0.12 + 0.25 * dark : 0);
     this.car.setInside(this.phase !== 'garage' && this.rig.mode === 'hood');
+    // The cabin's daylight fill follows the light outside
+    const fill = this.car.cockpit.fill;
+    if (fill) {
+      // (kept in the scene even outside, so switching views doesn't make every material recompile)
+      fill.intensity = this.car.inside ? 1.1 * Math.min(1, this.sky.sun.intensity / 1.8) + 0.05 : 0;
+    }
     // Cabin mood lighting breathes gently with the music (about 120 bpm, with a little swing)
     {
       const amb = this.car.custom.ambient;
@@ -1065,20 +1071,20 @@ export class Game {
     if (this.sleeping) {
       // Pull over onto the right edge and stop
       v.lane = 1.6;
-      return v.autopilot({ leader: t.leader(v, 1), limit: 0, stopIn: null }, STYLES.relaxed);
+      return v.autopilot({ leader: t.leader(v, 1), limit: 0, stopIn: null }, STYLES.relaxed, dt);
     }
     const env: AutoEnv = { leader: null, limit, stopIn: this.stopFor() };
     if (!this.passing) {
       v.lane = 1;
       const lead = t.leader(v, 1);
       env.leader = lead;
-      const free = Math.min(v.cruise, v.safeSpeed(style.lat), limit);
+      const free = Math.min(v.cruise * style.pace, v.safeSpeed(style.lat), limit);
       // On a highway the fast lane goes our way: no oncoming traffic to wait for
       const highway = this.world.highwayAt(v.z) > 0.6;
       const fastLaneFree = (!t.leader(v, -1) || t.leader(v, -1)!.gap > 35) && this.world.highwayAt(v.z + 450 * Math.sign(Math.cos(v.heading))) > 0.6;
       // Keep right: on an ordinary road only pass something really slow, on a long clear straight
-      if (lead && lead.gap < 55 && lead.v < free - style.overtake && limit === Infinity &&
-          (highway ? fastLaneFree : lead.v < free * 0.72 && this.clearRoadAhead(400) && t.oncomingClear(v, 380, 12))) {
+      if (lead && lead.gap < 80 && lead.v < free - style.overtake && limit === Infinity &&
+          (highway ? fastLaneFree : lead.v < free * 0.88 && this.clearRoadAhead(300) && t.oncomingClear(v, 340, 12))) {
         this.passing = true;
         this.passedBeside = false;
         this.passTime = 0;
@@ -1092,10 +1098,16 @@ export class Game {
       // Get back in lane early if a town or junction turns up
       const hwEnds = hw && this.world.highwayAt(v.z + 220 * Math.sign(Math.cos(v.heading))) < 0.6;
       const danger = hw ? hwEnds : !t.oncomingClear(v, 90, 3.5) || limit !== Infinity || this.world.highwayAt(v.z + 80 * Math.sign(Math.cos(v.heading))) > 0.05;
-      if ((this.passedBeside && !beside) || this.passTime > 14 || (danger && !beside)) {
+      // Only pull back in with room to spare: never onto the car we were passing
+      const back = t.leader(v, 1);
+      const roomy = !beside && (!back || back.gap > 6 + Math.max(v.v, 0) * 0.3);
+      if (roomy && (this.passedBeside || this.passTime > 14 || danger)) {
         this.passing = false;
         v.lane = 1;
         env.leader = t.leader(v, 1);
+      } else if ((danger || this.passTime > 14) && !roomy && back && !beside) {
+        // Running out of road with it still just ahead: ease off and tuck in behind it
+        env.limit = Math.min(limit, Math.max(0, back.v - 4));
       }
       if (danger && beside) env.limit = Math.min(limit, v.v + 3); // get past quickly
       if (this.world.highwayAt(v.z) > 0.6 && this.passing) env.leader = t.leader(v, -1);
@@ -1108,7 +1120,7 @@ export class Game {
     // Never drive into anything that's right in front of the bonnet, whichever way it's going
     const block = t.inPath(v);
     if (block && (!env.leader || block.gap < env.leader.gap)) env.leader = block;
-    return v.autopilot(env, style);
+    return v.autopilot(env, style, dt);
   }
 
   /** Distance to something auto-drive must stop for (people on a crossing), if any. */

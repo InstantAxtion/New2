@@ -28,6 +28,8 @@ export class CameraRig {
   private speedK = 0;
   /** The heading the chase camera follows (lags the car's). */
   private camHeading = 0;
+  /** The car's height, smoothed, so bumps and crests don't jolt the chase camera. */
+  private camY = 0;
   private pos = new THREE.Vector3();
   private offset = new THREE.Vector3();
   private lookOff = new THREE.Vector3();
@@ -109,7 +111,7 @@ export class CameraRig {
     // Sense of speed: the view widens as you go faster (up to ~14° at motorway speeds and beyond)
     const sp = Math.min(1, Math.max(0, (Math.abs(v.v) - 8) / 32));
     this.speedK += (sp - this.speedK) * (1 - Math.exp(-dt * 1.5));
-    const kick = (this.calm ? 6 : 14) * this.speedK * this.speedK;
+    const kick = (this.calm ? 5 : 10) * this.speedK * this.speedK;
     const hz = this.mode === 'hood' ? this.zoom : 1;
     const fov = Math.round(((this.mode === 'hood' ? (hoodFov + kick * 0.7) * hz + (24 - (hoodFov + kick * 0.7) * hz) * this.focusT : this.baseFov + kick)) * 20) / 20;
     // In the cabin things are a hand's width away, so let the camera see that close
@@ -141,25 +143,27 @@ export class CameraRig {
         const h = ((far ? 6.5 : 1.85 - this.speedK * 0.15) + this.pitch * 6) * (0.6 + 0.4 * this.zoom);
         // The camera swings round after the car rather than being bolted to it, so in a turn
         // you see the car itself rotate into the bend (and a little of its side)
-        if (this.first) this.camHeading = v.heading;
+        if (this.first) {
+          this.camHeading = v.heading;
+          this.camY = v.y;
+        }
+        // Follow the car's height softly (but never let it sink into a rising road)
+        this.camY += (v.y - this.camY) * (1 - Math.exp(-dt * 5));
+        if (Math.abs(v.y - this.camY) > 3) this.camY = v.y - Math.sign(v.y - this.camY) * 3;
+        const y0 = this.camY;
         const dh = Math.atan2(Math.sin(v.heading - this.camHeading), Math.cos(v.heading - this.camHeading));
         // Just a short lag (and never more than ~20°), so the car stays centred and you see only a hint of its side
-        this.camHeading += dh * (1 - Math.exp(-dt * (this.calm ? 3 : 4.5)));
-        const lim = 0.35;
+        this.camHeading += dh * (1 - Math.exp(-dt * (this.calm ? 2.5 : 3.2)));
+        const lim = 0.28;
         const off = Math.atan2(Math.sin(v.heading - this.camHeading), Math.cos(v.heading - this.camHeading));
         if (Math.abs(off) > lim) this.camHeading = v.heading - Math.sign(off) * lim;
         const a = this.camHeading + Math.PI + this.yaw;
-        desired.set(v.x + Math.sin(a) * d, v.y + h, v.z + Math.cos(a) * d);
+        desired.set(v.x + Math.sin(a) * d, y0 + h, v.z + Math.cos(a) * d);
         // Look at the car, a little ahead along the camera's own heading (so the view doesn't swing about)
         // Looking at the car from another angle (dragged round): aim at the car itself so it stays centred
         const ahead = 5 * Math.max(0, Math.cos(this.yaw));
         const cf = Math.sin(this.camHeading), cz = Math.cos(this.camHeading);
-        target.set(v.x + cf * ahead, v.y + (far ? 0.5 : 0.8 + 0.2 * Math.max(0, Math.cos(this.yaw))), v.z + cz * ahead);
-        // A faint buzz at speed (road texture through the suspension)
-        if (!this.calm && this.speedK > 0.3) {
-          const t = performance.now() / 1000, k = (this.speedK - 0.3) * 0.025;
-          desired.y += Math.sin(t * 31) * k + Math.sin(t * 17.3) * k * 0.6;
-        }
+        target.set(v.x + cf * ahead, y0 + (far ? 0.5 : 0.8 + 0.2 * Math.max(0, Math.cos(this.yaw))), v.z + cz * ahead);
         // The swing comes from camHeading alone: the camera is otherwise held firmly in place
         this.apply(v, desired, target, dt, 30, false);
         return;
