@@ -904,6 +904,8 @@ export class Game {
     }
 
     this.engine.sealed = this.car.inside && !this.windowsOpen;
+    this.engine.inside = this.car.inside;
+    this.engine.slip = Math.abs(v.v * v.yawRate) / Math.max(1, v.spec.grip * 1.6 * (v.gravel ? 0.78 : 1));
     this.engine.surface = v.gravel ? 'gravel' : v.offroad ? 'grass' : 'road';
     this.engine.wet = this.weather.look.wet;
     this.engine.roofRain = Math.min(1, this.weather.look.rain + (this.weather.look.hail ?? 0) * 1.2) * (this.world.covered(v.z) > 0.45 ? 0 : 1);

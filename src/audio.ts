@@ -20,16 +20,18 @@ interface Profile {
   /** Electric: no gears, a rising whine. */
   electric?: boolean;
   loud: number;
+  /** Turbocharged: a spooling whistle and a blow-off hiss when you lift. */
+  turbo?: boolean;
 }
 
 const PROFILES: Record<Engine, Profile> = {
   v8: { idle: 32, red: 115, main: 'sawtooth', sub: 'square', beat: 0.5, beatDepth: 0.55, bright: 0.8, noise: 0.05, gears: 5, loud: 1.2 },
   v12: { idle: 60, red: 260, main: 'sawtooth', sub: 'sawtooth', beat: 0, beatDepth: 0, bright: 1.6, noise: 0.02, gears: 7, loud: 1.1 },
-  flat6: { idle: 45, red: 200, main: 'square', sub: 'sawtooth', beat: 0.33, beatDepth: 0.2, bright: 1.3, noise: 0.03, gears: 6, loud: 1 },
-  i4: { idle: 40, red: 170, main: 'sawtooth', sub: 'triangle', beat: 0, beatDepth: 0, bright: 1.1, noise: 0.04, gears: 5, loud: 0.75 },
+  flat6: { idle: 45, red: 200, main: 'square', sub: 'sawtooth', beat: 0.33, beatDepth: 0.2, bright: 1.3, noise: 0.03, gears: 6, loud: 1, turbo: true },
+  i4: { idle: 40, red: 170, main: 'sawtooth', sub: 'triangle', beat: 0, beatDepth: 0, bright: 1.1, noise: 0.04, gears: 5, loud: 0.75, turbo: true },
   i6: { idle: 42, red: 175, main: 'sawtooth', sub: 'sawtooth', beat: 0, beatDepth: 0, bright: 1.15, noise: 0.02, gears: 6, loud: 0.9 },
   v6: { idle: 38, red: 150, main: 'sawtooth', sub: 'square', beat: 0.25, beatDepth: 0.2, bright: 0.95, noise: 0.03, gears: 6, loud: 0.85 },
-  diesel: { idle: 26, red: 70, main: 'sawtooth', sub: 'square', beat: 0.5, beatDepth: 0.35, bright: 0.6, noise: 0.25, gears: 6, loud: 0.95 },
+  diesel: { idle: 26, red: 70, main: 'sawtooth', sub: 'square', beat: 0.5, beatDepth: 0.35, bright: 0.6, noise: 0.25, gears: 6, loud: 0.95, turbo: true },
   flat4: { idle: 24, red: 85, main: 'triangle', sub: 'square', beat: 0.5, beatDepth: 0.7, bright: 0.7, noise: 0.08, gears: 4, loud: 0.8 },
   twin: { idle: 34, red: 190, main: 'square', sub: 'sawtooth', beat: 0.5, beatDepth: 0.6, bright: 1.2, noise: 0.05, gears: 6, loud: 0.9 },
   ev: { idle: 0, red: 0, main: 'sine', sub: 'sine', beat: 0, beatDepth: 0, bright: 1, noise: 0, gears: 1, electric: true, loud: 0.5 },
@@ -89,6 +91,14 @@ export class EngineSound {
   wet = 0;
   /** Rain on the roof (0..1), heard from inside. */
   roofRain = 0;
+  /** Listening from the driver's seat: the engine is heard through the bulkhead, deeper and softer. */
+  inside = false;
+  /** How hard the tyres are working sideways (0..1+): they squeal near the limit. */
+  slip = 0;
+  private turbo!: { gain: GainNode; filter: BiquadFilterNode; spool: number };
+  private squeal!: { gain: GainNode; osc: OscillatorNode; filter: BiquadFilterNode };
+  private bulkhead!: BiquadFilterNode;
+  private stoneTimer = 0;
 
   setProfile(engine: Engine) {
     this.profile = PROFILES[engine] ?? PROFILES.i4;
@@ -145,7 +155,10 @@ export class EngineSound {
     const noise = ctx.createGain();
     noise.gain.value = 0;
     noiseSrc.connect(noiseBand).connect(noise).connect(filter);
-    filter.connect(beatGain).connect(gain).connect(this.out);
+    this.bulkhead = ctx.createBiquadFilter();
+    this.bulkhead.type = 'lowpass';
+    this.bulkhead.frequency.value = 20000;
+    filter.connect(beatGain).connect(gain).connect(this.bulkhead).connect(this.out);
     for (const o of [main, sub, whine, beat]) o.start();
     noiseSrc.start();
     this.eng = { main, sub, whine, filter, gain, beat, beatGain, noise };
@@ -214,6 +227,36 @@ export class EngineSound {
       src.start();
       this.tyres = { gain: g, filter: f };
     }
+    // Turbo: a whistle of air that spools up with boost
+    {
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuffer(ctx, 3, false);
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 3000;
+      f.Q.value = 9;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      src.connect(f).connect(g).connect(this.bulkhead);
+      src.start();
+      this.turbo = { gain: g, filter: f, spool: 0 };
+    }
+    // Tyre squeal: a wavering tone plus scrubbing noise
+    {
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = 900;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 1000;
+      f.Q.value = 3;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      osc.connect(f).connect(g).connect(this.cabin);
+      osc.start();
+      this.squeal = { gain: g, osc, filter: f };
+    }
     // Rain drumming on the roof: heard inside, so it skips the cabin filter
     {
       const src = ctx.createBufferSource();
@@ -257,6 +300,12 @@ export class EngineSound {
   }
 
   /** A short shaped burst of filtered noise (thunks, pops, clicks, whooshes). */
+  /** The turbo's blow-off valve: a sharp "pssh". */
+  private blowOff(t: number, v: number) {
+    this.turbo.spool = 0;
+    this.burst(t, 0.35, 'highpass', 2600, 4200, 0.09 * v * (this.sealed ? 0.6 : 1), this.out, 0.7);
+  }
+
   private burst(t: number, dur: number, type: BiquadFilterType, f0: number, f1: number, peak: number, dest: AudioNode = this.out, q = 1) {
     const ctx = this.ctx!;
     const src = ctx.createBufferSource();
@@ -427,15 +476,21 @@ export class EngineSound {
       const gearSpan = vmax / p.gears;
       const gear = Math.min(p.gears - 1, Math.floor(s / gearSpan));
       if (gear !== this.lastGear) {
-        this.gearShift = 0.18;
+        const up = gear > this.lastGear;
+        this.gearShift = up ? 0.22 : 0.15;
+        // Up: the revs fall as the clutch comes up; down: a quick blip of throttle
+        if (!up && running && throttle < 0.3) this.revBlip = Math.max(this.revBlip, 0.35);
+        if (up && p.turbo && this.turbo.spool > 0.5 && running) this.blowOff(t, v);
         this.lastGear = gear;
       }
       this.gearShift = Math.max(0, this.gearShift - dt);
       const within = (s - gear * gearSpan) / gearSpan;
       const rpm = Math.min(1, 0.18 + within * 0.7 + gear * 0.03);
       const f = p.idle + (p.red - p.idle) * rpm;
-      e.main.frequency.setTargetAtTime(f, t, 0.06);
-      e.sub.frequency.setTargetAtTime(f * 0.5, t, 0.06);
+      // During a shift the revs swing quickly to the new gear
+      const tc = this.gearShift > 0 ? 0.035 : 0.06;
+      e.main.frequency.setTargetAtTime(f, t, tc);
+      e.sub.frequency.setTargetAtTime(f * 0.5 * (1 + (p.beat ? 0.004 : 0)), t, tc);
       e.whine.frequency.setTargetAtTime(f * 6, t, 0.06);
       e.beat.frequency.setTargetAtTime(f * p.beat || 0.01, t, 0.06);
       (e as unknown as { beatDepth: GainNode }).beatDepth.gain.setTargetAtTime(p.beatDepth, t, 0.1);
@@ -453,6 +508,30 @@ export class EngineSound {
         for (let i = 0; i < n; i++) this.burst(t + 0.05 + i * (0.06 + Math.random() * 0.1), 0.06, 'bandpass', 420 + Math.random() * 300, 200, 0.35 * v * (this.sealed ? 0.6 : 1), this.out, 1.5);
       }
     }
+    // Turbo spools with load and revs; lifting off at boost lets it go with a hiss
+    if (p.turbo && !p.electric) {
+      const want = running ? Math.min(1, throttle * Math.min(1, s / 12)) : 0;
+      const before = this.turbo.spool;
+      this.turbo.spool += (want - before) * (1 - Math.exp(-dt * (want > before ? 1.6 : 5)));
+      if (running && before > 0.55 && throttle < 0.1 && this.lastThrottle > 0.5) this.blowOff(t, v);
+      this.turbo.filter.frequency.setTargetAtTime(1800 + this.turbo.spool * 4200, t, 0.08);
+      this.turbo.gain.gain.setTargetAtTime(v * this.turbo.spool * this.turbo.spool * 0.05, t, 0.08);
+    } else this.turbo.gain.gain.setTargetAtTime(0, t, 0.1);
+    // Tyres squeal near the limit of grip (and scrub on loose ground instead)
+    {
+      const crunchy = this.surface !== 'road';
+      const sq = running && !crunchy && s > 6 ? Math.max(0, Math.min(1, (this.slip - 0.72) / 0.25)) : 0;
+      this.squeal.osc.frequency.setTargetAtTime(820 + Math.sin(t * 23) * 60 + Math.sin(t * 7.3) * 40 + this.slip * 120, t, 0.03);
+      this.squeal.gain.gain.setTargetAtTime(sq * 0.05 * Math.max(this.volume, 0.25) * this.world * (1 - this.wet * 0.7), t, 0.06);
+      // Stones flicking up off a gravel road
+      this.stoneTimer -= dt;
+      if (running && this.surface === 'gravel' && s > 4 && this.stoneTimer <= 0) {
+        this.stoneTimer = 0.04 + Math.random() * 0.4 / Math.min(1, s / 15);
+        this.burst(t, 0.02, 'bandpass', 2400 + Math.random() * 3000, 2000, 0.05 * Math.max(this.volume, 0.25) * this.world * (this.sealed ? 0.7 : 1), this.cabin, 4);
+      }
+    }
+    // From the driver's seat the engine comes through the bulkhead: deeper, softer
+    this.bulkhead.frequency.setTargetAtTime(this.inside ? (this.sealed ? 1100 : 2600) : 20000, t, 0.2);
     this.lastThrottle = throttle;
     if (this.revBlip > 0) {
       this.revBlip = Math.max(0, this.revBlip - dt);
