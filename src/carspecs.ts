@@ -223,6 +223,34 @@ export const CARS: CarSpec[] = [
     features: ['bed', 'chrome', 'stacks', 'mudflaps'],
   },
   {
+    id: 'rally', name: 'Gravel Rally', blurb: 'A turbo rally hatch: wing, scoop, spotlights, mud flaps', top: 215, accel: 7.6, grip: 9.4,
+    length: 4.1, width: 1.84, wheel: 0.34, axles: [1.3, -1.28], defaultColor: 0x1d5fb0,
+    sill: 0.3, belt: 0.92, nose: 0.66, tail: 0.96, deck: 1.0, roof: 1.46, A: 1.0, B: 0.14, C: -1.45, D: -1.9, tumble: 0.79,
+    doors: 4, lights: 'slim', cabin: 'sport', engine: 'i4', handling: H(0.008, 0.007, 4.4, 6.5), rim: 'five', finish: 'solid',
+    features: ['wing', 'scoop', 'mudflaps', 'fogs', 'lightbar', 'exhaust2', 'lip', 'skirts'],
+  },
+  {
+    id: 'farmtruck', name: "Homestead '53", blurb: 'A rounded fifties farm pickup', top: 140, accel: 3.2, grip: 6,
+    length: 4.95, width: 1.95, wheel: 0.4, axles: [1.55, -1.55], defaultColor: 0x7fb7a4,
+    sill: 0.44, belt: 1.12, nose: 0.98, tail: 1.05, deck: 1.08, roof: 1.86, A: 1.0, B: 0.62, C: -0.35, D: -0.48, bed: true, tumble: 0.82,
+    doors: 2, lights: 'round', cabin: 'classic', engine: 'i6', handling: H(0.018, 0.013, 2.6, 3.6), rim: 'steel', finish: 'solid',
+    features: ['bed', 'chrome', 'mudflaps', 'antenna'],
+  },
+  {
+    id: 'saloon', name: 'Monarch Saloon', blurb: 'A long, hushed luxury limousine', top: 250, accel: 6.4, grip: 8.4,
+    length: 5.35, width: 1.98, wheel: 0.37, axles: [1.72, -1.6], defaultColor: 0x14161c,
+    sill: 0.24, belt: 0.96, nose: 0.7, tail: 0.92, deck: 1.0, roof: 1.5, A: 1.05, B: 0.2, C: -1.35, D: -1.95, tumble: 0.8,
+    doors: 4, lights: 'slim', cabin: 'luxury', engine: 'v12', handling: H(0.011, 0.008, 3.2, 4.8), rim: 'multi', finish: 'metallic',
+    features: ['chrome', 'exhaust4', 'antenna'],
+  },
+  {
+    id: 'esuv', name: 'Aurora E-SUV', blurb: 'A sleek electric SUV with a light bar', top: 210, accel: 7.2, grip: 8.2,
+    length: 4.85, width: 2.0, wheel: 0.4, axles: [1.5, -1.5], defaultColor: 0x6d7f8f,
+    sill: 0.38, belt: 1.08, nose: 0.82, tail: 1.05, deck: 1.08, roof: 1.68, A: 1.2, B: 0.42, C: -1.9, D: -2.25, tumble: 0.8,
+    doors: 4, lights: 'bar', cabin: 'ev', engine: 'ev', handling: H(0.011, 0.008, 3.6, 5.5), rim: 'turbine', finish: 'pearl',
+    features: ['nogrille', 'rails', 'diffuser', 'skirts'],
+  },
+  {
     id: 'bike', name: 'Horizon Tourer', blurb: 'A motorbike: lean into the bends', top: 230, accel: 8.5, grip: 9,
     length: 2.2, width: 0.8, wheel: 0.33, axles: [0.74, -0.72], defaultColor: 0x1f4fa8,
     sill: 0.3, belt: 0.9, nose: 0.8, tail: 0.8, deck: 0.9, roof: 1.2, A: 0.3, B: 0, C: -0.3, D: -0.5, open: true,
@@ -236,6 +264,7 @@ export const STARTERS = ['hatch', 'gt', 'suv', 'van', 'ev', 'wagon', 'bubble'];
 export const UNLOCK_MILES: Record<string, number> = {
   roadster: 10, pickup: 20, muscle: 35, classic: 50, kombi: 65, offroad: 100, spider: 125, wanderer: 150,
   starliner: 175, nomad: 200, rig: 250, veloce: 300, super: 350, bike: 400, hyper: 500,
+  esuv: 30, farmtruck: 80, rally: 140, saloon: 225,
 };
 
 export const COLORS = [0xb3121b, 0xd9a21b, 0xf2f1ec, 0x1b2233, 0x2a6fb5, 0x3d4a3a, 0x3f8f86, 0x8fc3d6, 0xc85a8f, 0x6a4bb0, 0x1e1f22, 0xa9aeb5, 0xe0701e, 0x6b6a43, 0x48505c, 0x6fa8a0];
@@ -248,9 +277,9 @@ export function defaultCustom(spec: CarSpec): Custom {
   return {
     color: spec.defaultColor,
     finish: spec.finish,
-    color2: spec.id === 'van' || spec.id === 'kombi' ? 0xefefea : spec.id === 'muscle' || spec.id === 'starliner' || spec.id === 'wanderer' ? 0xf2f1ec : 0x1e1f22,
-    twoTone: spec.id === 'van' || spec.id === 'kombi' || spec.id === 'classic' || spec.id === 'starliner' || spec.id === 'wanderer',
-    stripes: spec.id === 'muscle',
+    color2: spec.id === 'rally' ? 0xf2f1ec : spec.id === 'farmtruck' ? 0xf2efe6 : spec.id === 'van' || spec.id === 'kombi' ? 0xefefea : spec.id === 'muscle' || spec.id === 'starliner' || spec.id === 'wanderer' ? 0xf2f1ec : 0x1e1f22,
+    twoTone: spec.id === 'farmtruck' || spec.id === 'van' || spec.id === 'kombi' || spec.id === 'classic' || spec.id === 'starliner' || spec.id === 'wanderer',
+    stripes: spec.id === 'muscle' || spec.id === 'rally',
     rim: spec.rim,
     rimColor: spec.rim === 'beadlock' ? 0x1d1e21 : spec.rim === 'steel' ? 0xe6e7ea : 0xc9ccd1,
     ride: 0,
@@ -258,7 +287,7 @@ export function defaultCustom(spec: CarSpec): Custom {
     trim: spec.cabin === 'luxury' || spec.cabin === 'classic' ? 'wood' : spec.cabin === 'sport' ? 'carbon' : spec.cabin === 'ev' ? 'alu' : 'black',
     ambient: spec.cabin === 'ev' || spec.cabin === 'luxury' ? 0x5ab4ff : 0,
     plate: '',
-    decal: 'none',
+    decal: spec.id === 'rally' ? 'number' : 'none',
     tow: 'none',
     rack: 'none',
   };

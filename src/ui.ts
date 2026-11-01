@@ -61,11 +61,11 @@ const seg = (label: string, key: string, opts: [string, string][]) =>
 /** Car picker groups. */
 const CAR_CATS: { id: string; label: string; cars: string[] }[] = [
   { id: 'all', label: 'All', cars: [] },
-  { id: 'everyday', label: '🚗 Everyday', cars: ['hatch', 'ev', 'wagon', 'bubble'] },
-  { id: 'sport', label: '🏁 Sporty', cars: ['gt', 'roadster', 'muscle', 'spider'] },
+  { id: 'everyday', label: '🚗 Everyday', cars: ['hatch', 'ev', 'wagon', 'bubble', 'esuv', 'saloon'] },
+  { id: 'sport', label: '🏁 Sporty', cars: ['gt', 'roadster', 'muscle', 'spider', 'rally'] },
   { id: 'super', label: '🏎️ Super', cars: ['super', 'veloce', 'hyper'] },
-  { id: 'classic', label: '🕰️ Classic', cars: ['classic', 'starliner', 'spider', 'bubble', 'kombi'] },
-  { id: 'adventure', label: '🏕️ Adventure', cars: ['suv', 'pickup', 'offroad', 'nomad', 'van', 'wanderer', 'kombi', 'rig'] },
+  { id: 'classic', label: '🕰️ Classic', cars: ['classic', 'starliner', 'spider', 'bubble', 'kombi', 'farmtruck'] },
+  { id: 'adventure', label: '🏕️ Adventure', cars: ['suv', 'pickup', 'offroad', 'nomad', 'van', 'wanderer', 'kombi', 'rig', 'esuv', 'rally', 'farmtruck'] },
   { id: 'bike', label: '🏍️ Bike', cars: ['bike'] },
 ];
 

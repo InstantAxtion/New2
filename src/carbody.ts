@@ -72,9 +72,9 @@ export function profile(s: BodyShape): BodyProfile {
   } else if (s.bed) {
     pts.push([rear, s.belt], [s.D - 0.02, s.belt], [s.D, s.roof - 0.05], [s.C, s.roof], [s.B, s.roof], [s.A, s.belt + 0.03], [front - 0.3, s.nose + 0.05], [front, s.nose]);
   } else {
-    if (s.D > rear + 0.12) pts.push([rear, s.tail], [rear + 0.18, s.deck], [s.D, s.deck + 0.02]);
-    else pts.push([rear, s.tail]);
-    pts.push([s.C, s.roof - 0.02], [(s.B + s.C) / 2, s.roof], [s.B, s.roof - 0.02], [s.A, s.belt + 0.02], [front - 0.3, s.nose + 0.05], [front, s.nose]);
+    if (s.D > rear + 0.12) pts.push([rear, s.tail - 0.1], [rear + 0.07, s.tail], [rear + 0.18, s.deck], [s.D, s.deck + 0.02]);
+    else pts.push([rear, s.tail - 0.08], [rear + 0.06, s.tail]);
+    pts.push([s.C, s.roof - 0.02], [(s.B + s.C) / 2, s.roof], [s.B, s.roof - 0.02], [s.A, s.belt + 0.02], [front - 0.3, s.nose + 0.05], [front - 0.08, s.nose], [front, s.nose - 0.1]);
   }
   const top = spline(pts);
   const beltAt = (x: number) => Math.min(top(x), s.belt + ((front - x) / s.length) * 0.05 - 0.02);
@@ -89,7 +89,7 @@ export function profile(s: BodyShape): BodyProfile {
   };
   // Seen from above: straight sides, rounded corners and a fairly flat nose and tail (not a
   // pointed egg), closing off in the last few centimetres. The wheel arches flare out a little.
-  const rc = Math.min(0.55, s.width * 0.3);
+  const rc = Math.min(0.42, s.width * 0.22);
   const half = (x: number) => {
     const L = s.length / 2;
     const t = Math.abs(x) / L;
