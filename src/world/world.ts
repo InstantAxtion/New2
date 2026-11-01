@@ -438,6 +438,9 @@ export class World {
       const k = rv.e * (1 - smoothstep(11, 22, d));
       if (k > 0) h += (bed - h) * k;
     }
+    // A river through the Night Metro, crossing under the highway
+    const mr = this.metroRiver(z);
+    if (mr && mr.e > 0) h += (Math.min(h, -3.5 + noise2(x / 40, z / 40, this.seed + 496)) - h) * mr.e;
     // A ferry crossing: open water right across
     const fy = this.ferry(z);
     if (fy && fy.water > 0) h += (Math.min(h, -6) - h) * fy.water;
@@ -757,6 +760,21 @@ export class World {
     if (!r) return null;
     const u = r.side * (this.roadHalf(z) + 24 + noise1(z / 320, this.seed + 482) * 9);
     return { ...r, u };
+  }
+
+  /** Night Metro: a covered stretch of highway (cut-and-cover tunnel under the city). */
+  metroTunnel(z: number) {
+    return this.zone(z, 491, 5200, 0.55, [220, 420], 1, ['metro']);
+  }
+
+  /** Night Metro: a river crossing under the highway (a short bridge). */
+  metroRiver(z: number) {
+    return this.zone(z, 495, 7300, 0.65, [70, 110], 28, ['metro'], (a, b) => !this.metroTunnel(a - 200) && !this.metroTunnel(b + 200) && !this.metroTunnel((a + b) / 2));
+  }
+
+  /** 0..1: under cover (a tunnel through a hill, or a covered stretch of the Metro). */
+  covered(z: number): number {
+    return Math.max(this.tunnelAt(z), this.metroTunnel(z)?.e ?? 0);
   }
 
   /** Water level of the river beside the road. */

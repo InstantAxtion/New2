@@ -619,10 +619,10 @@ export class Game {
     const night = this.sky.night > 0.45 && this.phase !== 'garage';
     // Headlights: on, off, or automatic (dusk, tunnels, fog and heavy rain)
     const lm = this.settings.lights ?? 'auto';
-    const gloomy = this.sky.night > 0.25 || this.world.tunnelAt(v.z) > 0.3 || this.weather.look.fog < 0.45 || this.weather.look.rain > 0.5;
+    const gloomy = this.sky.night > 0.25 || this.world.covered(v.z) > 0.3 || this.weather.look.fog < 0.45 || this.weather.look.rain > 0.5;
     this.lightsOn = this.phase !== 'garage' && (lm === 'on' || (lm === 'auto' && gloomy));
     this.car.animate(v.dist, v.steer, v.braking, this.lightsOn, v.wheelAngle);
-    const dark = Math.max(this.sky.night, this.world.tunnelAt(v.z), this.weather.look.fog < 0.45 ? 0.5 : 0);
+    const dark = Math.max(this.sky.night, this.world.covered(v.z), this.weather.look.fog < 0.45 ? 0.5 : 0);
     // Real light on the road on the better graphics; a soft painted pool only where there's no lighting
     const pbrLights = this.tier === 'pbr';
     this.car.headlight.intensity = this.lightsOn ? 230 * (0.4 + 0.6 * dark) : 0;
@@ -647,7 +647,7 @@ export class Game {
     }
 
     // The Night Metro is always busy, whatever the traffic setting
-    this.traffic.minDensity = this.world.metroAt(v.z) * this.world.highwayAt(v.z) * 0.6;
+    this.traffic.minDensity = this.world.metroAt(v.z) * this.world.highwayAt(v.z) * 0.9;
     if (this.phase === 'drive') this.traffic.update(dt, v, night, (z) => this.speedLimit(z));
     this.peds.update(v.z, this.elapsed);
     // Driving through a puddle: a big splash out to the sides
@@ -766,7 +766,7 @@ export class Game {
     this.sky.rainbow = Math.max(0, bow);
     this.chunks.setWet(wx.look.wet);
     // The car gets wet in the rain (drying off slowly) and snowy in the snow (it blows off at speed)
-    const carWetT = this.world.tunnelAt(v.z) > 0.45 ? shared.carWet.value : Math.max(wx.look.rain, (wx.look.hail ?? 0) * 0.8);
+    const carWetT = this.world.covered(v.z) > 0.45 ? shared.carWet.value : Math.max(wx.look.rain, (wx.look.hail ?? 0) * 0.8);
     shared.carWet.value += (carWetT - shared.carWet.value) * (1 - Math.exp(-dt * (carWetT > shared.carWet.value ? 0.6 : 0.05)));
     const snowing = wx.look.snow > 0.3 && wx.kind === 'snow';
     shared.carSnow.value = Math.min(0.9, Math.max(0, shared.carSnow.value + dt * (snowing ? 0.01 : -0.004) - dt * Math.max(0, Math.abs(v.v) - 25) * 0.0008));
@@ -827,7 +827,7 @@ export class Game {
     {
       let cold = 0;
       for (const { biome, w } of this.world.weights(v.z)) if (biome.id === 'winter' || biome.id === 'alpine') cold += w;
-      const covered = this.world.tunnelAt(v.z) > 0.45;
+      const covered = this.world.covered(v.z) > 0.45;
       // (no effects drawn on the screen: rain, mist and leaves stay outside the glass)
       this.glass.update(dt, this.elapsed, this.car.body, false, {
         rain: covered ? 0 : Math.min(1, wx.look.rain + wx.look.snow * 0.5),
@@ -887,7 +887,7 @@ export class Game {
     this.engine.sealed = this.car.inside && !this.windowsOpen;
     this.engine.surface = v.gravel ? 'gravel' : v.offroad ? 'grass' : 'road';
     this.engine.wet = this.weather.look.wet;
-    this.engine.roofRain = Math.min(1, this.weather.look.rain + (this.weather.look.hail ?? 0) * 1.2) * (this.world.tunnelAt(v.z) > 0.45 ? 0 : 1);
+    this.engine.roofRain = Math.min(1, this.weather.look.rain + (this.weather.look.hail ?? 0) * 1.2) * (this.world.covered(v.z) > 0.45 ? 0 : 1);
     // A whoosh when another vehicle goes by close
     if (this.phase === 'drive') {
       for (const o of this.traffic.moving()) {

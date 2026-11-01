@@ -110,7 +110,7 @@ export class Traffic {
 
   update(dt: number, me: Vehicle, night: boolean, limitAt: (z: number) => number) {
     const fwd = Math.cos(me.heading) >= 0 ? 1 : -1;
-    const max = Math.round(2 + this.dens * 9);
+    const max = Math.round(2 + this.dens * 9 + this.minDensity * 8);
     const active = this.pool.filter((c) => c.active);
     this.timer -= dt;
     if (this.enabled && this.timer <= 0 && active.length < max) {

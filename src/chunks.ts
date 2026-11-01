@@ -283,6 +283,8 @@ export class ChunkManager {
     if (river) c.group.add(river);
     const rails = this.rails(i);
     if (rails) c.group.add(rails);
+    const metro = this.metroBits(i);
+    if (metro) c.group.add(metro);
     const extra = this.bridgesAndCrossings(i);
     if (extra) c.group.add(extra);
     // Stops beside the road, and road signs
@@ -664,6 +666,179 @@ export class ChunkManager {
     g.add(new THREE.Mesh(bg, this.railMat));
     if (posts.length) g.add(new THREE.Mesh(mergeGeometries(posts)!, this.railPostMat));
     return g;
+  }
+
+  private gantryMat = new THREE.MeshStandardMaterial({ color: 0x8d9298, roughness: 0.5, metalness: 0.6 });
+  private signMats: THREE.MeshStandardMaterial[] = [];
+  private neonMats = NEON.map((c) => new THREE.MeshBasicMaterial({ color: c, toneMapped: false }));
+  private flyMat = new THREE.MeshStandardMaterial({ color: 0x8f8d88, roughness: 0.85, side: THREE.DoubleSide });
+  private coverLight = new THREE.MeshBasicMaterial({ color: 0xffe2b0, toneMapped: false });
+
+  /** Motorway direction signs (green, white lettering, a little self-lit so they read at night). */
+  private signMat(k: number): THREE.MeshStandardMaterial {
+    if (!this.signMats.length) {
+      const sets = [['City Centre', 'Harbour'], ['Airport', 'Ring Road'], ['Stadium', 'Old Town'], ['Riverside', 'Museums'], ['Downtown', 'Ferry Port']];
+      for (const [a, b] of sets) {
+        const c = document.createElement('canvas');
+        c.width = 512; c.height = 192;
+        const g = c.getContext('2d')!;
+        g.fillStyle = '#0f6a3a';
+        g.fillRect(0, 0, 512, 192);
+        g.strokeStyle = '#f4f4f4';
+        g.lineWidth = 6;
+        g.strokeRect(8, 8, 496, 176);
+        g.fillStyle = '#f4f4f4';
+        g.font = 'bold 50px sans-serif';
+        g.fillText(a, 28, 80);
+        g.font = 'bold 40px sans-serif';
+        g.fillText(b, 28, 150);
+        g.font = 'bold 70px sans-serif';
+        g.fillText('↑', 430, 80);
+        g.fillText('↗', 425, 160);
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        this.signMats.push(new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: 0.35, roughness: 0.6 }));
+      }
+    }
+    return this.signMats[k % this.signMats.length];
+  }
+
+  /** The Night Metro's own pieces: gantry signs, flyovers, neon blade signs, covered stretches and a river bridge. */
+  private metroBits(i: number): THREE.Group | null {
+    const w = this.world;
+    const z0 = i * CHUNK;
+    if (w.metroAt(z0) < 0.3 && w.metroAt(z0 + CHUNK) < 0.3) return null;
+    const ox = this.originX(i);
+    const g = new THREE.Group();
+    const at = (z: number, u: number, y: number) => {
+      const [tx, tz] = w.tangent(z);
+      return new THREE.Vector3(w.roadX(z) - tz * u - ox, y, z + tx * u - z0);
+    };
+    const yaw = (z: number) => {
+      const [tx, tz] = w.tangent(z);
+      return Math.atan2(tx, tz);
+    };
+    const clear = (z: number) => w.metroAt(z) > 0.6 && w.highwayAt(z) > 0.95 && !w.metroTunnel(z) && !w.metroRiver(z) && !w.metroRiver(z + 40) && !w.metroRiver(z - 40);
+    const steel: THREE.BufferGeometry[] = [], concrete: THREE.BufferGeometry[] = [], lamps: THREE.BufferGeometry[] = [];
+    // Gantries with direction signs, one face for each carriageway
+    for (let z = Math.ceil(z0 / 640) * 640; z < z0 + CHUNK; z += 640) {
+      if (!clear(z)) continue;
+      const half = w.roadHalf(z) + 1.4, y = w.roadY(z), a = yaw(z);
+      for (const sd of [-1, 1]) {
+        const p = at(z, sd * half, y);
+        steel.push(new THREE.BoxGeometry(0.4, 7.2, 0.4).translate(p.x, y + 3.6, p.z));
+      }
+      const c = at(z, 0, y + 6.9);
+      steel.push(new THREE.BoxGeometry(half * 2 + 0.6, 0.5, 0.6).rotateY(a).translate(c.x, c.y, c.z));
+      for (const sd of [-1, 1]) {
+        const p = at(z, sd * 4.6, y + 6.0);
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 2.1), this.signMat(Math.round(z / 640) + (sd > 0 ? 0 : 2)));
+        m.position.copy(p);
+        // Each sign faces the traffic on its own side (they drive on the right)
+        m.rotation.y = a + (sd > 0 ? Math.PI : 0);
+        g.add(m);
+      }
+    }
+    // Flyovers: other roads crossing high over the highway
+    for (let z = Math.ceil((z0 - 300) / 1500) * 1500 + 300; z < z0 + CHUNK; z += 1500) {
+      if (z < z0 || !clear(z) || !clear(z + 40) || !clear(z - 40)) continue;
+      const y = w.roadY(z) + 8.5, a = yaw(z) + Math.PI / 2;
+      const c = at(z, 0, y);
+      concrete.push(new THREE.BoxGeometry(110, 1.2, 11).rotateY(a).translate(c.x, c.y, c.z));
+      for (const sd of [-1, 1]) {
+        const e = at(z + sd * 5.2, 0, y + 1.1);
+        concrete.push(new THREE.BoxGeometry(110, 1, 0.35).rotateY(a).translate(e.x, e.y, e.z));
+        for (const off of [w.roadHalf(z) + 3, 30, 52]) {
+          const p = at(z, sd * off, 0);
+          const gy = w.roadY(z) - 1;
+          concrete.push(new THREE.BoxGeometry(1.6, y - gy, 6).rotateY(a).translate(p.x, gy + (y - gy) / 2 - 0.6, p.z));
+        }
+      }
+      for (let k = -50; k <= 50; k += 16) {
+        const p = at(z + 5.5, k, y + 0.6);
+        steel.push(new THREE.CylinderGeometry(0.07, 0.07, 5, 5).translate(p.x, p.y + 2.5, p.z));
+        lamps.push(new THREE.BoxGeometry(0.4, 0.15, 0.4).translate(p.x, p.y + 5, p.z));
+      }
+    }
+    // Neon blade signs along the roadside
+    const blades = new Map<number, THREE.BufferGeometry[]>();
+    for (let z = Math.ceil(z0 / 55) * 55; z < z0 + CHUNK; z += 55) {
+      if (!clear(z)) continue;
+      const k = Math.round(z / 55);
+      const sd = k % 2 ? 1 : -1;
+      const off = sd * (w.roadHalf(z) + 10 + (k * 7.3) % 10);
+      const p = at(z, off, w.roadY(z));
+      const h = 7 + (k * 3.1) % 6;
+      steel.push(new THREE.CylinderGeometry(0.15, 0.2, h, 6).translate(p.x, p.y + h / 2, p.z));
+      const col = Math.abs(k * 13) % NEON.length;
+      if (!blades.has(col)) blades.set(col, []);
+      blades.get(col)!.push(new THREE.BoxGeometry(0.5, 8, 2.4).rotateY(yaw(z)).translate(p.x, p.y + h + 3.4, p.z));
+      blades.get(col)!.push(new THREE.BoxGeometry(0.6, 0.2, 2.7).rotateY(yaw(z)).translate(p.x, p.y + h - 0.7, p.z));
+    }
+    for (const [col, list] of blades) g.add(new THREE.Mesh(mergeGeometries(list)!, this.neonMats[col]));
+    // Covered stretches: walls, a roof and a line of lights
+    const cover: number[] = [];
+    const quad = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3) => cover.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, b.x, b.y, b.z, d.x, d.y, d.z, c.x, c.y, c.z);
+    for (let z = z0; z < z0 + CHUNK; z += 4) {
+      if (!w.metroTunnel(z) || !w.metroTunnel(z + 4)) continue;
+      const z2 = z + 4, y0 = w.roadY(z), y1 = w.roadY(z2), H = w.roadHalf(z) + 1.6;
+      for (const sd of [-1, 1]) quad(at(z, sd * H, y0 - 0.2), at(z2, sd * H, y1 - 0.2), at(z, sd * H, y0 + 6.8), at(z2, sd * H, y1 + 6.8));
+      quad(at(z, -H, y0 + 6.8), at(z2, -H, y1 + 6.8), at(z, H, y0 + 6.8), at(z2, H, y1 + 6.8));
+      quad(at(z, -H - 0.5, y0 + 8), at(z2, -H - 0.5, y1 + 8), at(z, H + 0.5, y0 + 8), at(z2, H + 0.5, y1 + 8));
+      if (Math.round(z / 4) % 3 === 0) for (const u of [-4, 4]) {
+        const p = at(z, u, y0 + 6.7);
+        lamps.push(new THREE.BoxGeometry(0.5, 0.1, 2.2).rotateY(yaw(z)).translate(p.x, p.y, p.z));
+      }
+    }
+    for (const end of [0, 1]) {
+      // A deep fascia over each portal
+      for (let z = z0; z < z0 + CHUNK; z += 4) {
+        const inside = !!w.metroTunnel(z), next = !!w.metroTunnel(z + 4);
+        if (inside === next || end) continue;
+        const zp = inside ? z + 4 : z + 4, y = w.roadY(zp), H = w.roadHalf(zp) + 1.6;
+        const c = at(zp, 0, y + 7.6);
+        concrete.push(new THREE.BoxGeometry(H * 2 + 2, 2.4, 1).rotateY(yaw(zp)).translate(c.x, c.y, c.z));
+      }
+    }
+    if (cover.length) {
+      const cg = new THREE.BufferGeometry();
+      cg.setAttribute('position', new THREE.Float32BufferAttribute(cover, 3));
+      cg.computeVertexNormals();
+      const cm = new THREE.Mesh(cg, this.flyMat);
+      cm.receiveShadow = cm.castShadow = true;
+      g.add(cm);
+    }
+    // River bridge: deck edges, parapets and lamp posts where the river passes under
+    const brg: number[] = [];
+    const bq = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3) => brg.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, b.x, b.y, b.z, d.x, d.y, d.z, c.x, c.y, c.z);
+    for (let z = z0; z < z0 + CHUNK; z += 2) {
+      const r1 = w.metroRiver(z), r2 = w.metroRiver(z + 2);
+      if (!r1 || !r2 || r1.e < 0.05) continue;
+      const y0 = w.roadY(z), y1 = w.roadY(z + 2), H = w.roadHalf(z) + 0.8;
+      for (const sd of [-1, 1]) {
+        bq(at(z, sd * H, y0 - 1.6), at(z + 2, sd * H, y1 - 1.6), at(z, sd * H, y0 + 1.1), at(z + 2, sd * H, y1 + 1.1));
+        if (Math.round(z / 2) % 12 === 0) {
+          const p = at(z, sd * H, y0);
+          steel.push(new THREE.CylinderGeometry(0.08, 0.1, 6, 6).translate(p.x, y0 + 3.5, p.z));
+          lamps.push(new THREE.SphereGeometry(0.35, 8, 6).translate(p.x, y0 + 6.6, p.z));
+        }
+      }
+      bq(at(z, -H, y0 - 1.6), at(z + 2, -H, y1 - 1.6), at(z, H, y0 - 1.6), at(z + 2, H, y1 - 1.6));
+    }
+    if (brg.length) {
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.Float32BufferAttribute(brg, 3));
+      bg.computeVertexNormals();
+      g.add(new THREE.Mesh(bg, this.flyMat));
+    }
+    if (steel.length) g.add(new THREE.Mesh(mergeGeometries(steel.map((x) => x.toNonIndexed()))!, this.gantryMat));
+    if (concrete.length) {
+      const m = new THREE.Mesh(mergeGeometries(concrete.map((x) => x.toNonIndexed()))!, this.flyMat);
+      m.castShadow = m.receiveShadow = true;
+      g.add(m);
+    }
+    if (lamps.length) g.add(new THREE.Mesh(mergeGeometries(lamps.map((x) => x.toNonIndexed()))!, this.coverLight));
+    return g.children.length ? g : null;
   }
 
   private concreteMat = new THREE.MeshStandardMaterial({ color: 0x9b9a96, roughness: 0.85 });
