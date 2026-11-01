@@ -409,6 +409,9 @@ export class ChunkManager {
       if (trg && Math.abs(u - trg.u) < 2.6) continue;
       const rvg = w.river(z);
       if (rvg && Math.abs(u - rvg.u) < 9) continue;
+      // Not on the paving at stops
+      const stg = w.stopNear(z, 6);
+      if (stg && u * stg.side > 0 && Math.abs(u) < w.roadHalf(z) + stg.depth + 3) continue;
       const [, tz] = w.tangent(z);
       const x = w.roadX(z) - u / tz;
       const h = w.height(x, z);

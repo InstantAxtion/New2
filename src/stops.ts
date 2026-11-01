@@ -172,7 +172,56 @@ function viewpoint(): THREE.Group {
   S.push(cyl(0.06, 0.08, 1.1, 0x2d6b4a, 10.4, 0.55, -4));
   S.push(colored(new THREE.CapsuleGeometry(0.16, 0.4, 3, 8).rotateZ(Math.PI / 2).translate(10.45, 1.2, -4), 0x2d6b4a));
   S.push(box(0.12, 1.3, 1.4, 0x6b4a2c, 9.2, 0.65, 14));
-  const g = assemble(S, [], []);
+  // A second telescope further along
+  S.push(cyl(0.06, 0.08, 1.1, 0x2d6b4a, 10.4, 0.55, 20));
+  S.push(colored(new THREE.CapsuleGeometry(0.16, 0.4, 3, 8).rotateZ(Math.PI / 2).translate(10.45, 1.2, 20), 0x2d6b4a));
+  // Picnic tables with checked cloths, a basket and a bottle
+  for (const pz of [-20, -2]) {
+    S.push(box(1.6, 0.08, 2.2, 0x8a6238, 6.5, 0.76, pz));
+    for (const sx of [-1, 1]) S.push(box(0.35, 0.06, 2.2, 0x8a6238, 6.5 + sx * 1.0, 0.46, pz));
+    for (const lz of [-0.9, 0.9]) S.push(box(1.9, 0.08, 0.1, 0x6e4c2a, 6.5, 0.4, pz + lz));
+    for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) S.push(box(0.38, 0.01, 0.52, (a + b) % 2 ? 0xd8423a : 0xf2efe6, 5.93 + a * 0.38, 0.805, pz - 0.78 + b * 0.52));
+    S.push(box(0.45, 0.28, 0.3, 0xa8743a, 6.4, 0.95, pz + 0.3));
+    S.push(cyl(0.04, 0.04, 0.3, 0x2f6e3a, 6.8, 0.96, pz - 0.4));
+  }
+  // A little coffee cart with a striped awning, an umbrella and bistro tables
+  S.push(box(1.4, 1.1, 2.4, 0xf1e6cf, 3.2, 0.75, 12));
+  S.push(box(1.5, 0.1, 2.5, 0x6b4a2c, 3.2, 1.33, 12));
+  for (let k = 0; k < 5; k++) S.push(box(1.0, 0.05, 0.5, k % 2 ? 0xf2efe6 : 0x2f7d5a, 3.8, 2.05, 11 + k * 0.5).rotateZ(0));
+  for (const sz of [10.9, 13.1]) S.push(cyl(0.04, 0.04, 1.1, 0x333333, 4.25, 1.55, sz));
+  for (const wz of [11.2, 12.8]) for (const wx of [-1, 1]) S.push(cyl(0.22, 0.22, 0.12, 0x222222, 3.2 + wx * 0.55, 0.22, wz));
+  for (const [tx, tz] of [[6.4, 9], [6.6, 15]]) {
+    S.push(cyl(0.38, 0.38, 0.04, 0xeeeeee, tx, 0.74, tz, 14), cyl(0.04, 0.04, 0.72, 0x333333, tx, 0.37, tz));
+    S.push(cyl(0.03, 0.03, 2.3, 0xcccccc, tx, 1.15, tz));
+    S.push(colored(new THREE.ConeGeometry(1.2, 0.5, 10).translate(tx, 2.4, tz), tz < 12 ? 0xd8574a : 0xe8b83a));
+    for (const cz of [-0.6, 0.6]) S.push(box(0.4, 0.05, 0.4, 0x5a6b7a, tx + 0.1, 0.45, tz + cz), box(0.04, 0.45, 0.4, 0x5a6b7a, tx - 0.1, 0.68, tz + cz));
+  }
+  // People enjoying the view: some at the wall, a couple on the bench, a family at a table
+  const person = (x: number, z: number, top: number, legs: number, sit = false, h = 1) => {
+    const base = sit ? 0.45 : 0;
+    if (!sit) S.push(box(0.3 * h, 0.8 * h, 0.22 * h, legs, x, 0.4 * h, z));
+    else S.push(box(0.42, 0.18, 0.3, legs, x - 0.15, 0.55, z));
+    S.push(colored(new THREE.CapsuleGeometry(0.19 * h, 0.4 * h, 3, 8).translate(x, base + (sit ? 0.35 : 0.8 * h) + 0.3 * h, z), top));
+    S.push(colored(new THREE.SphereGeometry(0.12 * h, 10, 8).translate(x, base + (sit ? 0.35 : 0.8 * h) + 0.75 * h, z), 0xd9a882));
+  };
+  person(10.9, -15, 0x3a6fb0, 0x2b2f3a);
+  person(10.9, -14.3, 0xe07a5a, 0x5a4a3a);
+  person(10.8, 6, 0x5aa06a, 0x2b2f3a);
+  person(9.6, -12.6, 0xf0c050, 0x3a3a4a, true);
+  person(9.6, -11.4, 0x8a5ab0, 0x2b2f3a, true);
+  person(5.6, -2.4, 0xd04848, 0x2b2f3a, true);
+  person(7.4, -1.6, 0x4a8ad0, 0x2b2f3a, true);
+  person(5.6, -1.4, 0x6ac0b0, 0x3a3a4a, true, 0.7);
+  person(4.2, 12.3, 0xffffff, 0x2b2f3a);
+  person(6.0, 15.2, 0xb05a7a, 0x2b2f3a, true);
+  // String lights over the café corner
+  const L: G[] = [];
+  for (let j = 0; j < 14; j++) {
+    const t = j / 13;
+    L.push(colored(new THREE.SphereGeometry(0.07, 5, 4).translate(5 + Math.sin(t * Math.PI) * 0.2, 2.9 - Math.sin(t * Math.PI) * 0.45, 7 + t * 10), [0xffd27a, 0xff9e5e, 0xfff2c8][j % 3]));
+  }
+  for (const pz of [7, 17]) S.push(cyl(0.05, 0.05, 2.9, 0x5a3a22, 5, 1.45, pz));
+  const g = assemble(S, L, []);
   g.add(panel(signTexture(['Scenic view'], '#6b4a2c', '#f4ead0', 512, 256), 1.2, 0.8, 9.12, 1.1, 14, false));
   const sign = new THREE.Group();
   sign.add(new THREE.Mesh(colored(new THREE.BoxGeometry(0.12, 2.4, 0.12).translate(0, 1.2, 0), 0x6b4a2c), mats().solid));
