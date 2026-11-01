@@ -279,6 +279,10 @@ export class ChunkManager {
     if (walk) c.group.add(walk);
     const trail = this.trailMesh(i);
     if (trail) c.group.add(trail);
+    const river = this.riverMesh(i);
+    if (river) c.group.add(river);
+    const rails = this.rails(i);
+    if (rails) c.group.add(rails);
     const extra = this.bridgesAndCrossings(i);
     if (extra) c.group.add(extra);
     // Stops beside the road, and road signs
@@ -401,6 +405,8 @@ export class ChunkManager {
       if (w.tunnelAt(z) > 0.05) continue;
       const trg = w.trail(z);
       if (trg && Math.abs(u - trg.u) < 2.6) continue;
+      const rvg = w.river(z);
+      if (rvg && Math.abs(u - rvg.u) < 9) continue;
       const [, tz] = w.tangent(z);
       const x = w.roadX(z) - u / tz;
       const h = w.height(x, z);
@@ -583,6 +589,81 @@ export class ChunkManager {
     const m = new THREE.Mesh(g, this.trailMat);
     m.receiveShadow = true;
     return m;
+  }
+
+  private riverMat = new THREE.MeshPhysicalMaterial({ color: 0x2c5866, roughness: 0.07, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.05, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+  private railMat = new THREE.MeshStandardMaterial({ color: 0xc4c8cc, roughness: 0.35, metalness: 0.8, side: THREE.DoubleSide });
+  private railPostMat = new THREE.MeshStandardMaterial({ color: 0x8a8d90, roughness: 0.6, metalness: 0.4 });
+
+  /** The river beside the road (its surface), if there is one in this chunk. */
+  private riverMesh(i: number): THREE.Mesh | null {
+    const w = this.world;
+    const z0 = i * CHUNK;
+    const ox = this.originX(i);
+    const pos: number[] = [], idx: number[] = [];
+    let n = 0, prev = false;
+    for (let z = z0; z <= z0 + CHUNK; z += 3) {
+      const rv = w.river(z);
+      const ok = !!rv && rv.e > 0.05;
+      if (ok) {
+        const [, tz] = w.tangent(z);
+        const y = w.riverLevel(z) + (1 - rv!.e) * -3;
+        for (const o of [rv!.u - 9.5, rv!.u + 9.5]) pos.push(w.roadX(z) - o / tz - ox, y, z - z0);
+        if (prev) idx.push((n - 1) * 2, n * 2, (n - 1) * 2 + 1, (n - 1) * 2 + 1, n * 2, n * 2 + 1);
+        n++;
+      }
+      prev = ok;
+    }
+    if (!idx.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, this.riverMat);
+    m.receiveShadow = true;
+    return m;
+  }
+
+  /** Steel crash barriers: on the sea side of a cliff road and both sides of mountain switchbacks. */
+  private rails(i: number): THREE.Group | null {
+    const w = this.world;
+    const z0 = i * CHUNK;
+    const ox = this.originX(i);
+    const beam: number[] = [];
+    const posts: THREE.BufferGeometry[] = [];
+    const step = 2;
+    const sides = (z: number): number[] => {
+      if (w.bridge(z) > 0.2 || w.tunnelAt(z) > 0.2 || w.urban(z) > 0.2 || w.stopNear(z, 40)) return [];
+      if ((w.switchbacks(z)?.e ?? 0) > 0.3) return [-1, 1];
+      const cl = w.cliffRoad(z);
+      return cl && cl.k > 0.4 ? [cl.side] : [];
+    };
+    const P = (z: number, u: number, y: number) => {
+      const [tx, tz] = w.tangent(z);
+      return [w.roadX(z) - tz * u - ox, y, z + tx * u - z0];
+    };
+    for (let z = z0; z < z0 + CHUNK; z += step) {
+      const a = sides(z), b = sides(z + step);
+      for (const sd of a) {
+        if (!b.includes(sd)) continue;
+        const u0 = sd * (w.roadHalf(z) + 0.9), u1 = sd * (w.roadHalf(z + step) + 0.9);
+        const y0 = w.roadY(z), y1 = w.roadY(z + step);
+        const p00 = P(z, u0, y0 + 0.42), p01 = P(z, u0, y0 + 0.75), p10 = P(z + step, u1, y1 + 0.42), p11 = P(z + step, u1, y1 + 0.75);
+        beam.push(...p00, ...p10, ...p01, ...p01, ...p10, ...p11);
+        if (Math.round(z / step) % 2 === 0) {
+          const q = P(z, u0 + sd * 0.1, y0 + 0.36);
+          posts.push(new THREE.BoxGeometry(0.1, 0.75, 0.1).translate(q[0], q[1], q[2]));
+        }
+      }
+    }
+    if (!beam.length) return null;
+    const g = new THREE.Group();
+    const bg = new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.Float32BufferAttribute(beam, 3));
+    bg.computeVertexNormals();
+    g.add(new THREE.Mesh(bg, this.railMat));
+    if (posts.length) g.add(new THREE.Mesh(mergeGeometries(posts)!, this.railPostMat));
+    return g;
   }
 
   private concreteMat = new THREE.MeshStandardMaterial({ color: 0x9b9a96, roughness: 0.85 });
@@ -954,6 +1035,9 @@ export class ChunkManager {
           if (lm && Math.abs(u - lm.u) < lmClear(lm)) continue;
           const trl = w.trail(z);
           if (trl && Math.abs(u - trl.u) < 8) continue;
+          const rvr = w.river(z);
+          if (rvr && Math.abs(u - rvr.u) < 13) continue;
+          if ((w.saltFlat(z)?.e ?? 0) > 0.2 && Math.abs(u) < 1500) continue;
           const st = w.stopNear(z, 12);
           if (st && u * st.side > 0 && Math.abs(u) < w.roadHalf(z) + st.depth + (st.kind === 'harbour' ? 60 : 16)) continue;
           const [, tz] = w.tangent(z);
@@ -969,6 +1053,9 @@ export class ChunkManager {
             near = Math.min(near, Math.hypot(x - w.roadX(rz), dz));
           }
           if (near < need) continue;
+          // No buildings perched on the rock face above a cliff road
+          const crd = big ? w.cliffRoad(z) : null;
+          if (crd && crd.k > 0.3 && u * crd.side < 0 && Math.abs(u) < 80) continue;
           const h = w.height(x, z);
           const [hmin, hmax] = spec.h ?? [0.6, Infinity];
           if (h < hmin || h > hmax) continue;

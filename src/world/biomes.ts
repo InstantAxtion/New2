@@ -134,7 +134,12 @@ export const BIOMES: Record<BiomeId, Biome> = {
         return normal + (cliff - normal) * cl;
       }
       const hill = fbm2(x / 160, z / 160, 4, 12) * 0.5 + 0.5;
-      return c.roadY + hill * 34 * ramp(c.u, 12, 140) + ridged2(x / 70, z / 70, 2, 13) * 6 * ramp(c.u, 20, 90);
+      const land = c.roadY + hill * 34 * ramp(c.u, 12, 140) + ridged2(x / 70, z / 70, 2, 13) * 6 * ramp(c.u, 20, 90);
+      // On the cliff road the land side is a rock face the road was cut into
+      const cut = smoothstep(0.55, 0.85, cliffAt(z, c.seed ?? 0));
+      if (cut <= 0) return land;
+      const wall = c.roadY + smoothstep(8.5, 13, -s) * (24 + ridged2(x / 18, z / 18, 2, 17) * 8) + Math.max(0, -s - 13) * 0.4;
+      return land + (Math.max(land, wall) - land) * cut;
     },
     color(x, z, h, rel, c, out) {
       if (c.u * c.seaSide > 0 && cliffAt(z, c.seed ?? 0) > 0.3 && h < c.roadY - 2.5) {
@@ -142,6 +147,12 @@ export const BIOMES: Record<BiomeId, Biome> = {
         const band = Math.sin(h * 1.3 + noise2(x / 9, z / 9, 16) * 2) * 0.5 + 0.5;
         set(out, lerp(0.5, 0.42, band), lerp(0.46, 0.39, band), lerp(0.4, 0.34, band));
         if (h < 0.4) set(out, 0.36, 0.33, 0.3);
+        return;
+      }
+      if (c.u * c.seaSide < 0 && cliffAt(z, c.seed ?? 0) > 0.55 && h > c.roadY + 2) {
+        // The rock face of the cutting
+        const band = Math.sin(h * 0.9 + noise2(x / 7, z / 7, 18) * 2.5) * 0.5 + 0.5;
+        set(out, lerp(0.56, 0.45, band), lerp(0.5, 0.41, band), lerp(0.43, 0.36, band));
         return;
       }
       if (c.u * c.seaSide > 0 && beachAndSea(out, h)) return;

@@ -1,5 +1,5 @@
 import { BIOMES, BIOME_IDS, cliffAt, type Biome, type BiomeId, type Ctx } from './biomes';
-import { fbm2, hash1, noise1, ridged2, rng, smoothstep } from './noise';
+import { fbm2, hash1, noise1, noise2, ridged2, rng, smoothstep } from './noise';
 
 export const ROAD_HALF = 4.2; // asphalt half-width (two lanes)
 export const LANE = 1.9; // lane centre offset from the middle line
@@ -227,6 +227,21 @@ export class World {
 
   /** Where the road would wind without bridges straightening it. */
   private rawX(z: number): number {
+    let x = this.baseX(z);
+    // Switchbacks: tight zig-zags across the mountainside
+    const sw = this.switchbacks(z);
+    if (sw) x += sw.e * 30 * Math.sin((z - sw.start) / 26);
+    // A salt flat: dead straight from one side to the other
+    const sf = this.saltFlat(z);
+    if (sf) {
+      const xa = this.baseX(sf.start), xb = this.baseX(sf.end);
+      const chord = xa + ((xb - xa) * (z - sf.start)) / (sf.end - sf.start);
+      x += (chord - x) * smoothstep(0, 1, sf.e);
+    }
+    return x;
+  }
+
+  private baseX(z: number): number {
     const p = this.phases;
     // Mountain roads wind much more tightly
     const alp = this.cached('a', z, () => this.weights(z).reduce((m, x) => m + (x.biome.id === 'alpine' ? x.w : 0), 0));
@@ -304,6 +319,9 @@ export class World {
       // Seaside clifftops lift the road high above the water
       if (biome.id === 'seaside') y += w * cliffAt(z, this.seed) * 26;
     }
+    // Up and over the pass on switchbacks
+    const sw = this.switchbacks(z);
+    if (sw) y += 30 * (1 - Math.cos(2 * Math.PI * Math.min(1, Math.max(0, sw.t)))) / 2;
     // Down to the slipway for a ferry crossing (and across at deck height)
     const f = this.ferry(z);
     if (f) y += (1.6 - y) * f.ramp;
@@ -405,6 +423,20 @@ export class World {
       const disc = 1 - smoothstep(R, R + 22, Math.hypot(dz, du));
       const k = Math.max(disc, toRoad) * (a > flat - 0.5 ? 1 : 0);
       if (k > 0) h = h + (ry - 0.14 - h) * k;
+    }
+    // A salt flat: level as a table to the horizon
+    const sf = this.saltFlat(z);
+    if (sf && sf.e > 0) {
+      const k = sf.e * (1 - smoothstep(900, 1600, a));
+      h += (ry - 0.18 + noise2(x / 300, z / 300, this.seed + 472) * 0.15 * smoothstep(20, 60, a) - h) * k;
+    }
+    // A river beside the road: a bank down to the water and a bed under it
+    const rv = this.river(z);
+    if (rv && rv.e > 0) {
+      const d = Math.abs(u - rv.u);
+      const bed = ry - 0.3 - 3.4 * (1 - smoothstep(4, 11, d));
+      const k = rv.e * (1 - smoothstep(11, 22, d));
+      if (k > 0) h += (bed - h) * k;
     }
     // A ferry crossing: open water right across
     const fy = this.ferry(z);
@@ -668,6 +700,79 @@ export class World {
     );
   }
 
+  private zoneCells = new Map<number, { start: number; end: number; side: number } | null>();
+  /**
+   * A stretch of special road in some cells of length `cell`, in certain regions: where it is (start,
+   * end), how far through (t), how strongly it's in force (e, with `ramp`-metre soft ends) and a side.
+   * (Each cell's layout is worked out once and remembered: these are asked for constantly.)
+   */
+  private zone(z: number, salt: number, cell: number, prob: number, len: [number, number], ramp: number, biomes: BiomeId[], ok?: (start: number, end: number) => boolean) {
+    const c0 = Math.floor(z / cell);
+    // Fast path: nothing of this kind anywhere near (the usual answer)
+    if (this.zoneEmpty[salt] === c0) return null;
+    let any = false;
+    for (let c = c0 - 1; c <= c0 + 1; c++) {
+      const key = salt * 1e8 + c;
+      let zc = this.zoneCells.get(key);
+      if (zc === undefined) {
+        zc = null;
+        if (hash1(c, this.seed + salt) <= prob) {
+          const L = len[0] + (len[1] - len[0]) * hash1(c, this.seed + salt + 1);
+          const start = c * cell + ramp + 400 + hash1(c, this.seed + salt + 2) * Math.max(0, cell - L - 2 * ramp - 800);
+          const end = start + L;
+          if ([start, (start + end) / 2, end].every((zz) => biomes.includes(this.dominant(zz).id)) && (!ok || ok(start, end))) {
+            zc = { start, end, side: hash1(c, this.seed + salt + 3) < 0.5 ? -1 : 1 };
+          }
+        }
+        if (this.zoneCells.size > 20000) this.zoneCells.clear();
+        this.zoneCells.set(key, zc);
+      }
+      if (zc) any = true;
+      if (!zc || z < zc.start - ramp || z > zc.end + ramp) continue;
+      const e = smoothstep(zc.start - ramp, zc.start, z) * (1 - smoothstep(zc.end, zc.end + ramp, z));
+      return { e, t: (z - zc.start) / (zc.end - zc.start), start: zc.start, end: zc.end, id: c, side: zc.side };
+    }
+    this.zoneEmpty[salt] = any ? NaN : c0;
+    return null;
+  }
+  /** Per kind of zone: a cell with nothing of that kind anywhere near it (asked about last). */
+  private zoneEmpty: Record<number, number> = {};
+
+  /** Mountain switchbacks: the road zig-zags steeply up to a pass and down the other side. */
+  switchbacks(z: number) {
+    return this.zone(z, 461, 11000, 0.6, [900, 1400], 180, ['alpine'], (a, b) => this.tunnelAt((a + b) / 2) < 0.01);
+  }
+
+  /** A salt flat: a dead-straight road across a blinding white plain. */
+  saltFlat(z: number) {
+    return this.zone(z, 471, 14000, 0.6, [2400, 4200], 520, ['desert'], (a, b) => [a - 500, a, (a + b) / 2, b, b + 500].every((zz) => this.highwayAt(zz) < 0.01 && this.urban(zz) < 0.01));
+  }
+
+  /** A river running beside the road for a while, on one side. */
+  river(z: number) {
+    const r = this.zone(z, 481, 12000, 0.5, [1600, 3200], 260, ['forest', 'hills', 'autumn', 'pnw', 'blossom', 'vineyard', 'flatlands'],
+      (a, b) => [a, (a + b) / 2, b].every((zz) => this.urban(zz) < 0.01));
+    if (!r) return null;
+    const u = r.side * (this.roadHalf(z) + 24 + noise1(z / 320, this.seed + 482) * 9);
+    return { ...r, u };
+  }
+
+  /** Water level of the river beside the road. */
+  riverLevel(z: number): number {
+    return this.roadY(z) - 1.7;
+  }
+
+  /** Seaside cliff road: which side the sea is, and how much the road is cut into the cliff (0..1). */
+  cliffRoad(z: number): { side: number; k: number } | null {
+    let k = 0, side = 1;
+    for (const { biome, w, k: seg } of this.weights(z)) {
+      if (biome.id !== 'seaside') continue;
+      k += w * smoothstep(0.55, 0.85, cliffAt(z, this.seed));
+      side = this.seaSide(seg);
+    }
+    return k > 0.02 ? { side, k } : null;
+  }
+
   /**
    * An off-road trail now and then: a dirt track that turns off the road, wanders out across the
    * country (up to ~55 m away) and comes back to join it again. Returns where it is: its lateral
@@ -690,6 +795,7 @@ export class World {
       const clear = (zz: number) => this.urban(zz) < 0.01 && this.bridgeRaw(zz) < 0.01 && this.tunnelAt(zz) < 0.01 && this.highwayAt(zz) < 0.01;
       if (![start - 60, start + L * 0.25, mid, start + L * 0.75, start + L + 60].every(clear)) continue;
       if (this.stopNear(start, 120) || this.stopNear(start + L, 120)) continue;
+      if (this.river(start) || this.river(mid) || this.river(start + L)) continue;
       const side = hash1(c, this.seed + 444) < 0.5 ? -1 : 1;
       const t = (z - start) / L;
       // Out, wander, back: a smooth bump with a gentle wiggle on it
@@ -993,6 +1099,12 @@ export class World {
     if (a < FLAT + 1.5) {
       const t = 1 - smoothstep(FLAT - 1, FLAT + 1.5, a);
       out[0] += (vr - out[0]) * t; out[1] += (vg - out[1]) * t; out[2] += (vb - out[2]) * t;
+    }
+    const sf = this.saltFlat(z);
+    if (sf && sf.e > 0) {
+      const t = sf.e * (1 - smoothstep(900, 1600, a)) * smoothstep(FLAT, FLAT + 4, a);
+      const n = noise2(x / 6, z / 6, this.seed + 473) * 0.03 + (Math.abs(noise2(x / 14, z / 14, this.seed + 474)) < 0.04 ? -0.05 : 0);
+      out[0] += (0.94 + n - out[0]) * t; out[1] += (0.93 + n - out[1]) * t; out[2] += (0.9 + n - out[2]) * t;
     }
     const urb = this.urban(z);
     if (urb > 0) {

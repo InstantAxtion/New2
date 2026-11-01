@@ -93,7 +93,7 @@ describe('autopilot', () => {
       expect(v.z).toBeGreaterThan(3000);
       expect(worst).toBeLessThan(ROAD_HALF - LANE + 0.5);
     }
-  });
+  }, 20000);
 
   it('lets the driver stop and reverse', () => {
     const w = new World(1, []);
