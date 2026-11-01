@@ -403,6 +403,13 @@ export class World {
       const k = Math.max(disc, toRoad) * (a > flat - 0.5 ? 1 : 0);
       if (k > 0) h = h + (ry - 0.14 - h) * k;
     }
+    // An off-road trail: the ground levels out along it so you can drive it
+    const tr = this.trail(z);
+    if (tr) {
+      const d = Math.abs(u - tr.u);
+      const k = (1 - smoothstep(2.6, 9, d)) * tr.e;
+      if (k > 0) h = h + (this.trailY(z) - h) * k;
+    }
     if (tunnel > 0) {
       // A ridge across the road; the road runs through a cutting under it (the tunnel tube
       // and its roof are separate meshes), so the corridor itself stays at road level
@@ -653,6 +660,49 @@ export class World {
         return ['flatlands', 'desert', 'forest', 'autumn', 'rainforest', 'hills', 'canyon'].includes(b) && this.highwayAt(c) < 0.01 && this.bridgeRaw(c) < 0.01;
       }) * (1 - smoothstep(0, 0.2, this.urban(z))),
     );
+  }
+
+  /**
+   * An off-road trail now and then: a dirt track that turns off the road, wanders out across the
+   * country (up to ~55 m away) and comes back to join it again. Returns where it is: its lateral
+   * offset u (world sense, like lateral()), how far along it is (0..1) and how established (0..1).
+   */
+  trail(z: number): { u: number; t: number; e: number; id: number } | null {
+    const cell = 16000, c0 = Math.floor(z / cell);
+    const key = Math.round(z);
+    const hit = this.trailMemo.get(key);
+    if (hit !== undefined) return hit;
+    let out: { u: number; t: number; e: number; id: number } | null = null;
+    for (const c of [c0 - 1, c0, c0 + 1]) {
+      if (hash1(c, this.seed + 441) > 0.35) continue;
+      const L = 700 + 700 * hash1(c, this.seed + 442);
+      const start = c * cell + 1500 + hash1(c, this.seed + 443) * (cell - L - 3000);
+      if (z < start || z > start + L) continue;
+      const mid = start + L / 2;
+      const b = this.dominant(mid).id;
+      if (!['forest', 'hills', 'autumn', 'pnw', 'flatlands', 'desert', 'canyon', 'alpine', 'vineyard', 'blossom'].includes(b)) continue;
+      const clear = (zz: number) => this.urban(zz) < 0.01 && this.bridgeRaw(zz) < 0.01 && this.tunnelAt(zz) < 0.01 && this.highwayAt(zz) < 0.01;
+      if (![start - 60, start + L * 0.25, mid, start + L * 0.75, start + L + 60].every(clear)) continue;
+      if (this.stopNear(start, 120) || this.stopNear(start + L, 120)) continue;
+      const side = hash1(c, this.seed + 444) < 0.5 ? -1 : 1;
+      const t = (z - start) / L;
+      // Out, wander, back: a smooth bump with a gentle wiggle on it
+      // (it leaves and rejoins the road at a shallow angle, so it's easy to follow)
+      const bump = (1 - Math.cos(2 * Math.PI * t)) / 2;
+      const away = 2 + 46 * bump + noise1(z / 140, this.seed + 445) * 5 * bump;
+      const e = smoothstep(0, 0.04, t) * smoothstep(0, 0.04, 1 - t);
+      out = { u: side * (this.roadHalf(z) + away), t, e, id: c };
+      break;
+    }
+    if (this.trailMemo.size > 20000) this.trailMemo.clear();
+    this.trailMemo.set(key, out);
+    return out;
+  }
+  private trailMemo = new Map<number, { u: number; t: number; e: number; id: number } | null>();
+
+  /** Height of the trail surface at z (a smoothed version of the land, never far from the road's level). */
+  trailY(z: number): number {
+    return this.roadY(z) - 0.1 + noise1(z / 160, this.seed + 446) * 1.6 * (this.trail(z)?.e ?? 0);
   }
 
   /** 0..1: the road goes through a tunnel under a ridge. */

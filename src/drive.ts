@@ -93,6 +93,11 @@ export class Vehicle {
     return this.spec.top / 3.6;
   }
 
+  /** Auto-drive follows this instead of a lane (an off-road trail): lateral offset at z, world sense. */
+  path: ((z: number) => number) | null = null;
+  /** Which way along the road the path is being followed. */
+  pathDir = 1;
+
   /** Put the car in the right lane at z, pointing down the road. */
   place(z: number) {
     const w = this.world;
@@ -110,9 +115,11 @@ export class Vehicle {
   /** Point `ahead` metres down the road from the car, `off` metres to the right of the middle (or on a lane). */
   private lanePoint(ahead: number, lane: number | null, off = 0): [number, number] {
     const w = this.world;
-    const dir = Math.cos(this.heading) >= 0 ? 1 : -1;
+    const dir = this.path && lane !== null ? this.pathDir : Math.cos(this.heading) >= 0 ? 1 : -1;
     const zt = this.z + ahead * dir;
     const [tx, tz] = w.tangent(zt);
+    // A path (an off-road trail) is given as an offset across at the same z
+    if (this.path && lane !== null) return [w.roadX(zt) - this.path(zt) / tz, zt];
     const o = (lane === null ? off : w.laneOffset(zt, lane)) * dir;
     return [w.roadX(zt) - tz * o, zt + tx * o];
   }
@@ -210,7 +217,7 @@ export class Vehicle {
   holdSpeed(target: number, maxThrottle = 1, maxBrake = 0.75): { throttle: number; brake: number } {
     const s = this.spec;
     const v = Math.max(this.v, 0);
-    const need = 0.15 + 0.00042 * v * v + G * Math.sin(this.pitch) * 0.6;
+    const need = 0.15 + 0.00042 * v * v + G * Math.sin(this.pitch) * 0.6 + (this.offroad ? 1.8 : 0);
     const pull = s.accel * Math.max(0.05, 1 - (v / this.vmax) ** 2);
     const hold = clamp(need / pull, 0, 1);
     const e = target - this.v;

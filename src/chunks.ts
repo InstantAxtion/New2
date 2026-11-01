@@ -277,6 +277,8 @@ export class ChunkManager {
     c.group.add(this.road(i));
     const walk = this.pavements(i);
     if (walk) c.group.add(walk);
+    const trail = this.trailMesh(i);
+    if (trail) c.group.add(trail);
     const extra = this.bridgesAndCrossings(i);
     if (extra) c.group.add(extra);
     // Stops beside the road, and road signs
@@ -397,6 +399,8 @@ export class ChunkManager {
       const u = cu + (r() - 0.5) * 3;
       if (Math.abs(u) < FLAT - 1.6 + (w.roadHalf(z) - ROAD_HALF)) continue;
       if (w.tunnelAt(z) > 0.05) continue;
+      const trg = w.trail(z);
+      if (trg && Math.abs(u - trg.u) < 2.6) continue;
       const [, tz] = w.tangent(z);
       const x = w.roadX(z) - u / tz;
       const h = w.height(x, z);
@@ -531,6 +535,52 @@ export class ChunkManager {
       g.add(km, pm);
     }
     return g;
+  }
+
+  private trailMat = new THREE.MeshStandardMaterial({ map: this.gravelTex, color: 0xbfb194, roughness: 1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+
+  /** The dirt of an off-road trail, if one runs through this chunk. */
+  private trailMesh(i: number): THREE.Mesh | null {
+    const w = this.world;
+    const z0 = i * CHUNK;
+    const ox = this.originX(i);
+    const step = 2;
+    const rows = CHUNK / step + 1;
+    const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    let n = 0, prevOk = false;
+    for (let r = 0; r < rows; r++) {
+      const z = z0 + r * step;
+      const tr = w.trail(z);
+      const ok = !!tr && tr.e > 0.02;
+      if (ok) {
+        const [tx, tz] = w.tangent(z);
+        const rx = w.roadX(z);
+        const hw = 1.5 + tr!.e * 0.4;
+        // (offsets taken across at the same z, as lateral() measures them)
+        void tx;
+        for (const o of [tr!.u - hw, tr!.u, tr!.u + hw]) {
+          const x = rx - o / tz;
+          pos.push(x - ox, w.height(x, z) + 0.06, 0 + z - z0);
+        }
+        const v = z / 6;
+        uv.push(0, v, 0.5, v, 1, v);
+        if (prevOk) {
+          const a = (n - 1) * 3, b = n * 3;
+          idx.push(a, b, a + 1, a + 1, b, b + 1, a + 1, b + 1, a + 2, a + 2, b + 1, b + 2);
+        }
+        n++;
+      }
+      prevOk = ok;
+    }
+    if (!idx.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, this.trailMat);
+    m.receiveShadow = true;
+    return m;
   }
 
   private concreteMat = new THREE.MeshStandardMaterial({ color: 0x9b9a96, roughness: 0.85 });
@@ -900,6 +950,8 @@ export class ChunkManager {
           if (w.tunnelAt(z) > 0.05 && Math.abs(u) < 70) continue;
           const lm = w.landmarkNear(z, 45);
           if (lm && Math.abs(u - lm.u) < lmClear(lm)) continue;
+          const trl = w.trail(z);
+          if (trl && Math.abs(u - trl.u) < 8) continue;
           const st = w.stopNear(z, 12);
           if (st && u * st.side > 0 && Math.abs(u) < w.roadHalf(z) + st.depth + (st.kind === 'harbour' ? 60 : 16)) continue;
           const [, tz] = w.tangent(z);

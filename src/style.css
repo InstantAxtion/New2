@@ -713,3 +713,4 @@ body.auto-mode .manual-only { display: none; }
 .toast b { font-size: 19px; }
 @media (orientation: portrait) { .speedo b { font-size: 34px; } }
 .menu-grid .pad.small span b#trip { font-size: 11px; font-weight: 600; color: var(--text); }
+.toast small { display: block; font-size: 12px; margin-top: 4px; color: var(--muted); }

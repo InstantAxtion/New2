@@ -110,6 +110,13 @@ export class Game {
   pipY = 124;
   /** Auto-drive overtaking: cruising in lane, or out passing someone. */
   private passing = false;
+  /** Following an off-road trail (set where auto-drive turned onto it). */
+  private trailKey: number | null = null;
+  private trailDir = 1;
+  /** Trail turn-offs already announced. */
+  private trailTold = new Set<number>();
+  /** Told about a trail turn-off coming up (side: 1 right, -1 left). */
+  onTrailAhead: (side: number) => void = () => {};
   private passedBeside = false;
   private passTime = 0;
   /** Sleep timer: when (in seconds of driving) to pull over, and whether we have. */
@@ -534,6 +541,16 @@ export class Game {
       if (this.sleepAt !== null && this.driveTime >= this.sleepAt && !this.sleeping) {
         this.sleeping = true;
         this.onSleep();
+      }
+      if (!s.auto && !this.sleeping) v.path = null;
+      // A trail turn-off coming up: say which side
+      {
+        const fwd = Math.cos(v.heading) >= 0 ? 1 : -1;
+        const ahead = this.world.trail(v.z + 260 * fwd);
+        if (ahead && !this.world.trail(v.z) && !this.trailTold.has(ahead.id) && (fwd > 0 ? ahead.t < 0.4 : ahead.t > 0.6)) {
+          this.trailTold.add(ahead.id);
+          this.onTrailAhead(Math.sign(ahead.u) * fwd);
+        }
       }
       let c = s.auto || this.sleeping ? this.autoDrive(dt) : this.manual(dt);
       // Out of fuel: limp along gently to the next station
@@ -1092,6 +1109,29 @@ export class Game {
       return v.autopilot({ leader: t.leader(v, 1), limit: 0, stopIn: null }, STYLES.relaxed, dt);
     }
     const env: AutoEnv = { leader: null, limit, stopIn: this.stopFor() };
+    // Off-road trails: auto-drive turns off and follows the track until it rejoins the road
+    const tr = this.world.trail(v.z);
+    const fwd = Math.cos(v.heading) >= 0 ? 1 : -1;
+    if (tr && !this.passing) {
+      const entry = fwd > 0 ? tr.t < 0.04 : tr.t > 0.96;
+      if (this.trailKey === null && entry) {
+        this.trailKey = tr.id;
+        this.trailDir = fwd;
+      }
+    } else this.trailKey = null;
+    // Slow down for the turn-off
+    if (this.trailKey === null && !this.passing) {
+      const soon = this.world.trail(v.z + 120 * fwd);
+      if (soon && (fwd > 0 ? soon.t < 0.1 : soon.t > 0.9)) env.limit = Math.min(env.limit, 14);
+    }
+    if (this.trailKey !== null && tr) {
+      const d = this.trailDir;
+      v.pathDir = d;
+      v.path = (zz) => this.world.trail(zz)?.u ?? this.world.laneOffset(zz, 1) * d;
+      env.limit = Math.min(env.limit, 12);
+      return v.autopilot(env, { ...STYLES.relaxed, throttle: 1 }, dt);
+    }
+    v.path = null;
     if (!this.passing) {
       v.lane = 1;
       const lead = t.leader(v, 1);

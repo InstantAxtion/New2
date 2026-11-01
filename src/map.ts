@@ -51,6 +51,21 @@ export function drawNav(g: CanvasRenderingContext2D, w: World, v: Vehicle, mph: 
     }
     prev = p;
   }
+  // Off-road trails: a dashed track beside the road
+  g.setLineDash([8, 7]);
+  g.strokeStyle = '#c9a26a';
+  g.lineWidth = 4;
+  let tprev: [number, number] | null = null;
+  for (let d = -250; d <= 1400; d += 20) {
+    const z = v.z + d * dir;
+    const tr = w.trail(z);
+    if (!tr) { tprev = null; continue; }
+    const [, tz] = w.tangent(z);
+    const p = toScreen(w.roadX(z) - tr.u / tz, z);
+    if (tprev) { g.beginPath(); g.moveTo(tprev[0], tprev[1]); g.lineTo(p[0], p[1]); g.stroke(); }
+    tprev = p;
+  }
+  g.setLineDash([]);
   // Fuel stations (and chargers) along the way
   const za = Math.min(v.z - 250 * dir, v.z + 1400 * dir), zb = Math.max(v.z - 250 * dir, v.z + 1400 * dir);
   let nextFuel = Infinity;
