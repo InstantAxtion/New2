@@ -119,6 +119,12 @@ export class UI {
       const label = stampLabel(key);
       if (label) this.toast(`New passport stamp<b>${label.icon} ${label.name}</b>`);
     };
+    game.onFuelLow = (left) => {
+      const ev = game.vehicle.spec.engine === 'ev';
+      this.toast(left <= 0.1
+        ? (ev ? 'Battery very low<b>⚡ 10% left</b>' : 'Nearly empty<b>⛽ 10% left: fill up soon</b>')
+        : (ev ? 'Battery low<b>⚡ 25%: the next charger is on the map</b>' : 'Fuel low<b>⛽ 25%: the next station is on the map</b>'));
+    };
     game.onRefuel = (state) => {
       const ev = game.vehicle.spec.engine === 'ev';
       if (state === 'start') this.toast(ev ? 'Charging<b>⚡ Plugged in</b>' : 'Filling up<b>⛽ At the pump</b>');

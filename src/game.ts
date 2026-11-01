@@ -253,7 +253,11 @@ export class Game {
     const p = cam.position.clone().addScaledVector(sunDir, 900).project(cam);
     const onScreen = p.z < 1 ? 1 - THREE.MathUtils.smoothstep(Math.max(Math.abs(p.x), Math.abs(p.y)), 1.0, 1.8) : 0;
     a.uniforms.uSun.value.set((p.x + 1) / 2, (p.y + 1) / 2);
-    a.uniforms.uSunOn.value = (this.phase === 'garage' ? 0 : 1) * up * onScreen * (1 - this.sky.night) * (this.car.inside ? 0.7 : 1);
+    // Golden hour: stronger shafts (and they pick out the dimmer evening sky), glare on the windscreen
+    const gold = THREE.MathUtils.smoothstep(0.32 - sunDir.y, 0, 0.3) * THREE.MathUtils.smoothstep(sunDir.y, -0.1, 0.02);
+    a.uniforms.uSunOn.value = (this.phase === 'garage' ? 0 : 1) * up * onScreen * (1 - this.sky.night) * (this.car.inside ? 0.8 : 1) * (1 + gold * 0.4);
+    a.uniforms.uThresh.value = 0.85 - gold * 0.08;
+    a.uniforms.uGlare.value = this.car.inside && this.phase !== 'garage' && !this.visorDown ? up * onScreen * (0.15 + gold * 0.4) * (1 - this.sky.night) : 0;
     a.uniforms.uSunColor.value.copy(this.sky.sun.color);
     a.uniforms.uTime.value = this.elapsed;
     const dir = Math.cos(v.heading) >= 0 ? 1 : -1;
@@ -985,12 +989,23 @@ export class Game {
     if (seen.balloons) stamp('life:balloons');
   }
 
-  /** A full tank lasts about 75 miles; stop at a fuel station (or charger) to fill up. */
+  /** Told when the tank gets low (a quarter, then a tenth left). */
+  onFuelLow: (left: number) => void = () => {};
+  private fuelWarned = 1;
+
+  /** A full tank lasts about 200 miles; stop at a fuel station (or charger) to fill up. */
   private updateFuel(dt: number) {
     const v = this.vehicle;
     if (this.phase !== 'drive') return;
     const moved = Math.max(0, v.odometer - this.lastOdo);
-    this.fuel = Math.max(0, this.fuel - moved / 120000);
+    this.fuel = Math.max(0, this.fuel - moved / 322000);
+    for (const lvl of [0.25, 0.1]) {
+      if (this.fuel < lvl && this.fuelWarned > lvl) {
+        this.fuelWarned = lvl;
+        this.onFuelLow(lvl);
+      }
+    }
+    if (this.fuel > 0.3) this.fuelWarned = 1;
     const st = this.world.stopNear(v.z, 0);
     const u = this.world.lateral(v.x, v.z);
     const atPump = !!st && st.kind === 'fuel' && Math.abs(v.z - st.z) < st.len / 2 && u * st.side > this.world.roadHalf(v.z) - 0.5;
@@ -1303,7 +1318,7 @@ export class Game {
     } else if (this.videos?.active && this.settings.fpVideo === 'dash') this.car.drawScreen(`${sp} ${mph ? 'mph' : 'km/h'}`, `${r} · ${clock}`, music);
     else {
       const { ctx, tex } = this.car.screenCanvas;
-      drawNav(ctx, this.world, this.vehicle, mph, clock, this.nowPlaying || '🎵 Tap 📺 for music videos');
+      drawNav(ctx, this.world, this.vehicle, mph, clock, this.nowPlaying || '🎵 Tap 📺 for music videos', this.fuel);
       tex.needsUpdate = true;
     }
     // Head-up display

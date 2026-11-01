@@ -15,6 +15,8 @@ export const AtmosphereShader = {
     uTime: { value: 0 },
     uHorizon: { value: 0.5 },
     uSamples: { value: 36 },
+    uThresh: { value: 0.85 },
+    uGlare: { value: 0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -31,6 +33,8 @@ export const AtmosphereShader = {
     uniform float uTime;
     uniform float uHorizon;
     uniform float uSamples;
+    uniform float uThresh;
+    uniform float uGlare;
     varying vec2 vUv;
     void main() {
       vec2 uv = vUv;
@@ -57,12 +61,21 @@ export const AtmosphereShader = {
           if (float(i) >= uSamples) break;
           p += d;
           vec3 s = texture2D(tDiffuse, clamp(p, 0.0, 1.0)).rgb;
-          float l = max(dot(s, vec3(0.3, 0.59, 0.11)) - 0.85, 0.0);
+          float l = max(dot(s, vec3(0.3, 0.59, 0.11)) - uThresh, 0.0);
           sum += l * decay;
           decay *= 0.965;
         }
         float fall = 1.0 - smoothstep(0.0, 0.9, length((vUv - uSun) * vec2(1.6, 1.0)));
         col.rgb += uSunColor * sum / uSamples * uSunOn * 1.6 * (0.35 + fall);
+      }
+      // Sun on the windscreen: a soft veil of light, a bright bloom round the sun and a faint streak
+      if (uGlare > 0.01) {
+        vec2 q = (vUv - uSun) * vec2(1.7, 1.0);
+        float r = length(q);
+        float bloom = exp(-r * 5.0) * 0.55 + exp(-r * 18.0) * 0.6;
+        float streak = exp(-abs(q.y) * 60.0) * exp(-abs(q.x) * 2.2) * 0.35;
+        col.rgb += uSunColor * (bloom + streak + 0.06) * uGlare;
+        col.rgb = mix(col.rgb, col.rgb * 0.9 + uSunColor * 0.08, uGlare * 0.5);
       }
       gl_FragColor = col;
     }`,

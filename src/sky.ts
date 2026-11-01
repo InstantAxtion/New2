@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export type TimeMode = 'cycle' | 'dawn' | 'day' | 'sunset' | 'night';
-export const TIME_PRESETS: Record<Exclude<TimeMode, 'cycle'>, number> = { dawn: 6.4, day: 12.5, sunset: 18.6, night: 23 };
+export const TIME_PRESETS: Record<Exclude<TimeMode, 'cycle'>, number> = { dawn: 6.4, day: 12.5, sunset: 17.6, night: 23 };
 
 interface Key {
   t: number;
@@ -18,13 +18,13 @@ interface Key {
 const KEYS: Key[] = [
   { t: 0, top: 0x040816, horizon: 0x111a33, sun: 0x8899cc, sunI: 0.25, hemiSky: 0x33456e, hemiGround: 0x0c0c14, hemiI: 0.55 },
   { t: 4.8, top: 0x0a1230, horizon: 0x2a2a4a, sun: 0x8899cc, sunI: 0.2, hemiSky: 0x3a4a78, hemiGround: 0x101018, hemiI: 0.55 },
-  { t: 6.0, top: 0x2b3f78, horizon: 0xf2a06e, sun: 0xffa060, sunI: 0.8, hemiSky: 0x8a90c0, hemiGround: 0x3a3028, hemiI: 0.8 },
+  { t: 6.0, top: 0x2b3f78, horizon: 0xf2a06e, sun: 0xffa060, sunI: 1.1, hemiSky: 0x8a90c0, hemiGround: 0x3a3028, hemiI: 0.72 },
   { t: 7.5, top: 0x4f8fd8, horizon: 0xf5d8b0, sun: 0xffe0b0, sunI: 1.6, hemiSky: 0xbfd8ff, hemiGround: 0x5a5040, hemiI: 1.0 },
   { t: 12, top: 0x2f7fe0, horizon: 0xc4e2ff, sun: 0xfff8ec, sunI: 2.2, hemiSky: 0xcfe6ff, hemiGround: 0x6a6048, hemiI: 1.15 },
   { t: 16.5, top: 0x3c7ed4, horizon: 0xf5ddb0, sun: 0xffe6b8, sunI: 1.8, hemiSky: 0xc8dcff, hemiGround: 0x5e5240, hemiI: 1.05 },
-  { t: 18.6, top: 0x3d4a8c, horizon: 0xff8f52, sun: 0xff8a4a, sunI: 1.2, hemiSky: 0xb09ad0, hemiGround: 0x4a3428, hemiI: 0.85 },
-  { t: 19.8, top: 0x1a2050, horizon: 0x7a4a6a, sun: 0xd06a6a, sunI: 0.4, hemiSky: 0x5a5a90, hemiGround: 0x201820, hemiI: 0.65 },
-  { t: 21, top: 0x060b20, horizon: 0x18203e, sun: 0x8899cc, sunI: 0.25, hemiSky: 0x33456e, hemiGround: 0x0c0c14, hemiI: 0.55 },
+  { t: 17.9, top: 0x3d4a8c, horizon: 0xff8f52, sun: 0xff8a4a, sunI: 1.55, hemiSky: 0xb09ad0, hemiGround: 0x4a3428, hemiI: 0.75 },
+  { t: 19.0, top: 0x1a2050, horizon: 0x7a4a6a, sun: 0xd06a6a, sunI: 0.4, hemiSky: 0x5a5a90, hemiGround: 0x201820, hemiI: 0.65 },
+  { t: 20.3, top: 0x060b20, horizon: 0x18203e, sun: 0x8899cc, sunI: 0.25, hemiSky: 0x33456e, hemiGround: 0x0c0c14, hemiI: 0.55 },
   { t: 24, top: 0x040816, horizon: 0x111a33, sun: 0x8899cc, sunI: 0.25, hemiSky: 0x33456e, hemiGround: 0x0c0c14, hemiI: 0.55 },
 ];
 
@@ -134,6 +134,13 @@ void main() {
     vec3 ac = mix(vec3(0.15, 1.0, 0.45), vec3(0.6, 0.25, 0.9), smoothstep(y0 + 0.08, y0 + 0.35, d.y));
     col += ac * curtain * rays * wave * facing * aurora * night * 0.7;
   }
+  // A big warm glow round a low sun, spreading along the horizon
+  {
+    float g2 = smoothstep(0.3, 0.0, sunDir.y) * smoothstep(-0.16, -0.02, sunDir.y);
+    float near = pow(max(dot(d, normalize(vec3(sunDir.x, max(sunDir.y, 0.0), sunDir.z))), 0.0), 6.0);
+    float band = exp(-abs(d.y - max(sunDir.y, 0.0)) * 9.0);
+    col += sunColor * (near * 0.45 + near * band * 0.35) * g2 * (1.0 - cover);
+  }
   // Clouds
   if (d.y > 0.02 && clouds > 0.0) {
     vec2 cp = d.xz / (d.y + 0.08) * 1.6 + vec2(time * 0.006, time * 0.002);
@@ -145,6 +152,12 @@ void main() {
     vec3 shade = mix(horizon, top, 0.4) * 0.9 + vec3(0.06);
     vec3 cc = mix(lit, shade, thick * 0.75);
     cc += sunColor * pow(sd, 12.0) * (1.0 - thick) * 0.8 * up;
+    // Golden hour: clouds catch fire, orange low down and pink higher up, brightest towards the sun
+    float gold = smoothstep(0.32, 0.02, sunDir.y) * smoothstep(-0.14, 0.0, sunDir.y);
+    vec3 warm = mix(vec3(1.0, 0.56, 0.3), vec3(0.98, 0.5, 0.62), smoothstep(0.08, 0.45, d.y));
+    float facingSun = 0.45 + 0.55 * pow(max(sd, 0.0), 2.0);
+    cc = mix(cc, warm * (0.55 + 0.7 * (1.0 - thick)) * facingSun + shade * 0.15, gold * 0.8);
+    cc += sunColor * pow(max(sd, 0.0), 5.0) * gold * 0.7 * (1.0 - thick * 0.6);
     cc *= (1.0 - night * 0.85);
     col = mix(col, cc, c * clouds * smoothstep(0.02, 0.2, d.y));
     // Thin wispy high layer

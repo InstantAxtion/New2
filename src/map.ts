@@ -10,7 +10,7 @@ const REGION_COLOR: Record<BiomeId, string> = {
   pnw: '#2f7a4a',
 };
 
-export function drawNav(g: CanvasRenderingContext2D, w: World, v: Vehicle, mph: boolean, clock: string, music: string) {
+export function drawNav(g: CanvasRenderingContext2D, w: World, v: Vehicle, mph: boolean, clock: string, music: string, fuel = 1) {
   const W = 512, H = 288;
   g.fillStyle = '#0b1220';
   g.fillRect(0, 0, W, H);
@@ -50,6 +50,22 @@ export function drawNav(g: CanvasRenderingContext2D, w: World, v: Vehicle, mph: 
       g.beginPath(); g.moveTo(prev[0], prev[1]); g.lineTo(p[0], p[1]); g.stroke();
     }
     prev = p;
+  }
+  // Fuel stations (and chargers) along the way
+  const za = Math.min(v.z - 250 * dir, v.z + 1400 * dir), zb = Math.max(v.z - 250 * dir, v.z + 1400 * dir);
+  let nextFuel = Infinity;
+  for (const st of w.stops(za, zb)) {
+    if (st.kind !== 'fuel') continue;
+    const d = (st.z - v.z) * dir;
+    if (d > 0) nextFuel = Math.min(nextFuel, d);
+    const [px, py] = toScreen(w.roadX(st.z), st.z);
+    const ox = st.side * dir * 16;
+    g.fillStyle = fuel < 0.25 ? '#ffb020' : '#3fb67a';
+    g.beginPath(); g.arc(px - ox, py, 11, 0, Math.PI * 2); g.fill();
+    g.font = '13px sans-serif';
+    g.textAlign = 'center';
+    g.fillText('⛽', px - ox, py + 5);
+    g.textAlign = 'left';
   }
   // The car
   g.fillStyle = '#ffffff';
@@ -116,7 +132,9 @@ export function drawNav(g: CanvasRenderingContext2D, w: World, v: Vehicle, mph: 
   g.fillStyle = '#9fb0cc';
   g.font = '500 17px Inter, system-ui, sans-serif';
   g.textAlign = 'right';
-  g.fillText(next || music, W - 14, H - 18);
+  const lowFuel = fuel < 0.25 ? `⛽ ${Math.round(fuel * 100)}% · ${nextFuel < Infinity ? 'station in ' + fmt(nextFuel, mph) : 'find a station'}` : '';
+  if (lowFuel) g.fillStyle = '#ffb020';
+  g.fillText(lowFuel || next || music, W - 14, H - 18);
   g.textAlign = 'left';
 }
 
