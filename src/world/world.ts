@@ -677,7 +677,8 @@ export class World {
       Math.max(
         this.feature(z, 9000, 401, 0.65, [1800, 3400], (c) => {
           const b = this.dominant(c).id;
-          return ['flatlands', 'hills', 'desert', 'autumn', 'seaside', 'city'].includes(b) && this.bridgeRaw(c) < 0.01;
+          return ['flatlands', 'hills', 'desert', 'autumn', 'seaside', 'city'].includes(b) && this.bridgeRaw(c) < 0.01 &&
+            [-2600, -1300, 0, 1300, 2600].every((d) => !this.saltFlat(c + d));
         }),
         // The Night Metro is one long highway
         smoothstep(0.35, 0.7, this.metroAt(z)),
@@ -740,12 +741,13 @@ export class World {
 
   /** Mountain switchbacks: the road zig-zags steeply up to a pass and down the other side. */
   switchbacks(z: number) {
-    return this.zone(z, 461, 11000, 0.6, [900, 1400], 180, ['alpine'], (a, b) => this.tunnelAt((a + b) / 2) < 0.01);
+    return this.zone(z, 461, 11000, 0.6, [900, 1400], 180, ['alpine']);
   }
 
   /** A salt flat: a dead-straight road across a blinding white plain. */
   saltFlat(z: number) {
-    return this.zone(z, 471, 14000, 0.6, [2400, 4200], 520, ['desert'], (a, b) => [a - 500, a, (a + b) / 2, b, b + 500].every((zz) => this.highwayAt(zz) < 0.01 && this.urban(zz) < 0.01));
+    // (the road's shape depends on this, so it mustn't ask about anything that depends on the road: highways and towns keep clear of it instead)
+    return this.zone(z, 471, 14000, 0.6, [2400, 4200], 520, ['desert']);
   }
 
   /** A river running beside the road for a while, on one side. */
@@ -860,6 +862,7 @@ export class World {
       this.feature(z, 4200, 421, 0.55, [160, 460], (c) => {
         const b = this.dominant(c).id;
         return ['alpine', 'canyon', 'rainforest', 'forest', 'hills', 'winter'].includes(b) && this.highwayAt(c) < 0.01 && this.bridgeRaw(c) < 0.01 &&
+          [-700, 0, 700].every((d) => !this.switchbacks(c + d)) &&
           [-400, -200, 0, 200, 400].every((d) => this.urban(c + d) < 0.01);
       }),
     );
@@ -912,7 +915,7 @@ export class World {
     if (hash1(c, this.seed + 201) < 0.55) return null;
     const centre = c * TOWN_CELL + 800 + hash1(c, this.seed + 202) * (TOWN_CELL - 1600);
     const b = this.dominant(centre);
-    return b.towns && this.bridge(centre) < 0.01 && this.highwayAt(centre) < 0.01 ? centre : null;
+    return b.towns && this.bridge(centre) < 0.01 && this.highwayAt(centre) < 0.01 && [-600, 0, 600].every((d) => !this.saltFlat(centre + d)) ? centre : null;
   }
 
   /** 0..1: in the neon city. */
