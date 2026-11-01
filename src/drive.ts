@@ -193,7 +193,7 @@ export class Vehicle {
     // Ease the pedals in and out like a calm driver (but stamp on the brake when it's urgent)
     const ease = (from: number, to: number, up: number, down: number) => from + clamp(to - from, -down * dt, up * dt);
     this.autoT = urgent || c.brake > 0 ? Math.min(this.autoT, c.throttle) : ease(this.autoT, c.throttle, 0.7, 3);
-    this.autoB = urgent || why === 'traffic' || why === 'stop' ? c.brake : ease(this.autoB, c.brake, 3, 3);
+    this.autoB = urgent || (['traffic', 'stop'] as CruiseLimit[]).includes(this.limitedBy) ? c.brake : ease(this.autoB, c.brake, 3, 3);
     return { steer: this.pursuit(this.lane), throttle: this.autoT, brake: this.autoB };
   }
 
