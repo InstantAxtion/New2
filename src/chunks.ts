@@ -454,7 +454,6 @@ export class ChunkManager {
     for (let r = 0; r < rows; r++) {
       const z = z0 + r * step;
       const rx = w.roadX(z);
-      const ry = w.roadY(z);
       const [tx, tz] = w.tangent(z);
       // Right-hand normal is (-tz, tx)
       for (let s = 0; s < 2; s++) {
@@ -462,7 +461,8 @@ export class ChunkManager {
         const o = s === 0 ? -half : half; // lateral offset
         const j = (r * 2 + s);
         pos[j * 3] = rx - tz * o - ox;
-        pos[j * 3 + 1] = ry;
+        // (height taken where the edge actually lands: on a climbing bend the edges sit at other z's)
+        pos[j * 3 + 1] = w.roadY(z + tx * o);
         pos[j * 3 + 2] = z + tx * o - z0;
         uv[j * 2] = s;
         uv[j * 2 + 1] = (z - Math.floor(z0 / 9 / 64) * 9 * 64) / 9;
@@ -517,7 +517,7 @@ export class ChunkManager {
         const rx = w.roadX(z), ry = w.roadY(z);
         const [tx, tz] = w.tangent(z);
         const half = w.roadHalf(z);
-        const P = (o: number, y: number) => [rx - tz * o * side - ox, y, z + tx * o * side - z0];
+        const P = (o: number, y: number) => [rx - tz * o * side - ox, y + w.roadY(z + tx * o * side) - ry, z + tx * o * side - z0];
         kp.push(...P(half - 0.02, ry - 0.05), ...P(half, ry + H), ...P(half + K, ry + H));
         pp.push(...P(half + K, ry + H + 0.002), ...P(half + K + Wd, ry + H + 0.002));
         const v = (z - Math.floor(z0 / 2.4 / 64) * 2.4 * 64) / 2.4;

@@ -105,7 +105,7 @@ export class Traffic {
     if (c.lane !== 1 && w.highwayAt(c.z) < 0.5) c.lane = 1;
     const [tx, tz] = w.tangent(c.z);
     const o = (w.laneOffset(c.z, c.lane) + c.dodge) * c.dir;
-    return { x: w.roadX(c.z) - tz * o, z: c.z + tx * o, y: w.roadY(c.z), tx, tz };
+    return { x: w.roadX(c.z) - tz * o, z: c.z + tx * o, y: w.roadY(c.z + tx * o), tx, tz };
   }
 
   update(dt: number, me: Vehicle, night: boolean, limitAt: (z: number) => number) {
@@ -120,7 +120,9 @@ export class Traffic {
         // Two in five go your way (ahead, a bit slower); the rest come towards you
         const sameWay = Math.random() < 0.4;
         c.dir = sameWay ? fwd : -fwd;
-        c.z = me.z + fwd * (sameWay ? 260 + Math.random() * 200 : 380 + Math.random() * 160);
+        // (while the player is out overtaking, oncoming traffic appears further off, beyond the pass)
+        const passing = this.world.lateral(me.x, me.z) * fwd < 0 && this.world.highwayAt(me.z) < 0.5;
+        c.z = me.z + fwd * (sameWay ? 260 + Math.random() * 200 : passing ? 620 + Math.random() * 110 : 380 + Math.random() * 160);
         const base = c.kind === 'truck' || c.kind === 'bus' ? 62 : c.kind === 'camper' ? 68 : c.kind === 'bike' ? 78 : 75;
         c.want = (base + (Math.random() - 0.5) * 18) / 3.6;
         c.v = c.want;
@@ -143,11 +145,12 @@ export class Traffic {
       let target = Math.min(c.want, Math.sqrt(3.5 / Math.max(k, 1e-4)), limitAt(c.z));
       for (const o of this.pool) {
         if (o === c || !o.active || o.dir !== c.dir || o.lane !== c.lane) continue;
-        const gap = (o.z - c.z) * c.dir - (o.user.length + c.user.length) / 2;
+        const gap = ((o.z - c.z) * c.dir) / Math.abs(w.tangent(c.z)[1]) - (o.user.length + c.user.length) / 2;
         if (gap > 0 && gap < 40) target = Math.min(target, o.v + (gap - 12) * 0.3);
       }
       // Brake for the player if they're in this vehicle's path; oncoming traffic also edges over onto the verge
       let dodge = 0;
+      let nearMe = false;
       {
         const q = this.place(c);
         const fx = q.tx * c.dir, fz = q.tz * c.dir;
@@ -160,7 +163,8 @@ export class Traffic {
         if (ahead > 0 && gap < 70 && c.dir !== fwd && inPath) dodge = 2.1;
         if (ahead > 0 && gap < 45 && Math.abs(side) < clear) {
           const meAlong = me.v * (Math.sin(me.heading) * fx + Math.cos(me.heading) * fz);
-          target = Math.min(target, Math.max(0, meAlong + (gap - 7) * 0.45));
+          target = Math.min(target, Math.max(0, meAlong + (gap - 9) * 0.5));
+          nearMe = gap < 25;
         }
       }
       c.dodge += (dodge - c.dodge) * (1 - Math.exp(-dt * 1.5));
@@ -168,8 +172,10 @@ export class Traffic {
         c.stun -= dt;
         target = 0;
       }
-      c.v += Math.max(-4 * dt, Math.min(2 * dt, Math.max(0, target) - c.v));
-      c.z += c.dir * c.v * dt;
+      // (they brake harder when the player is close in front)
+      c.v += Math.max(-(nearMe ? 7 : 4) * dt, Math.min(2 * dt, Math.max(0, target) - c.v));
+      // Speed is along the road: on a diagonal stretch that's less progress in z
+      c.z += c.dir * c.v * dt * Math.abs(w.tangent(c.z)[1]);
       c.dist += c.v * dt;
       const rel = (c.z - me.z) * fwd;
       // (nobody drives across the water at a ferry crossing: they're on another sailing)
@@ -184,44 +190,7 @@ export class Traffic {
       g.rotation.set(0, Math.atan2(p.tx * c.dir, p.tz * c.dir), 0);
       c.user.animate(c.dist, night);
 
-      // Solid, gentle bumps: push the player out of the other vehicle and match speeds
-      const fx = p.tx * c.dir, fz = p.tz * c.dir;
-      const dx = me.x - p.x, dz = me.z - p.z;
-      const along = dx * fx + dz * fz;
-      const lat = -dx * fz + dz * fx;
-      const halfL = (c.user.length + me.spec.length) / 2 - 0.2;
-      const halfW = (WIDTH[c.kind] + me.spec.width) / 2 - 0.1;
-      const penW = halfW - Math.abs(lat);
-      // Measure from the end the player came from: at speed a whole car length can pass in one
-      // frame, and the overlap would otherwise push the player out through the far side
-      const end = c.end || Math.sign(along) || 1;
-      const penA = halfL - along * end;
-      const hit = penW > 0 && penA > 0 && penA < halfL * 2 + 4 && Math.abs(p.y - me.y) < 2.5;
-      if (!hit) c.end = Math.abs(along) > halfL - 0.05 || penW <= 0 ? Math.sign(along) || end : end;
-      if (hit) {
-        me.bump = 1;
-        const same = c.dir === fwd;
-        if (penA < penW || Math.sign(along) !== end) {
-          // Nose to tail (or head-on): separate along the road, back to the side we came from
-          const s2 = end;
-          me.x += fx * s2 * penA;
-          me.z += fz * s2 * penA;
-          if (same) {
-            if (along < 0) me.v = Math.min(me.v, c.v * 0.85);
-            else c.v = Math.min(c.v, Math.max(0, me.v) * 0.85);
-          } else {
-            me.v = -Math.sign(me.v || 1) * Math.min(Math.abs(me.v) * 0.25, 3);
-            c.v = 0;
-            c.stun = 2.5;
-          }
-        } else {
-          // Side swipe: nudge apart
-          const s2 = Math.sign(lat) || 1;
-          me.x += -fz * s2 * penW;
-          me.z += fx * s2 * penW;
-          me.v *= 0.92;
-        }
-      }
+      // (no collisions: you drive straight through other traffic, like a ghost)
     }
   }
 
@@ -231,7 +200,7 @@ export class Traffic {
     let best: { gap: number; v: number } | null = null;
     for (const c of this.pool) {
       if (!c.active || c.dir !== fwd || c.lane !== (lane >= 1 ? 1 : -1)) continue;
-      const gap = (c.z - me.z) * fwd - (c.user.length + me.spec.length) / 2;
+      const gap = ((c.z - me.z) * fwd) / Math.abs(this.world.tangent(me.z)[1]) - (c.user.length + me.spec.length) / 2;
       if (gap > -2 && (!best || gap < best.gap)) best = { gap, v: c.v };
     }
     return best;

@@ -834,7 +834,11 @@ export class World {
 
   /** Height of the trail surface at z (a smoothed version of the land, never far from the road's level). */
   trailY(z: number): number {
-    return this.roadY(z) - 0.1 + noise1(z / 160, this.seed + 446) * 1.6 * (this.trail(z)?.e ?? 0);
+    const tr = this.trail(z);
+    if (!tr) return this.roadY(z) - 0.1;
+    // (level with the road where the track runs close beside it, so the ground can't rise over the tarmac)
+    const away = Math.abs(tr.u) - this.roadHalf(z);
+    return this.roadY(z) - 0.12 + noise1(z / 160, this.seed + 446) * 1.6 * tr.e * smoothstep(4, 22, away);
   }
 
   /**

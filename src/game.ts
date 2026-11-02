@@ -1011,7 +1011,7 @@ export class Game {
   private straightAhead(dist: number) {
     const v = this.vehicle;
     const dir = Math.cos(v.heading) >= 0 ? 1 : -1;
-    for (let d = 0; d <= dist; d += 15) if (Math.abs(this.world.curvature(v.z + d * dir)) > 0.0045) return false;
+    for (let d = 0; d <= dist; d += 15) if (Math.abs(this.world.curvature(v.z + d * dir)) > 0.0065) return false;
     return true;
   }
 
@@ -1199,8 +1199,11 @@ export class Game {
       const highway = this.world.highwayAt(v.z) > 0.6;
       const fastLaneFree = (!t.leader(v, -1) || t.leader(v, -1)!.gap > 35) && this.world.highwayAt(v.z + 450 * Math.sign(Math.cos(v.heading))) > 0.6;
       // Keep right: on an ordinary road only pass something really slow, on a long clear straight
+      // How long the pass would take, and so how much clear road (and gap in the oncoming traffic) it needs
+      const passT = lead ? Math.min(12, (lead.gap + 30) / Math.max(free - lead.v, 2)) : 12;
+      const passD = Math.min(340, free * passT + 50);
       if (lead && lead.gap < 80 && lead.v < free - style.overtake && limit === Infinity &&
-          (highway ? fastLaneFree : lead.v < free * 0.88 && this.clearRoadAhead(300) && t.oncomingClear(v, 340, 12))) {
+          (highway ? fastLaneFree : lead.v < free * 0.92 && this.clearRoadAhead(passD) && t.oncomingClear(v, 70, passT * 1.25 + 1))) {
         this.passing = true;
         this.passedBeside = false;
         this.passTime = 0;
@@ -1216,14 +1219,36 @@ export class Game {
       const danger = hw ? hwEnds : !t.oncomingClear(v, 90, 3.5) || limit !== Infinity || this.world.highwayAt(v.z + 80 * Math.sign(Math.cos(v.heading))) > 0.05;
       // Only pull back in with room to spare: never onto the car we were passing
       const back = t.leader(v, 1);
-      const roomy = !beside && (!back || back.gap > 6 + Math.max(v.v, 0) * 0.3);
-      if (roomy && (this.passedBeside || this.passTime > 14 || danger)) {
+      // Room to pull in without braking hard: more the faster we're closing on what's ahead
+      const closing = back ? Math.max(0, v.v - back.v) : 0;
+      const need = 6 + Math.max(v.v, 0) * 0.3 + (closing * closing) / 5;
+      const roomy = !beside && (!back || back.gap > need);
+      // Another slow one just ahead in the lane: carry on past that too while it's still safe
+      // rather than squeezing into the gap between them and braking
+      const free = Math.min(v.cruise * style.pace, v.safeSpeed(style.lat), limit);
+      if (!danger && this.passedBeside && back && back.gap < need + 45 && back.v < free - 3 &&
+          (hw || t.oncomingClear(v, back.gap + 90, 8))) {
+        this.passedBeside = false;
+        this.passTime = Math.min(this.passTime, 6);
+      }
+      if (danger && !this.passedBeside && !beside) {
+        // Something's coming before we've got alongside: call the pass off and drop back in behind
+        this.passing = false;
+        v.lane = 1;
+        env.leader = back;
+      } else if ((roomy && (this.passedBeside || this.passTime > 14)) || (danger && !beside && (!back || back.gap > 4))) {
         this.passing = false;
         v.lane = 1;
         env.leader = t.leader(v, 1);
       } else if ((danger || this.passTime > 14) && !roomy && back && !beside) {
         // Running out of road with it still just ahead: ease off and tuck in behind it
         env.limit = Math.min(limit, Math.max(0, back.v - 4));
+      }
+      // Not across in the other lane yet: hang back off the one we're passing until we are
+      {
+        const fw = Math.cos(v.heading) >= 0 ? 1 : -1;
+        const over = this.world.lateral(v.x, v.z) * fw < (this.world.laneOffset(v.z, 1) + this.world.laneOffset(v.z, -1)) / 2 - 0.6;
+        if (!over && back && back.gap < 14) env.limit = Math.min(env.limit, back.v + 0.5 + Math.max(0, back.gap - 4) * 0.3);
       }
       if (danger && beside) env.limit = Math.min(limit, v.v + 3); // get past quickly
       if (this.world.highwayAt(v.z) > 0.6 && this.passing) env.leader = t.leader(v, -1);
