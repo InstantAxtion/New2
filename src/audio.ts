@@ -201,6 +201,7 @@ export class EngineSound {
       }
       src.connect(f).connect(shape).connect(g).connect(this.cabin);
       src.start();
+      this.bedSrc.set(g, src);
       return g;
     };
     this.amb = {
@@ -275,6 +276,60 @@ export class EngineSound {
     this.amb.crickets.gain.value = 0;
     this.amb.birds.connect(this.cabin);
     this.amb.crickets.connect(this.cabin);
+    void this.loadRecordings(ctx);
+  }
+
+  private bedSrc = new Map<GainNode, AudioBufferSourceNode>();
+  /** Recorded ambience in use (CC0 recordings from OpenGameArt): these replace the synthesised versions. */
+  private recorded = new Set<keyof AmbientMix>();
+  private waveBufs: AudioBuffer[] = [];
+  private waveTimer = 2;
+
+  private async loadRecordings(ctx: AudioContext) {
+    const get = async (name: string) => {
+      const r = await fetch(`./sounds/${name}.ogg`);
+      if (!r.ok) throw new Error('Missing sound ' + name);
+      return ctx.decodeAudioData(await r.arrayBuffer());
+    };
+    // Each loop at a level that matches the old synthesised sound, starting somewhere random
+    const loops: [keyof AmbientMix, string, number][] = [['rain', 'rain', 3.5], ['wind', 'wind', 1.1], ['birds', 'birds', 2.5], ['crickets', 'crickets', 0.7]];
+    const waves = Promise.all(['wave01', 'wave02'].map((n) => get(n).catch(() => null)));
+    await Promise.all(loops.map(async ([k, name, level]) => {
+      try {
+        const buf = await get(name);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        const g = ctx.createGain();
+        g.gain.value = level;
+        src.connect(g).connect(this.amb[k]);
+        src.start(0, Math.random() * buf.duration);
+        // Retire the synthesised bed it replaces
+        const old = this.bedSrc.get(this.amb[k]);
+        if (old) {
+          old.stop();
+          old.disconnect();
+        }
+        this.recorded.add(k);
+      } catch (e) {
+        console.warn(e);
+      }
+    }));
+    this.waveBufs = (await waves).filter((b): b is AudioBuffer => !!b);
+  }
+
+  /** One wave breaking on the shore (a recording), over the synthesised wash of the sea. */
+  private wave() {
+    const ctx = this.ctx!;
+    const buf = this.waveBufs[Math.floor(Math.random() * this.waveBufs.length)];
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = 0.85 + Math.random() * 0.25;
+    const g = ctx.createGain();
+    g.gain.value = 1.4 + Math.random() * 0.8;
+    src.connect(g).connect(this.amb.waves);
+    src.start();
+    src.onended = () => g.disconnect();
   }
 
   suspend() {
@@ -570,11 +625,16 @@ export class EngineSound {
       this.birdTimer -= dt;
       if (this.birdTimer <= 0) {
         this.birdTimer = 0.6 + Math.random() * 2.5;
-        if (mix.birds > 0.05 && Math.random() < mix.birds) {
+        if (mix.birds > 0.05 && Math.random() < mix.birds && !this.recorded.has('birds')) {
           const base = 2200 + Math.random() * 2400;
           this.chirp(this.amb.birds, base, 0.7 + Math.random() * 0.8, 0.06 + Math.random() * 0.08, 1 + Math.floor(Math.random() * 4));
         }
-        if (mix.crickets > 0.05) this.chirp(this.amb.crickets, 4300, 1.02, 0.03, 3);
+        if (mix.crickets > 0.05 && !this.recorded.has('crickets')) this.chirp(this.amb.crickets, 4300, 1.02, 0.03, 3);
+      }
+      this.waveTimer -= dt;
+      if (this.waveTimer <= 0) {
+        this.waveTimer = 3 + Math.random() * 5;
+        if (mix.waves > 0.1 && this.waveBufs.length) this.wave();
       }
     }
   }

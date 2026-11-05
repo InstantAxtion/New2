@@ -48,7 +48,7 @@ Each engine sounds different (V8, V12, flat-six, four- and six-cylinder, diesel,
 This trip, all-time distance and time, longest trip, top speed, and distance by region and by car. A resettable trip meter, compass and altitude on the HUD (or a minimal HUD). The game remembers where you stopped — **📍 Places → Continue** — and you can ☆ save favourite places to come back to. A 🛂 passport collects a stamp for every region, landmark, stop and sight you find, and a 📔 journey log keeps each trip with its route map.
 
 ## Graphics
-Photo-real ground and road textures (CC0, Poly Haven), trees made of leaf and needle cards that sway in the wind, physically based lighting with sky reflections, shadows, filmic tone mapping, bloom, sun shafts and a lens flare. Ultra, High (default), Medium or Low, with resolution that adapts to keep it smooth; a sound mixer, and a reduce-motion option; it steps down automatically if the phone can't keep up. Landscape or vertical (Settings → Screen).
+Photo-real ground, road, cobble and pavement textures and photo-scanned boulders (CC0, Poly Haven), recorded rain, birdsong, crickets, wind and waves (CC0, OpenGameArt), trees made of leaf and needle cards that sway in the wind, physically based lighting with sky reflections, shadows, filmic tone mapping, bloom, sun shafts and a lens flare. Ultra, High (default), Medium or Low, with resolution that adapts to keep it smooth; a sound mixer, and a reduce-motion option; it steps down automatically if the phone can't keep up. Landscape or vertical (Settings → Screen).
 
 ## Install on Android
 Every push builds a debug APK in GitHub Actions: open **Releases** ("Latest APK build") or **Actions** → **Build & test** → **endless-drive-apk**. Open the `.apk` on your phone (allow "install unknown apps").
@@ -63,6 +63,6 @@ npm test             # world, auto-drive, music and projection tests
 npm run build && npx cap sync android && (cd android && ./gradlew assembleDebug)
 ```
 
-Icons and splash: `python3 resources/make_icons.py`. Textures: `public/textures/CREDITS.md`.
+Icons and splash: `python3 resources/make_icons.py`. Credits: `public/textures/CREDITS.md`, `public/models/CREDITS.md`, `public/sounds/CREDITS.md`.
 
 Code map: `src/world/` (regions, road, terrain, towns, bridges), `src/chunks.ts` (terrain, road, bridges, scenery), `src/foliage.ts`, `src/props.ts`, `src/special.ts` (city), `src/carspecs.ts` + `src/carbody.ts` + `src/carparts.ts` + `src/cockpit.ts` + `src/cars.ts` (cars), `src/drive.ts` (physics, auto-drive), `src/traffic.ts` + `src/vehicles.ts`, `src/peds.ts`, `src/weather.ts`, `src/sky.ts`, `src/audio.ts`, `src/map.ts`, `src/music.ts` + `src/youtube.ts` + `src/video.ts` + `src/tracks.ts`, `src/radio.ts`, `src/stats.ts`, `src/ui.ts`, `src/game.ts`.

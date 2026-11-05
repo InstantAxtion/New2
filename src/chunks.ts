@@ -146,8 +146,15 @@ export class ChunkManager {
     (this.highwayMat as THREE.MeshStandardMaterial).map = this.highwayTex;
     const gm = { map: this.gravelTex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
     this.gravelMat = tier === 'pbr' ? new THREE.MeshStandardMaterial({ ...gm, roughness: 0.95 }) : new THREE.MeshLambertMaterial(gm);
-    const cm = { map: this.cobbleTex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
-    this.cobbleMat = tier === 'pbr' ? new THREE.MeshStandardMaterial({ ...cm, roughness: 0.8 }) : new THREE.MeshLambertMaterial(cm);
+    const cm = { map: assets.cobble?.map ?? this.cobbleTex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+    this.cobbleMat = tier === 'pbr'
+      ? new THREE.MeshStandardMaterial({ ...cm, roughness: 0.85, normalMap: assets.cobble?.normal ?? null, normalScale: new THREE.Vector2(1.2, 1.2) })
+      : new THREE.MeshLambertMaterial(cm);
+    if (assets.paving) {
+      this.pavingMat.map = assets.paving.map;
+      this.pavingMat.normalMap = tier === 'pbr' ? assets.paving.normal : null;
+      this.pavingMat.needsUpdate = true;
+    }
     if (tier === 'pbr') {
       addPuddles(this.cobbleMat as THREE.MeshStandardMaterial);
       addPuddles(this.roadMat as THREE.MeshStandardMaterial);
@@ -486,6 +493,17 @@ export class ChunkManager {
     const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true;
     return m;
+  }
+
+  private rockMats: THREE.Material[] = [];
+  /** A scanned boulder's material: its photo texture scaled to the same grey as the old rocks, tinted per instance. */
+  private rockMat(k: number): THREE.Material {
+    if (!this.rockMats[k]) {
+      const rk = assets.rocks[k];
+      const c = new THREE.Color(0x7e7a75).multiplyScalar(1 / Math.max(rk.avg, 0.05));
+      this.rockMats[k] = new THREE.MeshStandardMaterial({ map: rk.map, normalMap: rk.normal, color: c, roughness: 0.92, metalness: 0 });
+    }
+    return this.rockMats[k];
   }
 
   private pavingMat = new THREE.MeshStandardMaterial({ map: pavingTexture(), roughness: 0.9 });
@@ -1289,6 +1307,26 @@ export class ChunkManager {
       out.push(im);
     }
     for (const [type, mats] of items) {
+      // Good graphics: rocks are photo-scanned boulders, four shapes shared out between them
+      if (type === 'rock' && this.quality.tier === 'pbr' && assets.rocks.length) {
+        const ts = tints.get(type)!;
+        const n = assets.rocks.length;
+        const pick = (m: THREE.Matrix4) => Math.abs(Math.floor(m.elements[12] * 7.3 + m.elements[14] * 3.1)) % n;
+        assets.rocks.forEach((rk, k) => {
+          const mine = mats.map((m, j) => [m, j] as const).filter(([m]) => pick(m) === k);
+          if (!mine.length) return;
+          const im = new THREE.InstancedMesh(rk.geo, this.rockMat(k), mine.length);
+          mine.forEach(([m, j], i) => {
+            im.setMatrixAt(i, m);
+            im.setColorAt(i, ts[j]);
+          });
+          im.computeBoundingSphere();
+          im.castShadow = true;
+          im.receiveShadow = true;
+          out.push(im);
+        });
+        continue;
+      }
       // Good graphics: real trees made of bark and leaf cards
       const parts = this.quality.tier === 'pbr' ? (foliageParts(type) ?? specialParts(type)) : null;
       if (parts) {
