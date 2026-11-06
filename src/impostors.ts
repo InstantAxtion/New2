@@ -120,6 +120,11 @@ export function impostorMaterials(name: string, type: PropType, height: number) 
         vec4 bTex = mix(bc0, bc1, bbBlend);
         vec3 bn = mix(texture2D(uNorm, bbUv0).xyz, texture2D(uNorm, bbUv1).xyz, bbBlend);
         bbLeaf = bn.z;
+        // Thin trunks and twigs fade out in the smaller mipmaps: keep them solid at a distance
+        vec2 tsz = vec2(textureSize(map, 0));
+        vec2 ddx = dFdx(bbUv0 * tsz), ddy = dFdy(bbUv0 * tsz);
+        float lod = max(0.0, 0.5 * log2(max(dot(ddx, ddx), dot(ddy, ddy))));
+        bTex.a = clamp(bTex.a * (1.0 + 0.45 * lod), 0.0, 1.0);
         diffuseColor *= bTex;
         diffuseColor.rgb *= mix(vec3(1.0), uLeafTint, bbLeaf);`)
       .replace('#include <normal_fragment_maps>', /* glsl */ `#include <normal_fragment_maps>

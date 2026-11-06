@@ -52,6 +52,8 @@ function boxSurf(w: number, h: number, d: number): number {
   if (!wallSurf) return 0;
   const big = (w >= 2.2 ? 1 : 0) + (h >= 2.2 ? 1 : 0) + (d >= 2.2 ? 1 : 0);
   if (big < 2) return 0;
+  // (thin bands, sills and eaves stay plain paint)
+  if (h < 0.3) return 0;
   return h < 1 && wallSurf !== SURF.wood ? SURF.stone : wallSurf;
 }
 const box = (w: number, h: number, d: number, hex: number, x = 0, y = 0, z = 0) =>

@@ -63,6 +63,6 @@ npm test             # world, auto-drive, music and projection tests
 npm run build && npx cap sync android && (cd android && ./gradlew assembleDebug)
 ```
 
-Icons and splash: `python3 resources/make_icons.py`. Credits: `public/textures/CREDITS.md`, `public/models/CREDITS.md`, `public/sounds/CREDITS.md`.
+Icons and splash: `python3 resources/make_icons.py`. Credits: `public/textures/CREDITS.md`, `public/models/CREDITS.md`, `public/impostors/CREDITS.md`, `public/sounds/CREDITS.md`.
 
 Code map: `src/world/` (regions, road, terrain, towns, bridges), `src/chunks.ts` (terrain, road, bridges, scenery), `src/foliage.ts`, `src/props.ts`, `src/special.ts` (city), `src/carspecs.ts` + `src/carbody.ts` + `src/carparts.ts` + `src/cockpit.ts` + `src/cars.ts` (cars), `src/drive.ts` (physics, auto-drive), `src/traffic.ts` + `src/vehicles.ts`, `src/peds.ts`, `src/weather.ts`, `src/sky.ts`, `src/audio.ts`, `src/map.ts`, `src/music.ts` + `src/youtube.ts` + `src/video.ts` + `src/tracks.ts`, `src/radio.ts`, `src/stats.ts`, `src/ui.ts`, `src/game.ts`.

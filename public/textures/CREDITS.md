@@ -5,3 +5,4 @@ Resized for the game.
 rocky_trail (gravel.jpg).
 dry_decay_leaves, sand_01, rock_face_03, snow_02 and the others above also supply the *_nor.jpg normal maps (1K).
 cobblestone_floor_03 (cobble.jpg, cobble_nor.jpg) and concrete_pavement (paving.jpg, paving_nor.jpg), Poly Haven, CC0.
+white_stucco, red_brick, brown_planks_05, clay_roof_tiles, rock_wall_08, stone_wall (surfaces.jpg, surfaces_nor.jpg), Poly Haven, CC0.
