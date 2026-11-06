@@ -93,13 +93,32 @@ function splatMaterial(): THREE.Material {
           float rock = smoothstep(0.32, 0.55, slope + (dA.g - 0.5) * 0.2) * (1.0 - w[5] * 0.6);
           for (int i = 0; i < 6; i++) w[i] *= 1.0 - rock;
           w[4] += rock;
+          vec3 sm[6];
+          for (int i = 0; i < 6; i++) sm[i] = vec3(0.0);
+          if (w[0] > 0.01) sm[0] = layer(tGrass, p, dx, dy);
+          if (w[1] > 0.01) sm[1] = layer(tDry, p, dx, dy);
+          if (w[2] > 0.01) sm[2] = layer(tLeaves, p, dx, dy);
+          if (w[3] > 0.01) sm[3] = layer(tSand, p, dx, dy);
+          if (w[4] > 0.01) sm[4] = mix(layer(tRock, p * 0.5, dx * 0.5, dy * 0.5), triRock(tRock, vWPos, vWNrm), smoothstep(0.3, 0.7, slope));
+          if (w[5] > 0.01) sm[5] = layer(tSnow, p, dx, dy);
+          // Height blending: where layers meet, the "taller" parts of each photo (stones, tufts,
+          // brighter = higher) win, so sand settles between rocks rather than fading through them
+          float hb[6];
+          float top = 0.0;
+          for (int i = 0; i < 6; i++) {
+            float hh = w[i] > 0.01 ? dot(sm[i], vec3(0.2126, 0.7152, 0.0722)) / max(dot(avg[i], vec3(0.2126, 0.7152, 0.0722)), 0.02) : 0.0;
+            hb[i] = w[i] > 0.01 ? w[i] + hh * 0.35 : 0.0;
+            top = max(top, hb[i]);
+          }
+          float hsum = 0.0;
+          for (int i = 0; i < 6; i++) { hb[i] = max(hb[i] - top + 0.22, 0.0); hsum += hb[i]; }
           vec3 tex = vec3(0.0), base = vec3(0.0);
-          if (w[0] > 0.01) { tex += w[0] * layer(tGrass, p, dx, dy); base += w[0] * avg[0]; }
-          if (w[1] > 0.01) { tex += w[1] * layer(tDry, p, dx, dy); base += w[1] * avg[1]; }
-          if (w[2] > 0.01) { tex += w[2] * layer(tLeaves, p, dx, dy); base += w[2] * avg[2]; }
-          if (w[3] > 0.01) { tex += w[3] * layer(tSand, p, dx, dy); base += w[3] * avg[3]; }
-          if (w[4] > 0.01) { tex += w[4] * mix(layer(tRock, p * 0.5, dx * 0.5, dy * 0.5), triRock(tRock, vWPos, vWNrm), smoothstep(0.3, 0.7, slope)); base += w[4] * avg[4]; }
-          if (w[5] > 0.01) { tex += w[5] * layer(tSnow, p, dx, dy); base += w[5] * avg[5]; }
+          for (int i = 0; i < 6; i++) {
+            float wi = hb[i] / max(hsum, 1e-4);
+            tex += wi * sm[i];
+            base += wi * avg[i];
+            w[i] = wi;
+          }
           // The biome colour steers the hue; the photo gives the detail
           // Hue and brightness are matched separately so neither clips
           const vec3 LW = vec3(0.2126, 0.7152, 0.0722);
@@ -199,19 +218,91 @@ export function propMaterial(tier: Tier): THREE.Material {
     tier === 'pbr'
       ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 })
       : new THREE.MeshLambertMaterial({ vertexColors: true });
+  const surf = tier === 'pbr' ? assets.surfaces : null;
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = shared.time;
     sh.uniforms.uWind = shared.wind;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float sway;\nuniform float uTime;\nuniform float uWind;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SWAY_VERT);
+    if (surf) surfaces(sh, surf);
   };
   return m;
 }
 
+/**
+ * Photo surfaces on props (walls, roofs, rock): each part names a layer of a texture array, which
+ * is projected along whichever of the prop's own axes the surface faces most, so boxes built from
+ * primitives get brick, siding or tiles without UVs. The photo adds brightness detail on top of
+ * the paint colour (or, for brick and stone, its own colour) plus a normal map.
+ */
+function surfaces(sh: THREE.WebGLProgramParametersWithUniforms, surf: NonNullable<typeof assets.surfaces>) {
+  sh.uniforms.uSurf = { value: surf.map };
+  sh.uniforms.uSurfN = { value: surf.normal };
+  sh.uniforms.uSurfAvg = { value: surf.avg };
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', `#include <common>
+      attribute float surf;
+      flat varying float vSurf;
+      varying vec3 vOP;
+      varying vec3 vON;
+      varying vec3 vAx;
+      varying vec3 vAy;
+      varying vec3 vAz;`)
+    .replace('#include <fog_vertex>', `#include <fog_vertex>
+      vSurf = surf;
+      vOP = position;
+      vON = normal;
+      mat3 sim = mat3(1.0);
+      #ifdef USE_INSTANCING
+        sim = mat3(instanceMatrix);
+      #endif
+      vAx = normalize(normalMatrix * (sim * vec3(1.0, 0.0, 0.0)));
+      vAy = normalize(normalMatrix * (sim * vec3(0.0, 1.0, 0.0)));
+      vAz = normalize(normalMatrix * (sim * vec3(0.0, 0.0, 1.0)));`);
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', `#include <common>
+      uniform highp sampler2DArray uSurf;
+      uniform highp sampler2DArray uSurfN;
+      uniform float uSurfAvg[6];
+      flat varying float vSurf;
+      varying vec3 vOP;
+      varying vec3 vON;
+      varying vec3 vAx;
+      varying vec3 vAy;
+      varying vec3 vAz;
+      // Metres per tile and how much of the photo's own colour to use, per layer
+      const float SURF_SIZE[6] = float[6](2.0, 1.4, 1.2, 3.0, 3.5, 2.0);
+      const float SURF_COLOUR[6] = float[6](0.0, 0.9, 0.0, 0.0, 0.0, 0.55);
+      const float SURF_RELIEF[6] = float[6](0.6, 1.0, 0.9, 1.0, 1.0, 1.0);`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      int sLayer = int(vSurf + 0.5) - 1;
+      vec2 sUv = vec2(0.0);
+      vec3 sT = vec3(0.0), sB = vec3(0.0);
+      if (sLayer >= 0) {
+        vec3 an = abs(vON);
+        // Project along the axis the surface faces most: u across, v up (or along z on tops)
+        if (an.y > an.x && an.y > an.z) { sUv = vOP.xz * vec2(1.0, -sign(vON.y)); sT = vAx; sB = -sign(vON.y) * vAz; }
+        else if (an.x > an.z) { sUv = vec2(-sign(vON.x) * vOP.z, vOP.y); sT = -sign(vON.x) * vAz; sB = vAy; }
+        else { sUv = vec2(sign(vON.z) * vOP.x, vOP.y); sT = sign(vON.z) * vAx; sB = vAy; }
+        sUv /= SURF_SIZE[sLayer];
+        vec3 photo = pow(texture(uSurf, vec3(sUv, float(sLayer))).rgb, vec3(2.2));
+        float lum = dot(photo, vec3(0.2126, 0.7152, 0.0722)) / max(uSurfAvg[sLayer], 0.02);
+        diffuseColor.rgb = mix(diffuseColor.rgb * lum, photo * 1.1, SURF_COLOUR[sLayer]);
+        // Darker where walls meet the ground (light can't get in under there)
+        diffuseColor.rgb *= mix(0.6, 1.0, smoothstep(-0.1, 1.4, vOP.y));
+      }`)
+    .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      if (sLayer >= 0) {
+        vec3 tn = texture(uSurfN, vec3(sUv, float(sLayer))).xyz * 2.0 - 1.0;
+        tn.xy *= SURF_RELIEF[sLayer];
+        normal = normalize(sT * tn.x + sB * tn.y + normal * max(tn.z, 0.2));
+      }`);
+}
+
 /** Instanced grass tufts. Normals point up so they light like the ground they grow on. */
 export function grassMaterial(tier: Tier): THREE.Material {
-  const opts = { map: grassTexture(), alphaTest: 0.45, side: THREE.DoubleSide };
+  const opts = { map: (tier === 'pbr' && assets.grassCard) || grassTexture(), alphaTest: 0.45, side: THREE.DoubleSide };
   const m = tier === 'pbr' ? new THREE.MeshStandardMaterial({ ...opts, roughness: 1 }) : new THREE.MeshLambertMaterial(opts);
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = shared.time;
@@ -360,17 +451,18 @@ export function puddleAt(x: number, z: number, wet: number): number {
 }
 
 /** Puddles on a wet road: patches of dark, mirror-smooth water in the dips. */
-export function addPuddles(m: THREE.MeshStandardMaterial, muddy = false) {
+export function addPuddles(m: THREE.MeshStandardMaterial, muddy = false, lanes = 0) {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uWet = shared.wet;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vPud;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPud = (modelMatrix * vec4(transformed, 1.0)).xz;');
+      .replace('#include <common>', '#include <common>\nvarying vec2 vPud;\nvarying vec2 vRoad;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPud = (modelMatrix * vec4(transformed, 1.0)).xz;\nvRoad = uv;');
     sh.fragmentShader = sh.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
         varying vec2 vPud;
+        varying vec2 vRoad;
         uniform float uWet;
         float pudH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float pudN(vec2 p) {
@@ -382,6 +474,29 @@ export function addPuddles(m: THREE.MeshStandardMaterial, muddy = false) {
       .replace(
         '#include <map_fragment>',
         `#include <map_fragment>
+        // Wear: polished wheel tracks in each lane, repair patches, a dusty edge and slow changes in tone
+        float across = vRoad.x;
+        float track = 0.0;
+        ${lanes > 0 ? `for (int k = 0; k < ${lanes}; k++) {
+          float c = (float(k) + 0.5) / ${lanes.toFixed(1)};
+          float hw = 0.21 / ${lanes.toFixed(1)};
+          float t1 = (across - c + hw) / 0.03, t2 = (across - c - hw) / 0.03;
+          track += exp(-t1 * t1) + exp(-t2 * t2);
+        }` : ''}
+        float tone = pudN(vPud * 0.018) * 0.6 + pudN(vPud * 0.07 + 3.0) * 0.4;
+        diffuseColor.rgb *= 0.9 + tone * 0.2;
+        diffuseColor.rgb *= 1.0 - track * ${muddy ? '-0.1' : '0.12'};
+        float along = vRoad.y * 9.0;
+        float cell = floor(along / 26.0);
+        float ph = pudH(vec2(cell, 3.7));
+        if (ph < ${muddy ? '0.0' : '0.3'}) {
+          float a0 = fract(ph * 13.1) * 0.6 + 0.05, a1 = a0 + 0.15 + fract(ph * 7.7) * 0.3;
+          float l = fract(along / 26.0), l0 = fract(ph * 5.3) * 0.5, l1 = l0 + 0.2 + fract(ph * 3.1) * 0.25;
+          float rpatch = step(a0, across) * step(across, a1) * step(l0, l) * step(l, l1);
+          diffuseColor.rgb *= 1.0 - rpatch * 0.22;
+        }
+        float edge = 1.0 - smoothstep(0.0, 0.05 + pudN(vPud * 0.6) * 0.04, min(across, 1.0 - across));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.26, 0.23, 0.19), edge * 0.55);
         float pn = pudN(vPud * 0.16) * 0.65 + pudN(vPud * 0.55 + 7.0) * 0.35;
         float puddle = smoothstep(0.6, 0.66, pn) * smoothstep(0.4, 0.9, uWet);
         diffuseColor.rgb *= 1.0 - puddle * ${muddy ? '0.25' : '0.55'};
@@ -405,7 +520,7 @@ export function addPuddles(m: THREE.MeshStandardMaterial, muddy = false) {
     sh.uniforms.uTime = shared.time;
     sh.fragmentShader = sh.fragmentShader.replace('uniform float uWet;', 'uniform float uWet;\nuniform float uTime;');
   };
-  m.customProgramCacheKey = () => 'puddles' + (muddy ? 'm' : '');
+  m.customProgramCacheKey = () => 'puddles' + (muddy ? 'm' : '') + lanes;
 }
 
 /** Car paint in the weather: raindrops bead on it, and snow settles on the roof and bonnet. */

@@ -14,11 +14,39 @@ import { cobbleTexture, glowTexture, gravelTexture, highwayTexture, pavingTextur
 /** Soft paint colours for town houses (multiplied over the white walls). */
 const HOUSE_PAINT = [0xffffff, 0xfff1d8, 0xdfe9f4, 0xe2ecd9, 0xf6dcd6, 0xfbeab8, 0xe6e2dc, 0xd9c3b0, 0xcfe0e3];
 import { assets } from './assets';
+import { hasImpostors, impostorGeometry, impostorMaterials, impostorSet } from './impostors';
 import { buildStop } from './stops';
 import { buildLandmark } from './landmarks';
 import { buildSigns } from './signs';
 
 export const CHUNK = 64;
+
+/** Ground contact shadow size (x by z metres, before the prop's own scale) for props that get one. */
+const FOOTPRINT: Partial<Record<PropType, [number, number]>> = {
+  house: [9.5, 8.5], shop: [11, 9], cabin: [7.5, 7], barn: [13, 11], farmhouse: [16, 9.5], hut: [5, 5],
+  lighthouse: [6, 6], windmill: [7, 7], rock: [4.2, 4.2], rockSnow: [3.8, 3.8], mesaRock: [17, 17], hoodoo: [5, 5],
+  tree: [4.5, 4.5], tree2: [4.5, 4.5], treeAutumn: [4.5, 4.5], cherry: [4, 4], pine: [4, 4], pine2: [4, 4], pineSnow: [4, 4],
+  deadTree: [2.5, 2.5], palm: [3, 3], jungleTree: [5, 5], redwood: [5, 5], acacia: [5, 5], maple: [4.5, 4.5], cypress: [2.2, 2.2],
+};
+
+/** Alpha for a contact shadow: dark in the middle, fading out in a rounded square. */
+function aoTexture(): THREE.Texture {
+  const S = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  const im = g.createImageData(S, S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const u = Math.abs((x + 0.5) / S * 2 - 1), v = Math.abs((y + 0.5) / S * 2 - 1);
+    const d = Math.pow(Math.pow(u, 4) + Math.pow(v, 4), 0.25);
+    const a = Math.pow(Math.max(0, 1 - d), 1.6);
+    const j = (y * S + x) * 4;
+    im.data[j] = im.data[j + 1] = im.data[j + 2] = Math.round(a * 255);
+    im.data[j + 3] = 255;
+  }
+  g.putImageData(im, 0, 0);
+  return new THREE.CanvasTexture(c);
+}
 
 export interface Quality {
   /** Terrain reaches this far either side of the road (x metres). */
@@ -157,9 +185,9 @@ export class ChunkManager {
     }
     if (tier === 'pbr') {
       addPuddles(this.cobbleMat as THREE.MeshStandardMaterial);
-      addPuddles(this.roadMat as THREE.MeshStandardMaterial);
-      addPuddles(this.highwayMat as THREE.MeshStandardMaterial);
-      addPuddles(this.gravelMat as THREE.MeshStandardMaterial, true);
+      addPuddles(this.roadMat as THREE.MeshStandardMaterial, false, 2);
+      addPuddles(this.highwayMat as THREE.MeshStandardMaterial, false, 4);
+      addPuddles(this.gravelMat as THREE.MeshStandardMaterial, true, 2);
     }
   }
 
@@ -494,6 +522,13 @@ export class ChunkManager {
     m.receiveShadow = true;
     return m;
   }
+
+  /** A soft, rounded-square dark patch (contact shadow) laid on the ground. */
+  private aoGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  private aoMat = new THREE.MeshBasicMaterial({
+    color: 0x000000, transparent: true, depthWrite: false, alphaMap: aoTexture(), opacity: 0.5,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+  });
 
   private rockMats: THREE.Material[] = [];
   /** A scanned boulder's material: its photo texture scaled to the same grey as the old rocks, tinted per instance. */
@@ -1306,6 +1341,33 @@ export class ChunkManager {
       im.computeBoundingSphere();
       out.push(im);
     }
+    // Contact shadows: a soft dark patch on the ground under buildings, rocks and trees
+    if (this.quality.tier === 'pbr') {
+      const dm: THREE.Matrix4[] = [];
+      const p = new THREE.Vector3(), qq = new THREE.Quaternion(), sc = new THREE.Vector3();
+      const n = new THREE.Vector3(), yAxis = new THREE.Vector3(0, 1, 0), tilt = new THREE.Quaternion();
+      for (const [type, mats] of items) {
+        const f = FOOTPRINT[type];
+        if (!f) continue;
+        for (const m of mats) {
+          m.decompose(p, qq, sc);
+          const wx = p.x + ox, wz = p.z + z0;
+          // Lie on the slope of the ground
+          const e = 1.5;
+          n.set(w.height(wx - e, wz) - w.height(wx + e, wz), 2 * e, w.height(wx, wz - e) - w.height(wx, wz + e)).normalize();
+          tilt.setFromUnitVectors(yAxis, n);
+          const y = w.height(wx, wz) + 0.06;
+          dm.push(new THREE.Matrix4().compose(new THREE.Vector3(p.x, y, p.z), tilt.clone().multiply(qq), new THREE.Vector3(f[0] * sc.x, 1, f[1] * sc.z)));
+        }
+      }
+      if (dm.length) {
+        const im = new THREE.InstancedMesh(this.aoGeo, this.aoMat, dm.length);
+        dm.forEach((m, j) => im.setMatrixAt(j, m));
+        im.computeBoundingSphere();
+        im.renderOrder = -1;
+        out.push(im);
+      }
+    }
     for (const [type, mats] of items) {
       // Good graphics: rocks are photo-scanned boulders, four shapes shared out between them
       if (type === 'rock' && this.quality.tier === 'pbr' && assets.rocks.length) {
@@ -1323,6 +1385,28 @@ export class ChunkManager {
           im.computeBoundingSphere();
           im.castShadow = true;
           im.receiveShadow = true;
+          out.push(im);
+        });
+        continue;
+      }
+      // Good graphics: trees are photographed scanned trees (one card each, turning to face you)
+      const set = this.quality.tier === 'pbr' && hasImpostors() ? impostorSet(type) : undefined;
+      if (set) {
+        const ts = tints.get(type)!;
+        const pick = (m: THREE.Matrix4) => Math.abs(Math.floor(m.elements[12] * 5.7 + m.elements[14] * 2.3)) % set.length;
+        set.forEach(([name, height], k) => {
+          const mine = mats.map((m, j) => [m, j] as const).filter(([m]) => pick(m) === k);
+          if (!mine.length) return;
+          const { mat, depth } = impostorMaterials(name, type, height);
+          const im = new THREE.InstancedMesh(impostorGeometry, mat, mine.length);
+          im.customDepthMaterial = depth;
+          mine.forEach(([m, j], i) => {
+            im.setMatrixAt(i, m);
+            im.setColorAt(i, ts[j]);
+          });
+          im.computeBoundingSphere();
+          im.castShadow = true;
+          im.receiveShadow = false;
           out.push(im);
         });
         continue;

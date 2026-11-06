@@ -11,7 +11,17 @@ type Part = THREE.BufferGeometry;
  * Bake a colour (and how much the part sways in the wind) into a part. With `ao`, the
  * underside gets darker so foliage looks lit from above.
  */
-function paint(g: Part, hex: number, sway = 0, ao = 0): Part {
+/**
+ * Photo surfaces (Poly Haven, CC0) a part can be textured with on good graphics, projected in
+ * the prop's own space so no UVs are needed. 0 = plain paint.
+ */
+export const SURF = { none: 0, plaster: 1, brick: 2, wood: 3, roof: 4, rock: 5, stone: 6 } as const;
+/** The wall surface of the building being built (big boxes get it, roofs get roof tiles). */
+let wallSurf = 0;
+/** Parts that are all rock (mesas, hoodoos, arches): every part gets it. */
+let allRock = false;
+
+function paint(g: Part, hex: number, sway = 0, ao = 0, surf = 0): Part {
   const geo = g.index ? g.toNonIndexed() : g;
   const c = new THREE.Color(hex);
   const n = geo.attributes.position.count;
@@ -30,16 +40,24 @@ function paint(g: Part, hex: number, sway = 0, ao = 0): Part {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
   geo.setAttribute('sway', new THREE.BufferAttribute(sw, 1));
+  geo.setAttribute('surf', new THREE.BufferAttribute(new Float32Array(n).fill(allRock ? SURF.rock : surf), 1));
   geo.deleteAttribute('uv');
   if (!geo.attributes.normal) geo.computeVertexNormals();
   return geo;
 }
 
 const at = (g: Part, x: number, y: number, z: number) => g.translate(x, y, z);
+/** Which surface a box gets: big ones are walls (low wide ones are a stone plinth), small ones trim. */
+function boxSurf(w: number, h: number, d: number): number {
+  if (!wallSurf) return 0;
+  const big = (w >= 2.2 ? 1 : 0) + (h >= 2.2 ? 1 : 0) + (d >= 2.2 ? 1 : 0);
+  if (big < 2) return 0;
+  return h < 1 && wallSurf !== SURF.wood ? SURF.stone : wallSurf;
+}
 const box = (w: number, h: number, d: number, hex: number, x = 0, y = 0, z = 0) =>
-  at(paint(new THREE.BoxGeometry(w, h, d), hex), x, y, z);
+  at(paint(new THREE.BoxGeometry(w, h, d), hex, 0, 0, boxSurf(w, h, d)), x, y, z);
 const cyl = (rt: number, rb: number, h: number, hex: number, seg = 6, x = 0, y = 0, z = 0) =>
-  at(paint(new THREE.CylinderGeometry(rt, rb, h, seg), hex), x, y, z);
+  at(paint(new THREE.CylinderGeometry(rt, rb, h, seg), hex, 0, 0, wallSurf && Math.max(rt, rb) >= 1 && h >= 2.2 ? wallSurf : 0), x, y, z);
 const cone = (r: number, h: number, hex: number, seg = 6, x = 0, y = 0, z = 0) =>
   at(paint(new THREE.ConeGeometry(r, h, seg), hex), x, y, z);
 const ball = (r: number, hex: number, x = 0, y = 0, z = 0, detail = 1) =>
@@ -86,7 +104,7 @@ function rockBlob(r: number, hex: number, x: number, y: number, z: number): Part
   }
   const flat = g.toNonIndexed();
   flat.computeVertexNormals();
-  return at(paint(flat, hex, 0, 0.3), x, y, z);
+  return at(paint(flat, hex, 0, 0.3, SURF.rock), x, y, z);
 }
 
 function merge(parts: Part[]): THREE.BufferGeometry {
@@ -104,10 +122,27 @@ function roof(w: number, h: number, d: number, hex: number, y: number): Part {
   s.closePath();
   const g = new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: false });
   g.translate(0, y, -d / 2);
-  return paint(g, hex);
+  return paint(g, hex, 0, 0, wallSurf ? SURF.roof : 0);
 }
 
+const WALLS: Partial<Record<PropType, number>> = {
+  house: SURF.plaster, shop: SURF.brick, cabin: SURF.wood, barn: SURF.wood, farmhouse: SURF.stone,
+  hut: SURF.wood, pier: SURF.wood, windmill: SURF.plaster, lighthouse: SURF.plaster,
+};
+const ROCKY: Set<PropType> = new Set(['mesaRock', 'hoodoo', 'arch'] as PropType[]);
+
 function build(type: PropType): THREE.BufferGeometry {
+  wallSurf = WALLS[type] ?? 0;
+  allRock = ROCKY.has(type);
+  try {
+    return buildParts(type);
+  } finally {
+    wallSurf = 0;
+    allRock = false;
+  }
+}
+
+function buildParts(type: PropType): THREE.BufferGeometry {
   switch (type) {
     case 'pine':
       return merge([

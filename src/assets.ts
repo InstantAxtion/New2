@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { loadImpostors } from './impostors';
 
 // Photo textures (CC0, Poly Haven), loaded once before the game starts.
 
@@ -18,9 +19,51 @@ export const assets = {
   /** Photo cobbles and pavement slabs (Poly Haven, CC0) with normal maps; null if they didn't load. */
   cobble: null as { map: THREE.Texture; normal: THREE.Texture } | null,
   paving: null as { map: THREE.Texture; normal: THREE.Texture } | null,
+  /** Wall, roof and rock photo surfaces (Poly Haven, CC0) as texture arrays, one layer each, with each layer's average brightness. */
+  surfaces: null as { map: THREE.DataArrayTexture; normal: THREE.DataArrayTexture; avg: number[] } | null,
+  /** A photographed grass clump for the grass tufts (baked from Poly Haven's grass_medium_01), or null. */
+  grassCard: null as THREE.Texture | null,
   rocks: [] as { geo: THREE.BufferGeometry; map: THREE.Texture; normal: THREE.Texture; avg: number }[],
   ready: false,
 };
+
+/** A vertical strip of square tiles (one per layer) as a texture array; rows flipped so v runs up the image. */
+function arrayTexture(im: HTMLImageElement, layers: number) {
+  const S = im.width;
+  const c = document.createElement('canvas');
+  c.width = S;
+  c.height = S * layers;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.drawImage(im, 0, 0);
+  const src = g.getImageData(0, 0, S, S * layers).data;
+  const data = new Uint8Array(src.length);
+  const row = S * 4;
+  for (let l = 0; l < layers; l++) {
+    for (let y = 0; y < S; y++) {
+      const from = (l * S + (S - 1 - y)) * row;
+      data.set(src.subarray(from, from + row), (l * S + y) * row);
+    }
+  }
+  const t = new THREE.DataArrayTexture(data, S, S, layers);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.anisotropy = 4;
+  t.needsUpdate = true;
+  // Average linear brightness of each layer, so the photo only adds detail on top of the paint colour
+  const avg: number[] = [];
+  const lin = (v: number) => Math.pow(v / 255, 2.2);
+  for (let l = 0; l < layers; l++) {
+    let sum = 0, n = 0;
+    for (let i = l * S * S * 4; i < (l + 1) * S * S * 4; i += 64) {
+      sum += 0.2126 * lin(data[i]) + 0.7152 * lin(data[i + 1]) + 0.0722 * lin(data[i + 2]);
+      n++;
+    }
+    avg.push(sum / n);
+  }
+  return { t, avg };
+}
 
 /** A boulder packed as: [vertex count, index count] (u32), positions (f32), normals (i8), uvs (u16), indices (u16). */
 async function loadRock(name: string) {
@@ -113,6 +156,19 @@ export async function loadAssets(): Promise<void> {
       // (pavement UVs are 1 per 2.4 m; the slabs tile every 1.8 m)
       pair('paving', 2.4 / 1.8).catch(() => null),
     ]);
+    try {
+      const [si, sn] = await Promise.all([loadImage(`${base}surfaces.jpg`), loadImage(`${base}surfaces_nor.jpg`)]);
+      const a = arrayTexture(si, 6);
+      assets.surfaces = { map: a.t, normal: arrayTexture(sn, 6).t, avg: a.avg };
+    } catch (e) {
+      console.warn(e);
+    }
+    await loadImpostors('./impostors/').catch((e) => console.warn(e));
+    assets.grassCard = await loadImage('./impostors/grass.webp').then((im) => {
+      const t = tex(im);
+      t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+      return t;
+    }).catch(() => null);
     assets.rocks = await Promise.all(['boulder1', 'boulder2', 'boulder3', 'boulder4'].map(loadRock)).catch((e) => {
       console.warn(e);
       return [];

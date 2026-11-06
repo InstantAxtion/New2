@@ -17,6 +17,7 @@ export const AtmosphereShader = {
     uSamples: { value: 36 },
     uThresh: { value: 0.85 },
     uGlare: { value: 0 },
+    uGrade: { value: 1 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -35,6 +36,7 @@ export const AtmosphereShader = {
     uniform float uSamples;
     uniform float uThresh;
     uniform float uGlare;
+    uniform float uGrade;
     varying vec2 vUv;
     void main() {
       vec2 uv = vUv;
@@ -76,6 +78,16 @@ export const AtmosphereShader = {
         float streak = exp(-abs(q.y) * 60.0) * exp(-abs(q.x) * 2.2) * 0.35;
         col.rgb += uSunColor * (bloom + streak + 0.06) * uGlare;
         col.rgb = mix(col.rgb, col.rgb * 0.9 + uSunColor * 0.08, uGlare * 0.5);
+      }
+      // Colour grade (in linear light, before tone mapping): cool shadows, warm highlights, a
+      // touch more saturation, and a soft vignette like a camera lens
+      if (uGrade > 0.01) {
+        float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float hi = lum / (lum + 0.18);
+        vec3 graded = col.rgb * mix(vec3(0.965, 1.0, 1.045), vec3(1.045, 1.0, 0.95), hi);
+        graded = max(mix(vec3(lum), graded, 1.08), 0.0);
+        float vig = 1.0 - 0.2 * smoothstep(0.45, 1.05, length((vUv - 0.5) * vec2(1.25, 1.0)) * 1.4);
+        col.rgb = mix(col.rgb, graded * vig, uGrade);
       }
       gl_FragColor = col;
     }`,
