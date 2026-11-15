@@ -36,9 +36,18 @@ body.pip-mode #xs-fps, body.pip-mode #xs-dim, body.pip-mode #xs-welcome { displa
 .xs-wbtns { display: flex; justify-content: space-between; width: 100%; gap: 10px; }
 @media (max-height: 380px) { .xs-wcard { flex-direction: row; flex-wrap: wrap; justify-content: center; padding: 12px 16px; } .xs-wcard i { font-size: 34px; } .xs-wcard p { flex-basis: 100%; } }
 
-/* Bigger text: sheets, cards and pop-ups grow; the driving controls stay put */
+/* Bigger text: what's inside the sheets, cards and pop-ups grows; the boxes themselves and the
+   driving controls stay where they are, so nothing is pushed off the screen */
 :root { --xs-zoom: 1; }
 :root.xs-text-l { --xs-zoom: 1.14; }
 :root.xs-text-xl { --xs-zoom: 1.28; }
-.sheet, .toast, .region-card, .pause-card, .xs-wcard, .gpanel, .lyrics, .trip-card { zoom: var(--xs-zoom); }
-:root.xs-text-l .sheet, :root.xs-text-xl .sheet { width: min(420px, calc(100vw / var(--xs-zoom))); }
+.sheet-body, .sheet-head h2, .sheet .tabs, .sheet .cutabs, .sheet .mnow, .toast, .region-card, .lyrics, .pause-card > *, .xs-wcard > * { zoom: var(--xs-zoom); }
+/* The garage menu only has room to grow on a tall screen */
+@media (min-height: 600px) { .gpanel > * { zoom: calc(1 + (var(--xs-zoom) - 1) * 0.6); } }
+/* (the row of big buttons on the pause screen is already as wide as it can be) */
+.pause-card > .tile-row { zoom: 1; }
+/* With bigger text, rows of choices wrap onto a second line rather than running off the edge */
+:root.xs-text-l .srow .seg, :root.xs-text-xl .srow .seg { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+:root.xs-text-l .srow, :root.xs-text-xl .srow { flex-wrap: wrap; }
+/* While the weather is changing by itself, the weather buttons take a step back */
+body.xs-changing [data-set="weather"] .chip.on { opacity: .55; }

@@ -38,7 +38,7 @@ export function mountSound(ctx: Ctx, group: HTMLElement) {
   intro.textContent = 'Sounds to drift off to on a long auto-drive. Match the place you\'re driving through, or set your own mix that stays the same wherever the road goes.';
   sheet.appendChild(intro);
   const own = document.createElement('div');
-  ctx.seg(sheet, 'Sounds', 'system', 'sleepMix', [['place', 'Match the place'], ['own', 'My mix']], () => {
+  ctx.seg(sheet, 'Sounds', 'system', 'sleepMix', [['place', 'This place'], ['own', 'My mix']], () => {
     apply();
     own.classList.toggle('xs-off', p.sleepMix !== 'own');
     game.engine.start();

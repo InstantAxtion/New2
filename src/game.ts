@@ -979,7 +979,9 @@ export class Game {
     this.engine.update(v.v, this.applied.throttle, v.vmax, this.phase === 'drive', dt, this.ambientMix());
 
     // Drop quality automatically if the phone is struggling
-    if (this.phase === 'drive' && this.fps < 24) this.lowFpsTime += dt;
+    // (with a frame-rate cap on, judge the phone against the cap, not against a full 60)
+    const capK = this.fpsCap > 0 ? Math.min(1, this.fpsCap / 60) : 1;
+    if (this.phase === 'drive' && this.fps < 24 * capK) this.lowFpsTime += dt;
     else this.lowFpsTime = 0;
     // Adaptive resolution: render a little softer before anything else has to give
     this.resTimer -= dt;
@@ -988,8 +990,8 @@ export class Game {
       const maxPR = Math.min(window.devicePixelRatio || 1, QUALITY[this.settings.quality].pixelRatio);
       const pr = this.renderer.getPixelRatio();
       let next = pr;
-      if (this.fps < 40 && pr > 1) next = Math.max(1, pr - 0.25);
-      else if (this.fps > 56 && pr < maxPR) next = Math.min(maxPR, pr + 0.25);
+      if (this.fps < 40 * capK && pr > 1) next = Math.max(1, pr - 0.25);
+      else if (this.fps > 56 * capK && pr < maxPR) next = Math.min(maxPR, pr + 0.25);
       if (next !== pr) {
         this.renderer.setPixelRatio(next);
         this.composer?.setPixelRatio(next);

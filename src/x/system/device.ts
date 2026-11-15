@@ -38,13 +38,15 @@ export function mountDevice(ctx: Ctx, group: HTMLElement) {
   const dim = document.createElement('div');
   dim.id = 'xs-dim';
   document.body.appendChild(dim);
-  let idle = 0;
+  // (by the clock on the wall, not by frames: a slow phone must not take longer to dim)
+  let since = performance.now();
+  let counting = false;
   const wakeUp = () => {
-    idle = 0;
+    since = performance.now();
     dim.classList.remove('on');
   };
   for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, wakeUp, { capture: true, passive: true });
-  ctx.seg(group, 'Dim on long auto-drives', 'system', 'dimAfter', [[0, 'Never'], [5, '5 min'], [15, '15'], [30, '30']], wakeUp);
+  ctx.seg(group, 'Dim on auto-drive', 'system', 'dimAfter', [[0, 'Never'], [5, '5 min'], [15, '15'], [30, '30']], wakeUp);
 
   // ----- Keep the screen awake -----
   type Lock = { release(): Promise<void>; released?: boolean };
@@ -62,7 +64,7 @@ export function mountDevice(ctx: Ctx, group: HTMLElement) {
       lock = null;
     }
   };
-  ctx.seg(group, 'Keep screen on while driving', 'system', 'awake', [[true, 'On'], [false, 'Off']], syncLock);
+  ctx.seg(group, 'Keep the screen on', 'system', 'awake', [[true, 'On'], [false, 'Off']], syncLock);
   document.addEventListener('visibilitychange', syncLock);
   ctx.on('phase', syncLock);
 
@@ -88,9 +90,13 @@ export function mountDevice(ctx: Ctx, group: HTMLElement) {
     update(_dt, rdt) {
       const driving = game.phase === 'drive' && (game.settings.auto || game.sleeping);
       if (p.dimAfter > 0 && driving) {
-        idle += rdt;
-        if (idle > p.dimAfter * 60) dim.classList.add('on');
-      } else if (idle) wakeUp();
+        if (!counting) wakeUp();
+        counting = true;
+        if (performance.now() - since > p.dimAfter * 60000) dim.classList.add('on');
+      } else if (counting) {
+        counting = false;
+        wakeUp();
+      }
       fpsTimer -= rdt;
       if (fpsTimer <= 0) {
         fpsTimer = 0.5;

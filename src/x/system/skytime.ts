@@ -54,7 +54,7 @@ export function mountSkyTime(ctx: Ctx, group: HTMLElement) {
     document.body.classList.toggle('xs-changing', on);
     line.textContent = forecast();
   };
-  ctx.seg(group, 'Weather', 'system', 'changing', [[false, 'As chosen'], [true, '🌦️ Changing']], (v) => {
+  ctx.seg(group, 'Weather changes', 'system', 'changing', [[false, 'Off'], [true, '🌦️ By itself']], (v) => {
     setChanging(v === true);
     if (v === true) ctx.toast(`Changing weather<b>🌦️ ${DRIFT_SOON[drift.next]}</b><small>It drifts between sun, cloud, rain and more as you drive</small>`);
   });
@@ -92,7 +92,7 @@ export function mountSkyTime(ctx: Ctx, group: HTMLElement) {
     game.hourSource = p.clock === 'phone' ? () => phoneHour() : null;
     game.dayMinutes = p.dayMinutes;
   };
-  ctx.seg(group, 'Time follows', 'system', 'clock', [['game', 'Game'], ['phone', '🕒 Phone clock']], (v) => {
+  ctx.seg(group, 'Time of day follows', 'system', 'clock', [['game', 'Game clock'], ['phone', '🕒 Phone']], (v) => {
     applyClock();
     if (v === 'phone') {
       // The phone's clock only shows with the full day and night cycle
@@ -111,7 +111,7 @@ export function mountSkyTime(ctx: Ctx, group: HTMLElement) {
     game.sky.satellites = p.nightSky;
     if (!p.nightSky) game.sky.comet = 0;
   };
-  ctx.seg(group, 'Moon', 'system', 'moon', [['real', 'Tonight\'s phase'], ['full', 'Always full']], applySky);
+  ctx.seg(group, 'Moon', 'system', 'moon', [['real', 'Real phase'], ['full', 'Full']], applySky);
   ctx.seg(group, 'Comets & satellites', 'system', 'nightSky', [[true, 'On'], [false, 'Off']], applySky);
   applySky();
   // A comet hangs in the sky on some nights (about one in four), for the whole night
@@ -133,7 +133,7 @@ export function mountSkyTime(ctx: Ctx, group: HTMLElement) {
   ctx.stamps([{ key: 'sky:comet', icon: '☄️', name: 'A comet' }]);
 
   // ----- Gusts of wind -----
-  ctx.seg(group, 'Wind gusts nudge the car', 'system', 'gusts', [[true, 'On'], [false, 'Off']]);
+  ctx.seg(group, 'Gusts nudge the car', 'system', 'gusts', [[true, 'On'], [false, 'Off']]);
   let gustIn = 6, gustT = 0, gustDir = 1, gustAmp = 0;
   const GUST_LEN = 1.6;
   ctx.use({

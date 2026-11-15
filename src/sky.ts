@@ -107,7 +107,7 @@ void main() {
     float pa = moonPhase * 6.2831853;
     vec3 mn = vec3(mp, sqrt(max(0.0, 1.0 - dot(mp, mp))));
     float lit = smoothstep(-0.04, 0.12, dot(mn, vec3(sin(pa), 0.0, -cos(pa))));
-    float shade = mix(0.05 * night, 1.0, lit);
+    float shade = mix(0.025 * night, 1.0, lit);
     col = mix(col, mc * (1.15 - seas) * (0.55 + 0.6 * night), disc * moonUp * (0.35 + 0.65 * night) * shade);
   }
   float moonLit = 0.5 - 0.5 * cos(moonPhase * 6.2831853);
@@ -127,7 +127,7 @@ void main() {
   // A satellite: one steady point of light gliding across the stars
   if (sat > 0.01) {
     float sdv = max(dot(d, normalize(satDir)), 0.0);
-    col += vec3(1.0, 0.98, 0.92) * smoothstep(0.999985, 0.999997, sdv) * sat * night * (1.0 - cover);
+    col += vec3(1.0, 0.98, 0.92) * smoothstep(0.99999, 0.999998, sdv) * sat * night * (1.0 - cover);
   }
   // Stars, coming out at dusk; and the evening star low in the west soon after sunset
   float dusk = max(night, smoothstep(0.02, -0.1, sunDir.y) * 0.75);
