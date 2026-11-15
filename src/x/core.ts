@@ -206,7 +206,7 @@ export function mountHub(ctx: Ctx) {
   };
   const openHub = () => {
     render();
-    document.getElementById('hud-menu')?.classList.remove('open');
+    document.getElementById('hud-menu')?.classList.remove('on');
     ctx.open('hub');
   };
   // Garage header, the drive menu and the pause screen each get a way in
