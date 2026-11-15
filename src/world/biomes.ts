@@ -1,12 +1,14 @@
 import { fbm2, noise2, ridged2, smoothstep, clamp, lerp } from './noise';
 
-export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon' | 'blossom' | 'tropical' | 'vineyard' | 'pnw' | 'metro';
+export type BiomeId = 'seaside' | 'hills' | 'flatlands' | 'desert' | 'forest' | 'alpine' | 'autumn' | 'winter' | 'city' | 'rainforest' | 'lakes' | 'canyon' | 'blossom' | 'tropical' | 'vineyard' | 'pnw' | 'metro' | 'volcanic' | 'riviera' | 'moors' | 'bayou';
 
 export type PropType =
   | 'pine' | 'pineSnow' | 'tree' | 'treeAutumn' | 'bush' | 'palm' | 'cactus' | 'rock' | 'rockSnow'
   | 'house' | 'barn' | 'windmill' | 'turbine' | 'hay' | 'sheep' | 'boat' | 'umbrella'
   | 'lighthouse' | 'deadTree' | 'cabin' | 'snowman' | 'mesaRock' | 'post'
   | 'tower1' | 'tower2' | 'tower3' | 'billboard' | 'lamp' | 'jungleTree' | 'fern' | 'hoodoo' | 'arch' | 'pier' | 'shop' | 'cherry' | 'flowers' | 'vines' | 'lavender' | 'cypress' | 'farmhouse' | 'hut' | 'tree2' | 'pine2'
+  | 'lavaRock' | 'vent' | 'lavaFlow' | 'treeFern' | 'villa' | 'olive' | 'stonePine' | 'bougain' | 'chapel' | 'heather' | 'stoneWall' | 'croft' | 'ruinTower' | 'scotsPine' | 'gorse'
+  | 'swampCypress' | 'reeds' | 'lilypad' | 'shack' | 'heron'
   | 'torii' | 'shrine' | 'lantern' | 'vending' | 'igloo' | 'redwood' | 'acacia' | 'maple';
 
 export interface PropSpec {
@@ -48,6 +50,18 @@ export function vineField(x: number, z: number, seed: number): number {
   const fz = Math.floor((z + noise2(x / 80, z / 80, seed + 172) * 12) / 72);
   const k = Math.floor((noise2(fx * 4.7, fz * 3.1, seed + 173) * 0.5 + 0.5) * 9);
   return k < 4 ? 1 : k < 6 ? 2 : k < 7 ? 3 : 0;
+}
+
+/** Highland lochs: long still water lying in the glens beside the road (0..1), never across it. */
+export function lochAt(x: number, z: number, u: number, seed: number): number {
+  const shape = noise2(x / 330, z / 520, seed + 241) + noise2(x / 90, z / 90, seed + 242) * 0.18;
+  return smoothstep(0.16, 0.34, shape) * smoothstep(34, 90, Math.abs(u));
+}
+
+/** Bayou channels: open water the road crosses on a trestle (0..1). `road` gives the bridge strength. */
+export function bayouChannel(z: number, seed: number, road = false): number {
+  const along = noise2(z / 360, 7.7, seed + 261);
+  return road ? smoothstep(0.24, 0.36, along) : smoothstep(0.16, 0.34, along);
 }
 
 /** Coastal cliffs: the seaside road climbs onto clifftops now and then (0..1). */
@@ -575,6 +589,169 @@ export const BIOMES: Record<BiomeId, Biome> = {
     haze: [0.78, 0.84, 0.86, 0.3],
     verge: [0.4, 0.4, 0.36],
     towns: true,
+  },
+  volcanic: {
+    // A young volcanic island: black sand, rough lava fields by the road, green slopes above
+    id: 'volcanic', name: 'Volcanic Island', emoji: '🌋', roadBase: 6, roadAmp: 5, relief: 0.35,
+    height(x, z, c) {
+      const s = c.u * c.seaSide;
+      if (s > 0) {
+        const d = Math.max(0, s - 10 + fbm2(x / 110, z / 110, 3, 231) * 8);
+        const shelf = c.roadY - 1 - d * 0.1 - Math.max(0, d - 70) * 0.08 + ridged2(x / 26, z / 26, 2, 232) * 1.6 * smoothstep(4, 30, d) * smoothstep(-2, 4, c.roadY - 1 - d * 0.1);
+        return Math.max(shelf, -9 + noise2(x / 40, z / 40, 233));
+      }
+      const lava = ridged2(x / 38, z / 38, 2, 234) * 4.5 * ramp(c.u, 12, 50);
+      const slope = (fbm2(x / 210, z / 210, 4, 235) * 0.5 + 0.5) * 64 * ramp(c.u, 45, 260);
+      return c.roadY + lava + slope;
+    },
+    color(x, z, h, rel, c, out) {
+      // Basalt and cinders
+      const n = noise2(x / 22, z / 22, 236) * 0.5 + 0.5;
+      set(out, 0.2 + n * 0.07, 0.19 + n * 0.06, 0.2 + n * 0.06);
+      mix(out, 0.36, 0.2, 0.15, smoothstep(0.45, 0.8, noise2(x / 130, z / 130, 237)) * 0.55);
+      // Moss creeping over old flows, then lush green higher up the slopes
+      mix(out, 0.36, 0.47, 0.2, smoothstep(0.1, 0.6, noise2(x / 60, z / 60, 238)) * 0.55 * smoothstep(1.5, 6, h));
+      const green = smoothstep(7, 24, rel + noise2(x / 50, z / 50, 239) * 8);
+      mix(out, 0.2 + n * 0.1, 0.5 + n * 0.08, 0.2, green * 0.92);
+      if (h < 1.9) {
+        // Black sand, wet and darker at the water's edge
+        const t = smoothstep(1.9, 1.1, h);
+        mix(out, 0.15, 0.15, 0.17, t);
+        if (h < 0.3) mix(out, 0.09, 0.09, 0.11, 0.7);
+      }
+    },
+    props: [
+      { type: 'lavaRock', n: 9, u: [9, 90], scale: [0.6, 1.9], h: [1.2, 60] },
+      { type: 'vent', n: 0.9, u: [14, 70], scale: [0.8, 1.3], h: [2, 60] },
+      { type: 'lavaFlow', n: 1.1, u: [70, 420], scale: [0.9, 1.8], side: 'land', h: [3, 200] },
+      { type: 'treeFern', n: 9, u: [11, 120], scale: [0.8, 1.3], h: [2.5, 200], cluster: 3 },
+      { type: 'fern', n: 26, u: [8.5, 80], scale: [0.7, 1.5], h: [2.5, 200], cluster: 5 },
+      { type: 'jungleTree', n: 12, u: [50, 320], scale: [0.9, 1.5], side: 'land', h: [8, 400], cluster: 6 },
+      { type: 'bush', n: 5, u: [9, 120], scale: [0.6, 1.2], h: [2.5, 200] },
+      { type: 'rock', n: 3, u: [9, 70], scale: [0.5, 1.5], h: [0.4, 60] },
+    ],
+    haze: [0.8, 0.84, 0.88, 0.24],
+    verge: [0.24, 0.23, 0.24],
+  },
+  riviera: {
+    // A sunny southern coast: terraced hillsides over turquoise coves, white villages with tiled roofs
+    id: 'riviera', name: 'Mediterranean Coast', emoji: '🏖️', roadBase: 13, roadAmp: 7, relief: 0.3,
+    height(x, z, c) {
+      const s = c.u * c.seaSide;
+      if (s > 0) {
+        // Level ground to a rocky edge, a drop to a little beach, then the cove
+        const cove = (fbm2(x / 150, z / 150, 3, 251) * 0.5 + 0.5) * 44;
+        const d = Math.max(0, s - 13 - cove);
+        const top = c.roadY - 0.4 - Math.max(0, s - 10) * 0.035;
+        const low = 1.5 - Math.max(0, d - 20) * 0.1 + noise2(x / 18, z / 18, 252) * 0.25;
+        const k = smoothstep(0, 15, d);
+        return Math.max(top + (low - top) * k + ridged2(x / 16, z / 16, 2, 253) * 2.2 * k * (1 - smoothstep(10, 22, d)), -8);
+      }
+      // Hillsides cut into terraces held up by dry-stone walls
+      const raw = (fbm2(x / 190, z / 190, 4, 254) * 0.5 + 0.5) * 52 * ramp(c.u, 12, 170);
+      const f = raw / 3.4;
+      const stepped = (Math.floor(f) + smoothstep(0.82, 1, f - Math.floor(f))) * 3.4;
+      return c.roadY + raw + (stepped - raw) * 0.85 * smoothstep(1.5, 5, raw);
+    },
+    color(x, z, h, rel, c, out) {
+      const n = noise2(x / 28, z / 28, 255) * 0.5 + 0.5;
+      // Sun-dried grass and pale earth with greener patches
+      set(out, 0.66, 0.62, 0.38);
+      mix(out, 0.47, 0.55, 0.3, n * 0.8);
+      mix(out, 0.74, 0.62, 0.46, smoothstep(0.3, 0.7, noise2(x / 90, z / 90, 256)) * 0.45);
+      if (c.u * c.seaSide > 0) {
+        // Pale limestone on the drop to the cove, light sand below
+        if (rel < -1.6 && h > 2.2) set(out, 0.84 - n * 0.06, 0.8 - n * 0.06, 0.71 - n * 0.06);
+        if (h < 2.2) {
+          set(out, 0.95, 0.9, 0.76);
+          if (h < -0.2) mix(out, 0.82, 0.88, 0.76, smoothstep(-0.2, -3, h));
+        }
+      } else if (rel > 2.5) {
+        // The stone face of each terrace wall
+        const f = rel / 3.4;
+        if (f - Math.floor(f) > 0.8) set(out, 0.72 - n * 0.08, 0.67 - n * 0.08, 0.57 - n * 0.08);
+      }
+    },
+    props: [
+      { type: 'olive', n: 12, u: [10, 220], scale: [0.8, 1.25], side: 'land', cluster: 5 },
+      { type: 'olive', n: 3, u: [10, 40], scale: [0.8, 1.1], side: 'sea', h: [3, 999] },
+      { type: 'stonePine', n: 4, u: [10, 200], scale: [0.9, 1.4], h: [3, 999], cluster: 2 },
+      { type: 'cypress', n: 4, u: [9, 160], scale: [0.8, 1.25], h: [3, 999], cluster: 3 },
+      { type: 'bougain', n: 5, u: [8.5, 40], scale: [0.7, 1.3], h: [3, 999] },
+      { type: 'bush', n: 4, u: [9, 120], scale: [0.5, 1], h: [3, 999] },
+      { type: 'villa', n: 0.5, u: [16, 130], scale: [0.9, 1.15], h: [3, 999] },
+      { type: 'chapel', n: 0.14, u: [14, 26], scale: [0.9, 1.1], side: 'sea', h: [5, 999] },
+      { type: 'umbrella', n: 1.6, u: [20, 110], scale: [0.9, 1.1], side: 'sea', h: [0.7, 2.1] },
+      { type: 'boat', n: 2.2, u: [50, 280], scale: [0.8, 1.3], side: 'sea', h: [-99, -1.2], float: true },
+      { type: 'rock', n: 2, u: [12, 90], scale: [0.5, 1.4], side: 'sea', h: [0.2, 6] },
+    ],
+    haze: [1.0, 0.95, 0.86, 0.12],
+    verge: [0.76, 0.7, 0.58],
+    towns: true,
+  },
+  moors: {
+    // Open highland moor: heather and peat under a big grey sky, lochs in the glens
+    id: 'moors', name: 'Highland Moors', emoji: '🏴', roadBase: 7, roadAmp: 5, relief: 0, fog: 0.72,
+    height(x, z, c) {
+      const r = ramp(c.u, 10, 160);
+      const land = c.roadY + (fbm2(x / 250, z / 250, 4, 243) * 0.5 + 0.5) * 58 * r * r + fbm2(x / 70, z / 70, 3, 244) * 3.5 * ramp(c.u, 10, 60) + ridged2(x / 120, z / 120, 2, 245) * 14 * ramp(c.u, 120, 400);
+      const loch = lochAt(x, z, c.u, c.seed ?? 0);
+      return land + (-5 - land) * loch;
+    },
+    color(x, z, h, rel, c, out) {
+      const n = noise2(x / 26, z / 26, 246) * 0.5 + 0.5;
+      // Rough moor grass over peat
+      set(out, 0.44 + n * 0.08, 0.43 + n * 0.06, 0.24);
+      mix(out, 0.36, 0.28, 0.2, smoothstep(0.35, 0.75, noise2(x / 75, z / 75, 247)) * 0.6);
+      // Drifts of heather in bloom
+      mix(out, 0.56, 0.36, 0.56, smoothstep(0.08, 0.5, noise2(x / 48, z / 48, 248) + noise2(x / 13, z / 13, 249) * 0.25) * 0.72 * smoothstep(8.5, 14, Math.abs(c.u)));
+      // Bare grey rock on the tops
+      mix(out, 0.5, 0.5, 0.5, smoothstep(44, 70, rel) * 0.7);
+      if (h < 1.2) set(out, 0.32, 0.29, 0.24); // peaty loch shore
+    },
+    props: [
+      { type: 'heather', n: 46, u: [8.5, 90], scale: [0.7, 1.5], h: [1.3, 999], cluster: 6 },
+      { type: 'gorse', n: 6, u: [9, 120], scale: [0.7, 1.3], h: [1.3, 999], cluster: 3 },
+      { type: 'rock', n: 5, u: [9, 140], scale: [0.5, 2.2], h: [0.6, 999] },
+      { type: 'scotsPine', n: 1.6, u: [14, 260], scale: [0.9, 1.4], h: [1.5, 999], cluster: 2 },
+      { type: 'croft', n: 0.22, u: [18, 110], scale: [0.9, 1.1], h: [1.5, 40] },
+      { type: 'ruinTower', n: 0.07, u: [40, 150], scale: [0.9, 1.15], h: [3, 60] },
+      { type: 'sheep', n: 1.6, u: [12, 120], scale: [0.9, 1.1], h: [1.5, 999], cluster: 4 },
+    ],
+    haze: [0.74, 0.77, 0.82, 0.5],
+    verge: [0.42, 0.4, 0.3],
+    towns: true,
+  },
+  bayou: {
+    // Cypress swamp: still dark water either side of a low causeway, trestle bridges over the channels
+    id: 'bayou', name: 'Bayou Wetlands', emoji: '🐊', roadBase: 1.75, roadAmp: 0.25, relief: 0, fog: 0.7,
+    height(x, z, c) {
+      const mound = noise2(x / 75, z / 75, 263) * 0.5 + 0.5 + noise2(x / 22, z / 22, 264) * 0.12;
+      let h = -1.35 + smoothstep(0.56, 0.8, mound) * 2.5 + noise2(x / 30, z / 30, 265) * 0.2;
+      const ch = bayouChannel(z, c.seed ?? 0);
+      if (ch > 0) h += (Math.min(h, -2.6) - h) * ch;
+      return h;
+    },
+    color(x, z, h, rel, c, out) {
+      const n = noise2(x / 18, z / 18, 266) * 0.5 + 0.5;
+      // Damp grass and mud on the banks and hummocks, dark silt under the water
+      set(out, 0.3 + n * 0.08, 0.42 + n * 0.08, 0.2);
+      mix(out, 0.34, 0.3, 0.2, smoothstep(0.9, 0.25, h) * 0.8);
+      if (h < 0.05) set(out, 0.16, 0.19, 0.12);
+    },
+    props: [
+      { type: 'swampCypress', n: 30, u: [12, 320], scale: [0.85, 1.5], h: [-1.7, 1.3], cluster: 5 },
+      { type: 'reeds', n: 40, u: [10.5, 90], scale: [0.8, 1.5], h: [-0.55, 0.7], cluster: 6 },
+      { type: 'lilypad', n: 14, u: [14, 110], scale: [0.8, 1.6], h: [-99, -0.5], float: true, cluster: 4 },
+      { type: 'shack', n: 0.4, u: [22, 90], scale: [0.9, 1.1], h: [-1.7, -0.3] },
+      { type: 'pier', n: 0.6, u: [18, 60], scale: [0.7, 0.9], h: [-1.7, -0.6], float: true },
+      { type: 'heron', n: 1.2, u: [12, 70], scale: [0.9, 1.15], h: [-0.5, 0.2] },
+      { type: 'bush', n: 5, u: [9, 120], scale: [0.6, 1.1], h: [0.3, 9] },
+      { type: 'deadTree', n: 1.2, u: [14, 160], scale: [0.8, 1.3], h: [-1.7, 0.2] },
+    ],
+    haze: [0.86, 0.88, 0.74, 0.4],
+    verge: [0.36, 0.36, 0.26],
+    bridges: (x, z, seed) => bayouChannel(z, seed, true),
   },
 };
 

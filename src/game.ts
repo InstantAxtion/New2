@@ -792,7 +792,7 @@ export class Game {
       const sd = this.sand;
       this.sky.setHaze(r + (0.78 - r) * sd, g + (0.6 - g) * sd, bl + (0.4 - bl) * sd, a + (0.95 - a) * sd);
       const winter = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'winter' ? x.w : 0), 0);
-      const tropic = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'tropical' ? x.w : 0), 0);
+      const tropic = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'tropical' ? x.w : x.biome.id === 'riviera' ? x.w * 0.7 : 0), 0);
       const wc = (this.water.material as THREE.MeshPhongMaterial).color;
       if (this.tier === 'pbr') wc.setRGB(0.02 + winter * 0.6 + tropic * 0.0, 0.18 + winter * 0.5 + tropic * 0.3, 0.26 + winter * 0.55 + tropic * 0.12);
       else wc.setRGB(0.17 + winter * 0.55 - tropic * 0.1, 0.5 + winter * 0.32 + tropic * 0.25, 0.68 + winter * 0.22 - tropic * 0.02);
@@ -1050,9 +1050,12 @@ export class Game {
     const night = this.sky.night;
     for (const { biome, w: k } of w.weights(v.z)) {
       const id = biome.id;
-      if (id === 'seaside' || id === 'lakes' || id === 'tropical') m.waves += k * (id === 'lakes' ? 0.4 : 1);
-      if (['forest', 'hills', 'autumn', 'rainforest', 'lakes', 'flatlands', 'blossom', 'vineyard', 'tropical'].includes(id)) m.birds += k * (1 - night) * (id === 'rainforest' ? 1 : 0.6);
+      if (id === 'seaside' || id === 'lakes' || id === 'tropical' || id === 'riviera' || id === 'volcanic') m.waves += k * (id === 'lakes' ? 0.4 : 1);
+      if (['forest', 'hills', 'autumn', 'rainforest', 'lakes', 'flatlands', 'blossom', 'vineyard', 'tropical', 'riviera', 'bayou', 'moors', 'volcanic'].includes(id)) m.birds += k * (1 - night) * (id === 'rainforest' ? 1 : 0.6);
       if (id === 'rainforest') m.insects += k;
+      if (id === 'bayou') m.insects += k * 0.7;
+      if (id === 'moors') m.wind += k * 0.8;
+      if (id === 'riviera' || id === 'bayou') m.crickets += k * night;
       if (['alpine', 'winter', 'canyon', 'desert'].includes(id)) m.wind += k;
       if (id === 'city') m.city += k;
       if (id === 'metro') m.city += k * 0.6;

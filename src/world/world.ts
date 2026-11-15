@@ -267,8 +267,8 @@ export class World {
     const f = z / g - a;
     const at = (i: number) => this.cached('r', i * g, () => {
       let sum = 0, n = 0;
-      for (let d = -2000; d <= 2000; d += 250) {
-        const wt = 1 - Math.abs(d) / 2250;
+      for (let d = -3000; d <= 3000; d += 250) {
+        const wt = 1 - Math.abs(d) / 3250;
         for (const { biome, w } of this.weights(i * g + d)) sum += w * biome.relief * wt;
         n += wt;
       }
@@ -483,6 +483,9 @@ export class World {
       else if (b === 'seaside') kind = r < 0.5 ? 'harbour' : r < 0.75 ? 'diner' : 'fuel';
       else if (b === 'desert' || b === 'flatlands') kind = r < 0.35 ? 'diner' : r < 0.6 ? 'drivein' : 'fuel';
       else if (b === 'alpine' || b === 'canyon') kind = r < 0.6 ? 'viewpoint' : r < 0.8 ? 'fuel' : b === 'alpine' ? 'campsite' : 'diner';
+      else if (b === 'volcanic' || b === 'riviera') kind = r < 0.5 ? 'viewpoint' : r < 0.75 ? 'diner' : 'fuel';
+      else if (b === 'bayou') kind = r < 0.45 ? 'diner' : r < 0.7 ? 'campsite' : 'fuel';
+      else if (b === 'moors') kind = r < 0.45 ? 'viewpoint' : r < 0.65 ? 'campsite' : 'fuel';
       else if (b === 'forest' || b === 'lakes' || b === 'rainforest') kind = r < 0.5 ? 'campsite' : r < 0.8 ? 'fuel' : 'viewpoint';
       else if (b !== 'city' && b !== 'metro') kind = r < 0.3 ? 'viewpoint' : r < 0.5 ? 'diner' : r < 0.62 ? 'drivein' : 'fuel';
       const clear = (zz: number) => this.urban(zz) < 0.01 && this.bridgeRaw(zz) < 0.01 && this.tunnelAt(zz) < 0.01 && !this.ferry(zz);
@@ -540,13 +543,13 @@ export class World {
       const z = c * 2900 + 400 + h(802) * 2000;
       const b = this.dominant(z).id;
       const r = h(803);
-      const castle = ['hills', 'vineyard', 'autumn', 'blossom', 'alpine', 'forest', 'flatlands'].includes(b);
-      const ruin = ['hills', 'winter', 'canyon', 'desert', 'flatlands', 'seaside', 'autumn'].includes(b);
-      const fall = ['alpine', 'rainforest', 'forest', 'canyon', 'tropical', 'lakes'].includes(b);
+      const castle = ['hills', 'vineyard', 'autumn', 'blossom', 'alpine', 'forest', 'flatlands', 'moors', 'riviera'].includes(b);
+      const ruin = ['hills', 'winter', 'canyon', 'desert', 'flatlands', 'seaside', 'autumn', 'moors', 'riviera'].includes(b);
+      const fall = ['alpine', 'rainforest', 'forest', 'canyon', 'tropical', 'lakes', 'volcanic'].includes(b);
       let kind: LandmarkKind | null = null;
       // Some cells hold a roadside event instead: a fair with a night market, a car meet, a balloon festival
       const ev = h(806);
-      const fairOk = !['city', 'canyon'].includes(b);
+      const fairOk = !['city', 'canyon', 'bayou', 'volcanic'].includes(b);
       const meetOk = ['flatlands', 'desert', 'hills', 'seaside', 'lakes', 'autumn', 'vineyard', 'tropical'].includes(b);
       const balloonOk = ['vineyard', 'flatlands', 'hills', 'canyon', 'desert', 'blossom', 'autumn', 'lakes'].includes(b);
       if (ev < 0.45) kind = ev < 0.17 && fairOk ? 'fair' : ev < 0.31 && meetOk ? 'carmeet' : balloonOk ? 'balloonfest' : fairOk ? 'fair' : null;
@@ -1056,6 +1059,27 @@ export class World {
           else { add(0, 0.8); add(2, 0.2); }
           break;
         case 'vineyard': add(0, 0.6); add(1, 0.4); break;
+        case 'volcanic': {
+          // Bare rock on the lava fields, grass where the slopes have greened over, dark sand on the shore
+          const green = smoothstep(7, 24, rel);
+          if (h < 1.9) add(3, 1);
+          else { add(4, (1 - green) * 0.85); add(2, (1 - green) * 0.15); add(0, green); }
+          break;
+        }
+        case 'riviera':
+          if (u * this.seaSide(k) > 0 && h < 2.2) add(3, 1);
+          else if (u * this.seaSide(k) > 0 && rel < -1.6) add(4, 1);
+          else { add(1, 0.7); add(0, 0.3); }
+          break;
+        case 'moors': {
+          const rock = smoothstep(44, 70, rel) * 0.7;
+          add(4, rock); add(1, (1 - rock) * 0.55); add(0, (1 - rock) * 0.25); add(2, (1 - rock) * 0.2);
+          break;
+        }
+        case 'bayou':
+          if (h < 0.3) add(2, 1);
+          else { add(0, 0.65); add(2, 0.35); }
+          break;
         case 'pnw': add(0, 0.4); add(2, 0.6); break;
         case 'winter': add(5, 1); break;
         case 'city': add(4, 0.85); add(3, 0.15); break;

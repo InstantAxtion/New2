@@ -12,6 +12,8 @@ import { vineField } from './world/biomes';
 import { cobbleTexture, glowTexture, gravelTexture, highwayTexture, pavingTexture, roadTexture } from './textures';
 
 /** Soft paint colours for town houses (multiplied over the white walls). */
+/** Buildings with windows that light up at night (and lava, whose cracks glow). */
+const LIT_TYPES: PropType[] = ['house', 'shop', 'cabin', 'farmhouse', 'villa', 'croft', 'shack', 'lavaFlow'];
 const HOUSE_PAINT = [0xffffff, 0xfff1d8, 0xdfe9f4, 0xe2ecd9, 0xf6dcd6, 0xfbeab8, 0xe6e2dc, 0xd9c3b0, 0xcfe0e3];
 import { assets } from './assets';
 import { hasImpostors, impostorGeometry, impostorMaterials, impostorSet } from './impostors';
@@ -27,7 +29,49 @@ const FOOTPRINT: Partial<Record<PropType, [number, number]>> = {
   lighthouse: [6, 6], windmill: [7, 7], rock: [4.2, 4.2], rockSnow: [3.8, 3.8], mesaRock: [17, 17], hoodoo: [5, 5],
   tree: [4.5, 4.5], tree2: [4.5, 4.5], treeAutumn: [4.5, 4.5], cherry: [4, 4], pine: [4, 4], pine2: [4, 4], pineSnow: [4, 4],
   deadTree: [2.5, 2.5], palm: [3, 3], jungleTree: [5, 5], redwood: [5, 5], acacia: [5, 5], maple: [4.5, 4.5], cypress: [2.2, 2.2],
+  villa: [13, 9], chapel: [7, 9], croft: [7, 10.5], ruinTower: [10, 10], olive: [4, 4], stonePine: [5, 5], scotsPine: [4, 4],
+  lavaRock: [4, 4], vent: [5, 5], treeFern: [3, 3], gorse: [2.6, 2.6], bougain: [2.4, 2.4],
 };
+
+let steamG: THREE.BufferGeometry | null = null;
+/** Two crossed upright cards, 3 m wide and 9 m tall, standing on the vent. */
+function steamGeo(): THREE.BufferGeometry {
+  if (steamG) return steamG;
+  const a = new THREE.PlaneGeometry(3.4, 9, 1, 6).translate(0, 4.5, 0);
+  steamG = mergeGeometries([a, a.clone().rotateY(Math.PI / 2)])!;
+  steamG.computeBoundingSphere();
+  return steamG;
+}
+
+let steamM: THREE.Material | null = null;
+/** Wisps of steam: soft blobs of white drifting up the card and thinning out, swaying in the wind. */
+function steamMaterial(): THREE.Material {
+  if (steamM) return steamM;
+  const m = new THREE.MeshBasicMaterial({ color: 0xf2f4f5, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = shared.time;
+    sh.uniforms.uWind = shared.wind;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWind;\nvarying vec2 vSt;\nvarying float vSeed;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vSt = uv;
+        vSeed = instanceMatrix[3][0] * 0.37 + instanceMatrix[3][2] * 0.11;
+        float lean = uv.y * uv.y;
+        transformed.x += lean * (1.6 * uWind + sin(uTime * 0.7 + vSeed) * 0.9);
+        transformed.z += lean * sin(uTime * 0.5 + vSeed * 1.7) * 0.8;
+        transformed.xz *= 1.0 + uv.y * 1.4;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nvarying vec2 vSt;\nvarying float vSeed;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float sx = (vSt.x - 0.5) * 2.0;
+        float up = vSt.y * 3.0 - uTime * 0.35 - vSeed;
+        float puff = 0.55 + 0.45 * sin(up * 6.2831 + sin(vSt.x * 5.0 + vSeed) * 1.5) * sin(up * 2.7 + vSt.x * 3.0);
+        float wid = 1.0 - smoothstep(0.25, 1.0, abs(sx + sin(up * 3.0) * 0.18));
+        diffuseColor.a *= wid * puff * smoothstep(0.0, 0.08, vSt.y) * (1.0 - smoothstep(0.35, 1.0, vSt.y)) * 0.5;`);
+  };
+  steamM = m;
+  return m;
+}
 
 /** Alpha for a contact shadow: dark in the middle, fading out in a rounded square. */
 function aoTexture(): THREE.Texture {
@@ -905,6 +949,9 @@ export class ChunkManager {
   private tunnelLightMat = new THREE.MeshStandardMaterial({ color: 0xffe9c0, emissive: 0xffd9a0, emissiveIntensity: 4 });
   private stripeMat = new THREE.MeshStandardMaterial({ color: 0xf0f0ea, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
 
+  private deckMat = new THREE.MeshStandardMaterial({ color: 0x9b9a96, roughness: 0.85, side: THREE.DoubleSide });
+  private trestleMat = new THREE.MeshStandardMaterial({ color: 0x7a6248, roughness: 0.95, side: THREE.DoubleSide });
+
   /** Bridge decks, parapets and piers, and zebra crossings painted on the road. */
   private bridgesAndCrossings(i: number): THREE.Group | null {
     const w = this.world;
@@ -941,7 +988,9 @@ export class ChunkManager {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.computeVertexNormals();
-      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x9b9a96, roughness: 0.85, side: THREE.DoubleSide }));
+      // (in the bayou the crossings are timber trestles)
+      const timber = w.weights(z0 + CHUNK / 2).some((x) => x.biome.id === 'bayou' && x.w > 0.5);
+      const m = new THREE.Mesh(geo, timber ? this.trestleMat : this.deckMat);
       m.castShadow = m.receiveShadow = true;
       g.add(m);
       // Long crossings become a great suspension bridge: two towers, sweeping main cables
@@ -1003,8 +1052,22 @@ export class ChunkManager {
       }
       // Piers down to the water or the floor of the gorge
       const piers: THREE.BufferGeometry[] = [];
+      if (timber) {
+        // Rows of timber piles, close together, with a cross-beam under the deck
+        for (let z = Math.ceil(z0 / 8) * 8; z < z0 + CHUNK; z += 8) {
+          if (w.bridge(z) < 0.6) continue;
+          const ry = w.roadY(z);
+          for (const sd of [-1, -0.33, 0.33, 1]) {
+            const p = at(z, sd * (ROAD_HALF + 0.4), 0);
+            piers.push(new THREE.CylinderGeometry(0.2, 0.24, ry + 3.6, 6).translate(p.x, (ry - 0.9 - 4.5) / 2, p.z));
+          }
+          const [tx, tz] = w.tangent(z);
+          const c = at(z, 0, ry - 1.15);
+          piers.push(new THREE.BoxGeometry(ROAD_HALF * 2 + 1.6, 0.4, 0.4).rotateY(Math.atan2(tx, tz)).translate(c.x, c.y, c.z));
+        }
+      }
       for (let z = Math.ceil(z0 / 30) * 30; z < z0 + CHUNK; z += 30) {
-        if (w.bridge(z) < 0.6) continue;
+        if (w.bridge(z) < 0.6 || timber) continue;
         const ry = w.roadY(z);
         for (const sd of [-1, 1]) {
           const p = at(z, sd * 2.6, 0);
@@ -1015,7 +1078,7 @@ export class ChunkManager {
         }
       }
       if (piers.length) {
-        const pm = new THREE.Mesh(mergeGeometries(piers)!, this.concreteMat);
+        const pm = new THREE.Mesh(mergeGeometries(piers.map((x) => x.toNonIndexed()))!, timber ? this.trestleMat : this.concreteMat);
         pm.castShadow = true;
         g.add(pm);
       }
@@ -1177,7 +1240,8 @@ export class ChunkManager {
       else if (season === 'winter') {
         if (type === 'tree' || type === 'treeAutumn' || type === 'cherry') type = 'deadTree';
         else if (type === 'pine' || type === 'cypress') type = 'pineSnow';
-        else if (type === 'flowers' || type === 'lavender') return null;
+        else if (type === 'flowers' || type === 'lavender' || type === 'lilypad') return null;
+        else if (type === 'bougain' || type === 'gorse') type = 'bush';
       } else if (season === 'spring' && type === 'tree' && r() < 0.35) type = 'cherry';
       else if (season === 'summer' && type === 'treeAutumn') type = 'tree';
       else if ((season === 'summer' || season === 'spring') && type === 'pineSnow') type = 'pine';
@@ -1224,6 +1288,19 @@ export class ChunkManager {
       { type: 'tree', n: 6, u: [11, 14], scale: [0.6, 0.9] },
     ];
 
+    // Southern coast towns are whitewashed villas; up on the moors, low stone cottages among the houses
+    const villaTown: PropSpec[] = [
+      { type: 'villa', n: 22, u: [15, 36], scale: [0.85, 1.05] },
+      { type: 'olive', n: 5, u: [11, 14], scale: [0.6, 0.8] },
+      { type: 'bougain', n: 7, u: [11, 13], scale: [0.7, 1] },
+    ];
+    const moorTown: PropSpec[] = [
+      { type: 'croft', n: 12, u: [15, 34], scale: [0.95, 1.1] },
+      { type: 'house', n: 8, u: [16, 34], scale: [0.9, 1.05] },
+      { type: 'shop', n: 6, u: [14, 22], scale: [0.95, 1.05] },
+    ];
+    const townOnly = new Set<PropSpec>([...townSpecs, ...villaTown, ...moorTown]);
+
     const seen = new Set<string>();
     const regions = [...w.weights(z0), ...w.weights(z0 + CHUNK)];
     const town = Math.max(w.townAt(z0), w.townAt(z0 + CHUNK / 2), w.townAt(z0 + CHUNK));
@@ -1232,7 +1309,8 @@ export class ChunkManager {
       if (seen.has(key)) continue;
       seen.add(key);
       const sea = w.seaSide(k);
-      const specs = town > 0.3 && biome.towns ? [...townSpecs, ...biome.props] : biome.props;
+      const ts0 = biome.id === 'riviera' ? villaTown : biome.id === 'moors' ? moorTown : townSpecs;
+      const specs = town > 0.3 && biome.towns ? [...ts0, ...biome.props] : biome.props;
       for (const spec of specs) {
         const expected = spec.n * 3 * this.quality.props * (CHUNK / 100);
         let count = Math.floor(expected) + (r() < expected % 1 ? 1 : 0);
@@ -1254,7 +1332,7 @@ export class ChunkManager {
           // Accept by how much this region shapes the world here
           const ww = w.weights(z).find((b) => b.k === k);
           if (!ww || r() > ww.w) continue;
-          const isTown = townSpecs.includes(spec);
+          const isTown = townOnly.has(spec);
           if (isTown && w.townAt(z) < 0.5) continue;
           // Keep the countryside clear of the road in town, and nothing on bridges
           if (!isTown && w.townAt(z) > 0.3 && Math.abs(u) < 36) continue;
@@ -1275,8 +1353,8 @@ export class ChunkManager {
           const x = w.roadX(z) - u / tz;
           // Nothing may reach over the road: check the real distance to the road nearby (bends can
           // bring it closer than straight across), allowing for how wide this thing is
-          const big = spec.type === 'house' || spec.type === 'farmhouse' || spec.type === 'barn' || spec.type === 'shop' || spec.type === 'shrine' || spec.type === 'windmill';
-          const tree = spec.type.includes('tree') || spec.type.includes('Tree') || spec.type === 'pine' || spec.type === 'pine2' || spec.type === 'pineSnow' || spec.type === 'palm' || spec.type === 'redwood' || spec.type === 'acacia' || spec.type === 'cherry' || spec.type === 'maple' || spec.type === 'cypress';
+          const big = spec.type === 'villa' || spec.type === 'chapel' || spec.type === 'croft' || spec.type === 'ruinTower' || spec.type === 'shack' || spec.type === 'house' || spec.type === 'farmhouse' || spec.type === 'barn' || spec.type === 'shop' || spec.type === 'shrine' || spec.type === 'windmill';
+          const tree = spec.type.includes('tree') || spec.type.includes('Tree') || spec.type === 'pine' || spec.type === 'pine2' || spec.type === 'pineSnow' || spec.type === 'palm' || spec.type === 'redwood' || spec.type === 'acacia' || spec.type === 'cherry' || spec.type === 'maple' || spec.type === 'cypress' || spec.type === 'olive' || spec.type === 'stonePine' || spec.type === 'scotsPine' || spec.type === 'swampCypress';
           const need = w.roadHalf(z) + (big ? 9 : tree ? 5.5 * spec.scale[1] : 2.5);
           let near = Infinity;
           for (let dz = -40; dz <= 40; dz += 8) {
@@ -1294,13 +1372,17 @@ export class ChunkManager {
           // Town houses and shops face the street (with a little irregularity); everything else turns any way
           const [ttx] = w.tangent(z);
           const sg = Math.sign(u) || 1;
-          const rot = isTown && spec.type !== 'tree' ? Math.atan2(sg * tz, -sg * ttx) + (r() - 0.5) * 0.12 : r() * Math.PI * 2;
+          const rot = isTown && spec.type !== 'tree' && spec.type !== 'olive' && spec.type !== 'bougain' ? Math.atan2(sg * tz, -sg * ttx) + (r() - 0.5) * 0.12 : r() * Math.PI * 2;
           const tint = put(spec.type, x, spec.float ? 0 : h - 0.15, z, s, rot);
           // Old towns are built of warm stone; elsewhere houses are painted in soft colours
           if (tint && isTown && w.oldTownAt(z) > 0.5) tint.setRGB(0.86, 0.76, 0.6);
+          else if (tint && biome.id === 'moors' && (spec.type === 'house' || spec.type === 'shop')) tint.setRGB(0.74 + r() * 0.1, 0.73 + r() * 0.08, 0.7);
           else if (tint && spec.type === 'house') tint.setHex(HOUSE_PAINT[Math.floor(r() * HOUSE_PAINT.length)]);
+          else if (tint && (spec.type === 'villa' || spec.type === 'chapel' || spec.type === 'croft')) tint.setRGB(1, 0.985 + r() * 0.015, 0.96 + r() * 0.04);
+          // (a chapel looks out to sea; a croft keeps its door to the road)
+          if (spec.type === 'heron' || spec.type === 'lilypad' || spec.type === 'reeds') tint?.setScalar(1);
           // Windows that light up at night
-          if (spec.type === 'house' || spec.type === 'shop' || spec.type === 'cabin' || spec.type === 'farmhouse') lit.push({ type: spec.type, m: m4.clone(), on: r() });
+          if (LIT_TYPES.includes(spec.type)) lit.push({ type: spec.type, m: m4.clone(), on: r() });
         }
       }
     }
@@ -1327,16 +1409,50 @@ export class ChunkManager {
       }
     }
 
+    // Highland moors: runs of dry-stone wall along the roadside, with gaps and tumbled stretches
+    const moorW = Math.max(0, ...regions.filter((x) => x.biome.id === 'moors').map((x) => x.w));
+    if (moorW > 0.05) {
+      for (const side of [-1, 1]) {
+        for (let z = Math.ceil(z0 / 4) * 4; z < z0 + CHUNK; z += 4) {
+          // (long stretches with and without a wall, different on each side)
+          const run = Math.sin(z / 140 + side * 1.7 + w.seed) + Math.sin(z / 47 + side) * 0.5;
+          if (run < 0.15 || r() > moorW || r() < 0.06) continue;
+          if (w.urban(z) > 0.05 || w.bridge(z) > 0.05 || w.tunnelAt(z) > 0.05 || w.ferryWater(z) > 0.01 || w.stopNear(z, 70) || w.landmarkNear(z, 60) || w.trail(z) || w.river(z)) continue;
+          const u = side * (w.roadHalf(z) + 6.2);
+          const [tx, tz] = w.tangent(z);
+          const x = w.roadX(z) - tz * u, zz = z + tx * u;
+          const h = w.height(x, zz);
+          if (h < 1) continue;
+          put('stoneWall', x, h - 0.12, zz, 1, Math.atan2(tx, tz))?.setScalar(0.92 + r() * 0.12);
+        }
+      }
+    }
+
     const out: THREE.InstancedMesh[] = [];
+    // Steam rising from volcanic vents: a wavering plume over each one
+    const vents = items.get('vent');
+    if (vents?.length) {
+      const im = new THREE.InstancedMesh(steamGeo(), steamMaterial(), vents.length);
+      const p = new THREE.Vector3(), qq = new THREE.Quaternion(), sc = new THREE.Vector3();
+      vents.forEach((m, j) => {
+        m.decompose(p, qq, sc);
+        im.setMatrixAt(j, new THREE.Matrix4().compose(new THREE.Vector3(p.x, p.y + 1.1 * sc.y, p.z), qq, new THREE.Vector3(sc.x, sc.y * (0.8 + (j % 3) * 0.25), sc.z)));
+      });
+      im.computeBoundingSphere();
+      im.renderOrder = 3;
+      out.push(im);
+    }
     // Lit windows: one instanced mesh per building type, some rooms lit and some dark
-    for (const type of ['house', 'shop', 'cabin', 'farmhouse'] as PropType[]) {
+    for (const type of LIT_TYPES) {
       const these = lit.filter((l) => l.type === type);
       if (!these.length) continue;
       const im = new THREE.InstancedMesh(litGeometry(type), this.litMat, these.length);
       const warm = new THREE.Color();
       these.forEach((l, j) => {
         im.setMatrixAt(j, l.m);
-        im.setColorAt(j, l.on < 0.75 ? warm.setRGB(1, 0.78 + l.on * 0.2, 0.45 + l.on * 0.3) : warm.setRGB(0.05, 0.05, 0.06));
+        // (lava glows red through every crack; windows are warm, with some rooms dark)
+        if (type === 'lavaFlow') im.setColorAt(j, warm.setRGB(1.6, 0.34 + l.on * 0.2, 0.03));
+        else im.setColorAt(j, l.on < 0.75 ? warm.setRGB(1, 0.78 + l.on * 0.2, 0.45 + l.on * 0.3) : warm.setRGB(0.05, 0.05, 0.06));
       });
       im.computeBoundingSphere();
       out.push(im);

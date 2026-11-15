@@ -130,8 +130,9 @@ function roof(w: number, h: number, d: number, hex: number, y: number): Part {
 const WALLS: Partial<Record<PropType, number>> = {
   house: SURF.plaster, shop: SURF.brick, cabin: SURF.wood, barn: SURF.wood, farmhouse: SURF.stone,
   hut: SURF.wood, pier: SURF.wood, windmill: SURF.plaster, lighthouse: SURF.plaster,
+  villa: SURF.plaster, chapel: SURF.plaster, croft: SURF.plaster, ruinTower: SURF.stone, stoneWall: SURF.stone, shack: SURF.wood,
 };
-const ROCKY: Set<PropType> = new Set(['mesaRock', 'hoodoo', 'arch'] as PropType[]);
+const ROCKY: Set<PropType> = new Set(['mesaRock', 'hoodoo', 'arch', 'lavaRock', 'lavaFlow'] as PropType[]);
 
 function build(type: PropType): THREE.BufferGeometry {
   wallSurf = WALLS[type] ?? 0;
@@ -518,6 +519,175 @@ function buildParts(type: PropType): THREE.BufferGeometry {
       return merge([cyl(0.18, 0.3, 3.6, 0x5a4232, 6, 0, 1.8, 0), blob(3.4, 0x6a8a3a, 0, 4.2, 0, 0.3, 0.32)]);
     case 'maple':
       return merge([cyl(0.15, 0.24, 2.4, 0x4a3426, 6, 0, 1.2, 0), blob(2.0, 0xc8341e, 0, 3.0, 0, 0.5, 0.7)]);
+    // ---- Volcanic island ----
+    case 'lavaRock':
+      // A clinkery lump of fresh lava
+      return merge([rockBlob(1.3, 0x2b2a2c, 0, 0.45, 0), rockBlob(0.85, 0x3a3432, 1.0, 0.3, 0.4), rockBlob(0.6, 0x232224, -0.7, 0.25, -0.6)]).scale(1, 0.8, 1);
+    case 'vent':
+      // A steaming vent: a low cone of pale, sulphur-stained rock
+      return merge([
+        cyl(0.55, 1.9, 1.1, 0x4a4644, 8, 0, 0.5, 0),
+        cyl(0.42, 0.55, 0.22, 0xc9b84a, 8, 0, 1.12, 0),
+        cyl(0.3, 0.4, 0.2, 0x1c1a1a, 8, 0, 1.2, 0),
+        rockBlob(0.5, 0x6a5f3a, 1.5, 0.15, 0.4),
+      ]);
+    case 'lavaFlow': {
+      // A tongue of old lava with cracks that glow after dark (the glow is drawn separately)
+      const parts = [rockBlob(4.2, 0x242224, 0, 0.2, 0), rockBlob(3.1, 0x2c2828, 3.6, 0.1, 1.4), rockBlob(2.6, 0x201f21, -3.2, 0.1, -1.2), rockBlob(2.2, 0x2a2626, 0.6, 0.1, 3.4)];
+      return merge(parts).scale(1.25, 0.32, 1.25);
+    }
+    case 'treeFern': {
+      const parts: Part[] = [cyl(0.24, 0.3, 2.4, 0x4a3a2a, 6, 0, 1.2, 0)];
+      for (let i = 0; i < 7; i++) {
+        const leaf = paint(new THREE.BoxGeometry(2.6, 0.06, 0.7, 4, 1, 1), i % 2 ? 0x3c8a36 : 0x4a9c3e, 0.35);
+        bendLeaf(leaf);
+        leaf.translate(1.3, 0, 0).rotateZ(-0.35).rotateY((i / 7) * Math.PI * 2).translate(0, 2.9, 0);
+        parts.push(leaf);
+      }
+      return merge(parts);
+    }
+    // ---- Mediterranean coast ----
+    case 'villa': {
+      // Whitewashed walls, a low terracotta roof, blue shutters and door, a vine-shaded terrace
+      const wall = 0xf7f3ea, tile = 0xc0633a, blue = 0x2f6fb0, glassC = 0x26323c;
+      const parts = [
+        box(7.4, 0.4, 6, 0xd8cfbf, 0, 0.2, 0),
+        box(7, 5.2, 5.6, wall, 0, 3, 0),
+        roof(8, 1.5, 6.6, tile, 5.6),
+        box(8.05, 0.14, 6.65, 0xa9552f, 0, 5.6, 0),
+        box(3.6, 3, 4.6, wall, 5.2, 1.9, 0.5),
+        box(3.9, 0.18, 4.9, tile, 5.2, 3.45, 0.5),
+        box(1.15, 2.2, 0.12, blue, -0.2, 1.5, 2.83),
+        box(0.7, 1.3, 0.7, wall, -2.4, 6.7, -1.2), box(0.9, 0.12, 0.9, tile, -2.4, 7.4, -1.2),
+      ];
+      for (const [x, y] of [[-2.4, 1.9], [2.2, 1.9], [-2.4, 4.2], [-0.2, 4.2], [2.2, 4.2]]) {
+        parts.push(box(0.9, 1.2, 0.08, glassC, x, y, 2.82), box(0.42, 1.25, 0.07, blue, x - 0.68, y, 2.85), box(0.42, 1.25, 0.07, blue, x + 0.68, y, 2.85));
+      }
+      // Pergola with a splash of bougainvillea and a couple of pots
+      for (const x of [3.7, 6.7]) parts.push(box(0.14, 2.4, 0.14, 0x6a5038, x, 1.6, 3.9));
+      parts.push(box(3.4, 0.1, 1.4, 0x6a5038, 5.2, 2.85, 3.4), blob(0.9, 0xc2358f, 5.4, 3.0, 3.5, 0.3, 0.45), blob(0.6, 0xd94aa0, 4.2, 2.95, 3.6, 0.3, 0.45));
+      parts.push(cyl(0.3, 0.22, 0.5, 0xb5623c, 8, -1.3, 0.65, 3.2), blob(0.4, 0x4c8c37, -1.3, 1.1, 3.2, 0.3), cyl(0.3, 0.22, 0.5, 0xb5623c, 8, 0.9, 0.65, 3.2), blob(0.38, 0xd8333f, 0.9, 1.05, 3.2, 0.3));
+      return merge(parts);
+    }
+    case 'olive':
+      return merge([
+        cyl(0.3, 0.5, 1.9, 0x6b5a48, 6, 0, 0.95, 0),
+        blob(1.9, 0x8a9a70, 0, 3.1, 0, 0.5, 0.7),
+        blob(1.4, 0x9aa882, 1.2, 3.3, 0.5, 0.6, 0.7),
+        blob(1.3, 0x7d8c66, -1.1, 3.0, -0.5, 0.6, 0.7),
+      ]);
+    case 'stonePine':
+      return merge([cyl(0.2, 0.36, 7, 0x7a5236, 7, 0, 3.5, 0), blob(3.4, 0x2f6233, 0, 8, 0, 0.3, 0.36), blob(2.2, 0x3a7038, 1.6, 8.3, 0.8, 0.3, 0.36)]);
+    case 'bougain':
+      return merge([blob(0.95, 0x4a8a3a, 0, 0.6, 0, 0.3, 0.8), blob(0.85, 0xc2358f, 0.2, 0.95, 0.1, 0.4, 0.7), blob(0.6, 0xe0559f, -0.6, 0.7, 0.3, 0.4, 0.7), blob(0.5, 0xb02a80, 0.7, 0.6, -0.4, 0.4, 0.7)]);
+    case 'chapel': {
+      // A little white chapel with a blue dome and a bell arch, looking out to sea
+      const wall = 0xfaf8f2, blue = 0x2a66b8;
+      const parts = [
+        box(5, 0.3, 7, 0xe4dccb, 0, 0.15, 0),
+        box(4.4, 3.4, 5.4, wall, 0, 2, -0.4),
+        box(1, 1.9, 0.12, blue, 0, 1.25, 2.33),
+        box(0.14, 1.0, 0.14, wall, 0, 7.3, 2.3), box(0.6, 0.14, 0.14, wall, 0, 7.5, 2.3),
+        box(0.4, 2.2, 0.5, wall, -0.75, 4.8, 2.1), box(0.4, 2.2, 0.5, wall, 0.75, 4.8, 2.1), box(1.9, 0.5, 0.5, wall, 0, 6.15, 2.1),
+        cyl(0.22, 0.3, 0.4, 0x8a6a2a, 8, 0, 5.3, 2.1),
+      ];
+      const dome = paint(new THREE.SphereGeometry(1.9, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), blue);
+      parts.push(at(dome, 0, 3.75, -0.9), cyl(1.95, 1.95, 0.35, wall, 14, 0, 3.75, -0.9));
+      for (const x of [-2.22, 2.22]) parts.push(box(0.06, 1.2, 0.7, 0x26323c, x, 2.3, -0.4));
+      return merge(parts);
+    }
+    // ---- Highland moors ----
+    case 'heather':
+      return merge([blob(0.6, 0x5a6a3a, 0, 0.2, 0, 0.25, 0.55), blob(0.55, 0x9a5a9c, 0.05, 0.36, 0, 0.35, 0.5), blob(0.42, 0x8a4f94, 0.55, 0.3, 0.3, 0.35, 0.5), blob(0.38, 0xa868a8, -0.5, 0.28, -0.25, 0.35, 0.5)]);
+    case 'gorse':
+      return merge([blob(0.9, 0x3f6a34, 0, 0.6, 0, 0.3, 0.85), blob(0.5, 0xe6c22e, 0.3, 1.05, 0.2, 0.4, 0.6), blob(0.4, 0xf0d040, -0.5, 0.85, -0.2, 0.4, 0.6), blob(0.6, 0x4a7a3a, 0.75, 0.45, -0.3, 0.3, 0.8)]);
+    case 'stoneWall': {
+      // A 4 m run of dry-stone wall along z, with a rough coping
+      const parts: Part[] = [box(0.6, 0.95, 4.02, 0x8b8880, 0, 0.45, 0)];
+      for (let i = 0; i < 8; i++) parts.push(box(0.5, 0.26, 0.42, i % 2 ? 0x7a776f : 0x9a978e, (i % 3 - 1) * 0.04, 1.04, -1.75 + i * 0.5).rotateY(0) as Part);
+      return merge(parts);
+    }
+    case 'croft': {
+      // A low stone cottage, lime-washed, with a slate roof and a chimney at each end
+      const wall = 0xe6e2d8, slate = 0x50555c;
+      const parts = [
+        box(8, 2.6, 4.6, wall, 0, 1.3, 0),
+        roof(8.5, 2.1, 5.2, slate, 2.6).rotateY(Math.PI / 2) as Part,
+        box(0.7, 1.5, 0.7, 0x8b8880, 0, 4.2, -3.6), box(0.7, 1.5, 0.7, 0x8b8880, 0, 4.2, 3.6),
+        box(0.95, 1.8, 0.1, 0x7a2f26, 0, 0.9, 2.33).rotateY(Math.PI / 2) as Part,
+      ];
+      for (const z of [-2.4, 2.4]) parts.push(box(0.08, 0.9, 0.9, 0x26323c, 2.32, 1.5, z), box(0.1, 0.1, 1.1, 0xf4f1ea, 2.34, 1.0, z));
+      return merge(parts);
+    }
+    case 'ruinTower': {
+      // The broken stump of an old keep: thick walls, one corner standing tall
+      const st = 0x8f8a7e, dk = 0x7a756a;
+      const parts = [
+        box(7, 6, 1.2, st, 0, 3, -2.9), box(1.2, 9, 7, st, -2.9, 4.5, 0), box(1.2, 4.2, 7, dk, 2.9, 2.1, 0), box(7, 2.6, 1.2, dk, 0, 1.3, 2.9),
+        box(1.6, 5, 1.6, st, -2.9, 11.2, -2.9), box(2.6, 2.4, 1.2, dk, -1.9, 7.1, -2.9),
+        box(1.3, 0.9, 1.3, st, -2.9, 9.4, 1.6), box(1.3, 0.9, 1.3, st, -2.9, 9.4, -0.6),
+        box(0.5, 1.6, 1.3, 0x1e1e1e, -2.6, 5.4, 0.4), box(1, 2, 1.3, 0x1e1e1e, 0.4, 1.2, 2.9),
+        rockBlob(1.2, dk, 4.4, 0.3, 2.2), rockBlob(0.9, st, 3.6, 0.2, -4.2), rockBlob(0.8, dk, -4.6, 0.2, 3.3),
+      ];
+      return merge(parts);
+    }
+    case 'scotsPine':
+      return merge([cyl(0.22, 0.4, 7.5, 0x8a4f32, 7, 0, 3.75, 0), blob(2.6, 0x2d5a3a, 0, 8.6, 0, 0.35, 0.55), blob(1.8, 0x356642, 1.6, 7.6, 0.6, 0.35, 0.55), blob(1.5, 0x284f34, -1.4, 9.3, -0.4, 0.35, 0.55)]);
+    // ---- Bayou wetlands ----
+    case 'swampCypress': {
+      const parts: Part[] = [cyl(0.42, 1.2, 3, 0x5a4a3a, 9, 0, 1.3, 0), cyl(0.2, 0.42, 8, 0x5a4a3a, 7, 0, 6.8, 0)];
+      parts.push(blob(3.2, 0x4d7240, 0, 9.6, 0, 0.4, 0.75), blob(2.3, 0x5a8048, 1.8, 8.6, 0.6, 0.45, 0.7), blob(2.1, 0x43663a, -1.6, 9.0, -0.8, 0.45, 0.7));
+      // Moss hanging in grey-green curtains
+      for (let i = 0; i < 5; i++) {
+        const a = i * 1.26;
+        parts.push(paint(new THREE.ConeGeometry(0.3, 2.4, 4), 0x9aa48a, 0.6).rotateX(Math.PI).translate(Math.cos(a) * 2.2, 6.6, Math.sin(a) * 2.2));
+      }
+      return merge(parts);
+    }
+    case 'reeds': {
+      const parts: Part[] = [];
+      for (let i = 0; i < 9; i++) {
+        const a = i * 2.4, d = 0.1 + (i % 3) * 0.2;
+        parts.push(paint(new THREE.ConeGeometry(0.05, 1.6 + (i % 4) * 0.2, 3), i % 2 ? 0x7d9a45 : 0x94a850, 0.5).translate(Math.cos(a) * d, 0.8, Math.sin(a) * d));
+        if (i % 3 === 0) parts.push(cyl(0.05, 0.05, 0.3, 0x5a3d24, 5, Math.cos(a) * d, 1.55, Math.sin(a) * d));
+      }
+      return merge(parts);
+    }
+    case 'lilypad': {
+      // A raft of lily pads lying on the water, a flower or two among them
+      const parts: Part[] = [];
+      for (let i = 0; i < 7; i++) {
+        const a = i * 2.4, d = (i % 4) * 0.45;
+        parts.push(paint(new THREE.CylinderGeometry(0.34 + (i % 3) * 0.08, 0.34 + (i % 3) * 0.08, 0.02, 9, 1, false, 0.5, Math.PI * 1.8), i % 2 ? 0x3f7a35 : 0x4f8f3f).translate(Math.cos(a) * d, 0.045, Math.sin(a) * d));
+      }
+      parts.push(ball(0.12, 0xf7e9f0, 0.45, 0.14, 0.2), ball(0.1, 0xf2b6d0, -0.7, 0.12, -0.5));
+      return merge(parts);
+    }
+    case 'shack': {
+      // A fishing shack on stilts over the water: weathered boards, a rusty tin roof, a porch and steps
+      const wood = 0x8a7a66, tin = 0x8f5a44;
+      const parts = [box(6.4, 0.2, 5.4, 0x6f5d4a, 0, 2.6, 0.5), box(4.6, 2.5, 3.8, wood, 0, 3.95, -0.2)];
+      const rf = paint(new THREE.BoxGeometry(5.6, 0.14, 5.6), tin);
+      parts.push(rf.rotateX(0.2).translate(0, 5.55, 0.4));
+      for (const x of [-2.9, 2.9]) for (const z of [-1.9, 0.5, 2.9]) parts.push(cyl(0.11, 0.13, 4.6, 0x4f4032, 5, x, 0.3, z));
+      parts.push(box(0.9, 1.8, 0.1, 0x4a3a2c, -1, 3.6, 1.72), box(0.9, 0.8, 0.1, 0xffd38a, 1.1, 4.0, 1.72));
+      for (const x of [-2.9, 2.9]) parts.push(box(0.08, 0.9, 0.08, 0x5a4a3a, x, 3.15, 3.05));
+      parts.push(box(5.9, 0.08, 0.08, 0x5a4a3a, 0, 3.6, 3.05));
+      // A little skiff tied up underneath
+      parts.push(box(1.1, 0.4, 3.2, 0x6a7a5a, 4.3, 1.35, 0.6));
+      return merge(parts);
+    }
+    case 'heron': {
+      // A grey heron standing in the shallows
+      const grey = 0xb8c0c8;
+      const neck = cyl(0.045, 0.06, 0.75, grey, 5).rotateX(0.35).translate(0, 1.45, 0.3);
+      const beak = paint(new THREE.ConeGeometry(0.035, 0.34, 4), 0xe0a83a).rotateX(Math.PI / 2).translate(0, 1.82, 0.62);
+      return merge([
+        cyl(0.02, 0.02, 0.85, 0x6a5a3a, 4, 0.07, 0.42, 0), cyl(0.02, 0.02, 0.85, 0x6a5a3a, 4, -0.07, 0.42, 0.05),
+        blob(0.28, grey, 0, 1.05, 0, 0, 0.75).scale(1, 1, 1.5) as Part, neck, ball(0.08, 0xf2f2f2, 0, 1.82, 0.44), beak,
+        box(0.04, 0.1, 0.4, 0x3a4048, 0, 1.0, -0.4),
+      ]);
+    }
     case 'tree2':
       return build('tree');
     case 'pine2':
@@ -558,7 +728,7 @@ export function propGeometry(type: PropType): THREE.BufferGeometry {
 }
 
 /** Roughly how tall a prop is, so far-away culling can keep big things. */
-export const BIG_PROPS: Set<PropType> = new Set(['turbine', 'windmill', 'mesaRock', 'lighthouse', 'barn']);
+export const BIG_PROPS: Set<PropType> = new Set(['turbine', 'windmill', 'mesaRock', 'lighthouse', 'barn', 'ruinTower', 'chapel', 'lavaFlow']);
 
 /** Window panes of a building that glow at night (just outside the glass, facing out). */
 export function litGeometry(type: PropType): THREE.BufferGeometry {
@@ -580,6 +750,26 @@ export function litGeometry(type: PropType): THREE.BufferGeometry {
     pane(0.9, 0.8, -1.6, 2.1, 2.3);
   } else if (type === 'farmhouse') {
     for (const x of [-3.2, 1.4, 3.2]) for (const y of [1.6, 3.4]) pane(0.8, 1, x, y, 3.08);
+  } else if (type === 'villa') {
+    for (const [x, y] of [[-2.4, 1.9], [2.2, 1.9], [-2.4, 4.2], [-0.2, 4.2], [2.2, 4.2]]) pane(0.9, 1.2, x, y, 2.9);
+  } else if (type === 'croft') {
+    for (const z of [-2.4, 2.4]) pane(0.9, 0.9, 2.4, 1.5, z, Math.PI / 2);
+  } else if (type === 'shack') {
+    pane(0.9, 0.8, 1.1, 4.0, 1.8);
+  } else if (type === 'lavaFlow') {
+    // Cracks in the crust, glowing: thin crooked strips lying just above the rock
+    const crack = (x0: number, z0: number, a: number, len: number) => {
+      let x = x0, z = z0, dir = a;
+      for (let i = 0; i < len; i++) {
+        const l = 1.1 + (i % 3) * 0.3;
+        const nx = x + Math.cos(dir) * l, nz = z + Math.sin(dir) * l;
+        const y = 1.25 * 0.9 * Math.max(0.2, 1 - Math.hypot((x + nx) / 2, (z + nz) / 2) / 7.5) + 0.25;
+        panes.push(new THREE.PlaneGeometry(l * 1.1, 0.2 + (i % 2) * 0.1).rotateX(-Math.PI / 2).rotateY(-dir).translate((x + nx) / 2, y, (z + nz) / 2));
+        x = nx; z = nz;
+        dir += ((i * 7 + len) % 5 - 2) * 0.32;
+      }
+    };
+    crack(-4, -1, 0.3, 6); crack(0.5, -3.5, 1.4, 5); crack(-1, 1.5, -0.4, 5); crack(2.5, 0.5, 2.2, 4); crack(-3, 3, 0.9, 3);
   }
   const g = mergeGeometries(panes)!;
   g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));

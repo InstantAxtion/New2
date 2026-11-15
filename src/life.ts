@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { World } from './world/world';
+import { SEGMENT, type World } from './world/world';
 import type { BiomeId } from './world/biomes';
 import { hash1 } from './world/noise';
 import { shared } from './materials';
@@ -31,7 +31,7 @@ function weightOf(w: World, z: number, ids: BiomeId[]): number {
 
 // ---- Animals ----
 
-type Species = 'cow' | 'horse' | 'deer' | 'sheep' | 'giraffe' | 'elephant' | 'zebra' | 'reindeer';
+type Species = 'cow' | 'horse' | 'deer' | 'sheep' | 'giraffe' | 'elephant' | 'zebra' | 'reindeer' | 'highland';
 
 interface AnimalShape {
   r: number; len: number; y: number; leg: number; legR: number;
@@ -47,6 +47,7 @@ const SHAPES: Record<Species, AnimalShape> = {
   elephant: { r: 0.95, len: 1.5, y: 1.95, leg: 1.4, legR: 0.27, neck: 0.25, neckR: 0.6, neckUp: 0.15, head: 0.55, headR: 0.45 },
   zebra: { r: 0.32, len: 1.1, y: 1.15, leg: 0.9, legR: 0.06, neck: 0.75, neckR: 0.14, neckUp: 0.95, head: 0.55, headR: 0.1 },
   reindeer: { r: 0.32, len: 0.95, y: 1.1, leg: 0.85, legR: 0.05, neck: 0.55, neckR: 0.11, neckUp: 0.9, head: 0.36, headR: 0.09 },
+  highland: { r: 0.46, len: 1.1, y: 0.98, leg: 0.66, legR: 0.09, neck: 0.42, neckR: 0.24, neckUp: 0.4, head: 0.46, headR: 0.17 },
 };
 
 /** Patterned coats: giraffe patches and zebra stripes. */
@@ -145,6 +146,10 @@ function animal(species: Species, variant: number): Animal {
   } else if (species === 'elephant') {
     coat = std(0x7d7873, 0.95);
     dark = std(0x4a4643);
+  } else if (species === 'highland') {
+    // Shaggy ginger (now and then black or cream)
+    coat = std([0xa8602a, 0xb8702e, 0x8a4a22, 0x2a221e, 0xd8c8a0][variant % 5], 1);
+    dark = std(0xd8d0c0);
   } else if (species === 'reindeer') {
     coat = std([0x8a7a66, 0x6e5e4c, 0xa49886][variant % 3]);
     dark = std(0x3a3028);
@@ -203,6 +208,16 @@ function animal(species: Species, variant: number): Animal {
   }
   if (species === 'cow' && variant % 2 === 0) {
     for (const sd of [-1, 1]) neckDark.push(new THREE.ConeGeometry(0.03, 0.18, 5).rotateZ(-sd * 1.2).translate(tip.x + sd * 0.17, tip.y + 0.12, tip.z - 0.05));
+  }
+  if (species === 'highland') {
+    // Long horns sweeping out and up, and a fringe over the eyes
+    for (const sd of [-1, 1]) {
+      neckDark.push(new THREE.CylinderGeometry(0.018, 0.04, 0.5, 5).translate(0, 0.25, 0).rotateZ(-sd * 1.15).translate(tip.x + sd * 0.12, tip.y + 0.12, tip.z - 0.02));
+      neckDark.push(new THREE.ConeGeometry(0.02, 0.26, 5).translate(0, 0.13, 0).rotateZ(-sd * 0.25).translate(tip.x + sd * 0.56, tip.y + 0.31, tip.z - 0.02));
+    }
+    headParts.push(new THREE.SphereGeometry(s.headR * 1.15, 8, 6).scale(1.1, 0.7, 0.9).translate(tip.x, tip.y + 0.04, tip.z + 0.12));
+    // A long shaggy skirt of hair under the body
+    body.push(new THREE.CapsuleGeometry(s.r * 0.92, s.len * 0.9, 4, 10).rotateX(Math.PI / 2).scale(0.95, 0.8, 1).translate(0, s.y - s.r * 0.45, 0));
   }
   if (species === 'elephant') {
     // Big ears and a trunk hanging down to the ground, with tusks
@@ -464,14 +479,14 @@ export function balloon(variant: number): THREE.Group {
 interface Balloon { g: THREE.Group; x: number; y: number; z: number; drift: number; active: boolean; burn: number }
 interface Plane { g: THREE.Group; active: boolean; t: number; dur: number; from: THREE.Vector3; to: THREE.Vector3; alt: number }
 
-const FIELD: BiomeId[] = ['hills', 'flatlands', 'autumn', 'lakes', 'seaside', 'blossom', 'vineyard'];
+const FIELD: BiomeId[] = ['hills', 'flatlands', 'autumn', 'lakes', 'seaside', 'blossom', 'vineyard', 'riviera'];
 const WOODS: BiomeId[] = ['forest', 'alpine', 'autumn', 'winter', 'hills', 'rainforest', 'pnw'];
-const GLOW_BUGS: BiomeId[] = ['pnw', 'vineyard', 'tropical', 'blossom', 'forest', 'hills', 'flatlands', 'autumn', 'lakes', 'rainforest', 'seaside'];
+const GLOW_BUGS: BiomeId[] = ['pnw', 'vineyard', 'tropical', 'blossom', 'forest', 'hills', 'flatlands', 'autumn', 'lakes', 'rainforest', 'seaside', 'bayou', 'riviera', 'volcanic'];
 const BALLOON_LANDS: BiomeId[] = ['vineyard', 'blossom', 'hills', 'flatlands', 'autumn', 'lakes', 'desert', 'canyon'];
 
 export class Life {
   readonly group = new THREE.Group();
-  private animals: Record<Species, Animal[]> = { cow: [], horse: [], deer: [], sheep: [], giraffe: [], elephant: [], zebra: [], reindeer: [] };
+  private animals: Record<Species, Animal[]> = { cow: [], horse: [], deer: [], sheep: [], giraffe: [], elephant: [], zebra: [], reindeer: [], highland: [] };
   private crossers: Animal[] = [];
   private crossing: { z: number; u: number; dir: number; n: number; pause: number } | null = null;
   private nextCrossing = 40;
@@ -498,12 +513,19 @@ export class Life {
   private planeTimer = 8;
   private balloons: Balloon[] = [];
 
+  /** The volcano on the horizon of the volcanic island, its smoke, and low mist over moor and swamp. */
+  private volcano: THREE.Group | null = null;
+  private volcanoMat: THREE.MeshLambertMaterial | null = null;
+  private smoke: THREE.Sprite[] = [];
+  private craterGlow: THREE.Sprite | null = null;
+  private mist: THREE.Sprite[] = [];
+
   /** An animal call to play: set here, picked up (and cleared) by the game. */
   call: { kind: 'owl' | 'gull' | 'eagle'; level: number } | null = null;
   private callTimer = 6;
 
   constructor(public world: World, private effects: Effects) {
-    const counts: Record<Species, number> = { cow: 12, horse: 8, deer: 8, sheep: 12, giraffe: 0, elephant: 0, zebra: 0, reindeer: 0 };
+    const counts: Record<Species, number> = { cow: 12, horse: 8, deer: 8, sheep: 12, giraffe: 0, elephant: 0, zebra: 0, reindeer: 0, highland: 8 };
     for (const sp of Object.keys(counts) as Species[]) {
       for (let i = 0; i < counts[sp]; i++) {
         const a = animal(sp, i);
@@ -615,6 +637,7 @@ export class Life {
     this.whaleState = null;
     for (const b of this.balloons) b.active = false;
     this.flyCentre.set(1e9, 0, 0);
+    for (const m of this.mist) m.userData.z = 1e9;
   }
 
   /** What's out there right now (for the passport). */
@@ -643,13 +666,14 @@ export class Life {
     this.fireflies(car, env);
     this.sky(dt, cam, env);
     this.calls(dt, car, env);
+    this.regional(dt, t, car, cam, env);
   }
 
   // Herds graze in fields a little back from the road, placed the same each time you pass
   private herds(z: number, t: number, env: LifeEnv) {
     const w = this.world;
     const CELL = 130;
-    const used: Record<Species, number> = { cow: 0, horse: 0, deer: 0, sheep: 0, giraffe: 0, elephant: 0, zebra: 0, reindeer: 0 };
+    const used: Record<Species, number> = { cow: 0, horse: 0, deer: 0, sheep: 0, giraffe: 0, elephant: 0, zebra: 0, reindeer: 0, highland: 0 };
     const c0 = Math.floor((z - 120) / CELL), c1 = Math.floor((z + 420) / CELL);
     for (let c = c0; c <= c1; c++) {
       const herd = this.herdAt(c, CELL);
@@ -692,7 +716,8 @@ export class Life {
     const field = weightOf(w, z, FIELD), woods = weightOf(w, z, WOODS);
     const r = hash1(c, seed + 503);
     let species: Species;
-    if (woods > 0.5 && r < 0.6) species = 'deer';
+    if (weightOf(w, z, ['moors']) > 0.5) species = r < 0.6 ? 'highland' : 'sheep';
+    else if (woods > 0.5 && r < 0.6) species = 'deer';
     else if (field > 0.5) species = r < 0.4 ? 'cow' : r < 0.7 ? 'sheep' : 'horse';
     else if (weightOf(w, z, ['alpine', 'winter']) > 0.5) species = r < 0.5 ? 'sheep' : 'deer';
     else return null;
@@ -766,7 +791,7 @@ export class Life {
   private spawnFlock(car: { z: number; v: number }, env: LifeEnv): Flock | null {
     const w = this.world;
     const z = car.z + 120 + Math.random() * 220;
-    const coast = weightOf(w, z, ['seaside', 'lakes', 'tropical']);
+    const coast = weightOf(w, z, ['seaside', 'lakes', 'tropical', 'riviera', 'volcanic']);
     const peaks = weightOf(w, z, ['alpine', 'canyon', 'desert']);
     const woods = weightOf(w, z, WOODS);
     const r = Math.random();
@@ -885,7 +910,7 @@ export class Life {
     const w = this.world;
     // Sailing boats out on the water, heeling in the breeze
     this.boatTimer -= dt;
-    const watery = weightOf(w, car.z + 200, ['seaside', 'lakes', 'tropical']);
+    const watery = weightOf(w, car.z + 200, ['seaside', 'lakes', 'tropical', 'riviera', 'volcanic']);
     if (this.boatTimer <= 0) {
       this.boatTimer = 3;
       const b = this.boats.find((x) => !x.active);
@@ -908,7 +933,7 @@ export class Life {
       b.g.rotateZ(0.18 + Math.sin(b.t * 0.7) * 0.04);
     }
     this.seaTimer -= dt;
-    const coast = weightOf(w, car.z + 150, ['seaside', 'tropical']);
+    const coast = weightOf(w, car.z + 150, ['seaside', 'tropical', 'riviera', 'volcanic']);
     if (this.seaTimer <= 0) {
       this.seaTimer = 4;
       if (coast > 0.5 && env.night < 0.5) {
@@ -1020,6 +1045,137 @@ export class Life {
     }
   }
 
+  // ---- Things that belong to one region ----
+
+  private buildVolcano() {
+    const g = new THREE.Group();
+    // A broad cone with gullied flanks and a broken crater rim
+    const R = 1000, H = 560;
+    const geo = new THREE.CylinderGeometry(105, R, H, 40, 14, true);
+    const pos = geo.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const a = Math.atan2(z, x);
+      const f = (y + H / 2) / H; // 0 at the foot, 1 at the rim
+      // Flanks sweep up in a curve; gullies run down them
+      const k = 1 + Math.sin(a * 9 + Math.sin(a * 3) * 2) * 0.05 * (1 - f) + Math.sin(a * 23) * 0.02;
+      const curve = Math.pow(1 - f, 1.5) * R + 105 * (1 - Math.pow(1 - f, 1.5));
+      const r0 = Math.hypot(x, z) || 1;
+      pos.setXYZ(i, (x / r0) * curve * k, y + (f > 0.98 ? Math.sin(a * 5) * 16 + Math.sin(a * 2 + 1) * 12 : 0), (z / r0) * curve * k);
+      // Green skirts, bare dark rock above, rusty cinders near the top
+      const g1 = Math.max(0, Math.min(1, (0.3 - f) / 0.25));
+      const top = Math.max(0, Math.min(1, (f - 0.72) / 0.25));
+      const gully = 0.85 + 0.15 * Math.sin(a * 9 + Math.sin(a * 3) * 2);
+      col[i * 3] = (0.2 + (0.2 - 0.2) * g1 + top * 0.16) * gully;
+      col[i * 3 + 1] = (0.19 + (0.36 - 0.19) * g1 + top * 0.02) * gully;
+      col[i * 3 + 2] = (0.2 + (0.16 - 0.2) * g1) * gully;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.translate(0, H / 2, 0);
+    geo.computeVertexNormals();
+    this.volcanoMat = new THREE.MeshLambertMaterial({ vertexColors: true, fog: false });
+    const cone = new THREE.Mesh(geo, this.volcanoMat);
+    cone.frustumCulled = false;
+    g.add(cone);
+    const soft = glowTexture();
+    for (let i = 0; i < 7; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: soft, color: 0xd9d6d2, transparent: true, depthWrite: false, fog: false, opacity: 0.5 }));
+      g.add(sp);
+      this.smoke.push(sp);
+    }
+    this.craterGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: soft, color: 0xff5a1a, transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+    this.craterGlow.position.y = H + 20;
+    this.craterGlow.scale.set(420, 260, 1);
+    g.add(this.craterGlow);
+    g.userData.h = H;
+    this.group.add(g);
+    this.volcano = g;
+  }
+
+  private regional(dt: number, t: number, car: { x: number; z: number; v: number }, cam: THREE.Vector3, env: LifeEnv) {
+    const w = this.world;
+    // The volcano stands inland of the middle of each volcanic region
+    let k: number | null = null;
+    const k0 = Math.floor(car.z / SEGMENT);
+    for (const c of [k0, k0 - 1, k0 + 1]) {
+      if (w.regionBiome(c) === 'volcanic' && Math.abs((c + 0.5) * SEGMENT - car.z) < SEGMENT * 0.5 + 2600) { k = c; break; }
+    }
+    if (k === null) {
+      if (this.volcano) this.volcano.visible = false;
+    } else {
+      if (!this.volcano) this.buildVolcano();
+      const g = this.volcano!;
+      g.visible = true;
+      const zc = (k + 0.5) * SEGMENT;
+      const u = -w.seaSide(k) * 1750;
+      const [tx, tz] = w.tangent(zc);
+      g.position.set(w.roadX(zc) - tz * u, 0, zc + tx * u);
+      // Haze it into the distance by hand (it stands beyond the fog's reach)
+      const fog = (this.group.parent as THREE.Scene | null)?.fog as THREE.Fog | undefined;
+      const mat = this.volcanoMat!;
+      const haze = 0.52 + env.cover * 0.2 + (1 - env.fog) * 0.25;
+      mat.color.setScalar(1 - Math.min(0.9, haze));
+      if (fog) mat.emissive.copy(fog.color).multiplyScalar(Math.min(0.9, haze));
+      const H = g.userData.h as number;
+      // Smoke rolls up out of the crater and leans away on the wind
+      this.smoke.forEach((sp, i) => {
+        const f = ((t * 0.03 + i / this.smoke.length) % 1);
+        sp.position.set(f * f * 520, H + 30 + f * 520, f * 140);
+        const sc = 190 + f * 620;
+        sp.scale.set(sc, sc * 0.8, 1);
+        const m = sp.material as THREE.SpriteMaterial;
+        m.opacity = Math.sin(Math.min(1, f * 4) * Math.PI / 2) * (1 - f) * 0.62;
+        const day = 1 - env.night * 0.8;
+        // Lit from below by the crater after dark
+        m.color.setRGB(0.85 * day + env.night * 0.5 * (1 - f), 0.84 * day + env.night * 0.2 * (1 - f), 0.82 * day + env.night * 0.1 * (1 - f));
+        if (fog) m.color.lerp(fog.color, 0.35);
+      });
+      (this.craterGlow!.material as THREE.SpriteMaterial).opacity = (0.25 + 0.75 * env.night) * (0.75 + 0.25 * Math.sin(t * 0.9) * Math.sin(t * 0.37)) * 0.85;
+    }
+
+    // Mist lying low over the moor and the swamp, thickest at night and around dawn
+    const misty = weightOf(w, car.z, ['moors', 'bayou']) * (1 - w.urban(car.z)) * (1 - w.tunnelAt(car.z));
+    const early = Math.max(0, 1 - Math.abs(env.hour - 6.5) / 3);
+    const level = misty * Math.min(1, 0.45 + env.night * 0.4 + early * 0.5 + env.cover * 0.3);
+    if (level < 0.02) {
+      for (const m of this.mist) m.visible = false;
+      return;
+    }
+    if (!this.mist.length) {
+      const soft = glowTexture();
+      for (let i = 0; i < 10; i++) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: soft, color: 0xe8ecee, transparent: true, depthWrite: false, opacity: 0 }));
+        sp.userData.z = 1e9;
+        sp.userData.seed = i * 13.7;
+        this.group.add(sp);
+        this.mist.push(sp);
+      }
+    }
+    const fwd = car.v >= 0 ? 1 : -1;
+    for (const sp of this.mist) {
+      const d = sp.userData;
+      // Move a bank that has fallen behind (or was never placed) out ahead again
+      if ((d.z - car.z) * fwd < -90 || Math.abs(d.z - car.z) > 520) {
+        const fresh = Math.abs(d.z - car.z) > 600;
+        d.z = car.z + fwd * (fresh ? 30 + Math.random() * 420 : 330 + Math.random() * 150);
+        const side = Math.random() < 0.5 ? -1 : 1;
+        d.u = side * (w.roadHalf(d.z) + 14 + Math.random() * 130);
+        d.w = 70 + Math.random() * 90;
+        d.born = fresh ? t - 10 : t;
+      }
+      const uu = d.u + Math.sin(t * 0.02 + d.seed) * 10;
+      const [tx, tz] = w.tangent(d.z);
+      const x = w.roadX(d.z) - tz * uu, z = d.z + tx * uu;
+      sp.position.set(x, Math.max(w.height(x, z), 0) + 2.2, z);
+      sp.scale.set(d.w, 7 + Math.sin(d.seed) * 2, 1);
+      const near = Math.min(1, cam.distanceTo(sp.position) / 60);
+      (sp.material as THREE.SpriteMaterial).opacity = level * 0.3 * near * Math.min(1, (t - d.born) / 4);
+      sp.visible = true;
+    }
+    void dt;
+  }
+
   // ---- Planes and balloons ----
 
   private sky(dt: number, cam: THREE.Vector3, env: LifeEnv) {
@@ -1104,7 +1260,7 @@ export class Life {
     const w = this.world;
     if (env.rain > 0.4) return;
     if (env.night > 0.6 && weightOf(w, car.z, WOODS) > 0.4) this.call = { kind: 'owl', level: 0.8 };
-    else if (env.night < 0.4 && weightOf(w, car.z, ['seaside', 'lakes', 'tropical']) > 0.4) this.call = { kind: 'gull', level: 0.7 };
+    else if (env.night < 0.4 && weightOf(w, car.z, ['seaside', 'lakes', 'tropical', 'riviera', 'volcanic']) > 0.4) this.call = { kind: 'gull', level: 0.7 };
     else if (this.flocks.some((f) => f.kind === 'eagle')) this.call = { kind: 'eagle', level: 0.5 };
   }
 }
