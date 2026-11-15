@@ -18,6 +18,17 @@ export const AtmosphereShader = {
     uThresh: { value: 0.85 },
     uGlare: { value: 0 },
     uGrade: { value: 1 },
+    // Picture style (all neutral by default: the picture is exactly the standard grade)
+    uTint: { value: new THREE.Vector3(1, 1, 1) },
+    uSat: { value: 1 },
+    uContrast: { value: 1 },
+    uFade: { value: 0 },
+    uMono: { value: 0 },
+    uSoft: { value: 0 },
+    uSplit: { value: 1 },
+    uVig: { value: 0.2 },
+    uGrain: { value: 0 },
+    uSpeed: { value: 0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -37,6 +48,16 @@ export const AtmosphereShader = {
     uniform float uThresh;
     uniform float uGlare;
     uniform float uGrade;
+    uniform vec3 uTint;
+    uniform float uSat;
+    uniform float uContrast;
+    uniform float uFade;
+    uniform float uMono;
+    uniform float uSoft;
+    uniform float uSplit;
+    uniform float uVig;
+    uniform float uGrain;
+    uniform float uSpeed;
     varying vec2 vUv;
     void main() {
       vec2 uv = vUv;
@@ -48,6 +69,25 @@ export const AtmosphereShader = {
         uv.y += sin(uv.x * 260.0 + uTime * 5.0) * 0.0012 * uHeat * band;
       }
       vec4 col = texture2D(tDiffuse, uv);
+      // Speed: the edges of the picture streak towards the middle
+      if (uSpeed > 0.01) {
+        vec2 dc = uv - 0.5;
+        float e = smoothstep(0.22, 0.72, length(dc)) * uSpeed * 0.03;
+        vec3 acc = col.rgb;
+        for (int i = 1; i <= 5; i++) acc += texture2D(tDiffuse, uv - dc * e * float(i)).rgb;
+        col.rgb = acc / 6.0;
+      }
+      // Dreamy: a soft glow bleeding out of the bright parts
+      if (uSoft > 0.01) {
+        vec3 blur = vec3(0.0);
+        for (int i = 0; i < 8; i++) {
+          float a = float(i) * 0.7854;
+          vec2 o = vec2(cos(a), sin(a) * 1.6) * (mod(float(i), 2.0) < 0.5 ? 0.006 : 0.013);
+          blur += texture2D(tDiffuse, clamp(uv + o, 0.0, 1.0)).rgb;
+        }
+        blur /= 8.0;
+        col.rgb = mix(col.rgb, max(col.rgb, blur) * 0.6 + blur * 0.5, uSoft);
+      }
       // Mirage: the far road picks up a little of the sky just under the horizon
       if (uHeat > 0.01) {
         float m = smoothstep(uHorizon - 0.035, uHorizon - 0.012, uv.y) * (1.0 - smoothstep(uHorizon - 0.012, uHorizon, uv.y));
@@ -84,10 +124,25 @@ export const AtmosphereShader = {
       if (uGrade > 0.01) {
         float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
         float hi = lum / (lum + 0.18);
-        vec3 graded = col.rgb * mix(vec3(0.965, 1.0, 1.045), vec3(1.045, 1.0, 0.95), hi);
+        vec3 graded = col.rgb * (1.0 + (mix(vec3(0.965, 1.0, 1.045), vec3(1.045, 1.0, 0.95), hi) - 1.0) * uSplit);
         graded = max(mix(vec3(lum), graded, 1.08), 0.0);
-        float vig = 1.0 - 0.2 * smoothstep(0.45, 1.05, length((vUv - 0.5) * vec2(1.25, 1.0)) * 1.4);
+        float vig = 1.0 - uVig * smoothstep(0.45, 1.05, length((vUv - 0.5) * vec2(1.25, 1.0)) * 1.4);
         col.rgb = mix(col.rgb, graded * vig, uGrade);
+      }
+      // Picture style: tint, saturation, contrast (around mid grey), faded blacks, black & white
+      {
+        vec3 c = col.rgb * uTint;
+        float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+        c = max(mix(vec3(l), c, uSat * (1.0 - uMono)), 0.0);
+        if (uContrast != 1.0) c = 0.18 * pow(c / 0.18, vec3(uContrast));
+        c = c * (1.0 - uFade * 3.0) + uFade;
+        col.rgb = c;
+      }
+      // Film grain
+      if (uGrain > 0.001) {
+        vec2 gp = floor(gl_FragCoord.xy / 1.5) + fract(uTime * 7.31) * 91.7;
+        float n = fract(sin(dot(gp, vec2(12.9898, 78.233))) * 43758.5453);
+        col.rgb *= 1.0 + (n - 0.5) * uGrain;
       }
       gl_FragColor = col;
     }`,
