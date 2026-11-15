@@ -1,0 +1,9 @@
+/* The ✨ More screen */
+.hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+.hub-tile { min-height: 84px; }
+.hub-tile small { display: block; font-size: 11px; opacity: 0.65; margin-top: 2px; font-weight: 400; }
+.tile-row.five { grid-template-columns: repeat(5, 1fr); }
+.xr-val { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; opacity: 0.8; font-size: 13px; }
+/* Cinematic and drone views: a clear picture (a tap brings the normal view and controls back) */
+body.x-cine .hud-tl, body.x-cine .hud-tr, body.x-cine .speedo, body.x-cine .manual, body.x-cine .cruise, body.x-cine .take-over, body.x-cine .nowbar { opacity: 0; pointer-events: none !important; }
+body.x-cine .hud-tr *, body.x-cine .manual * { pointer-events: none !important; }

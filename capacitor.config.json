@@ -1,0 +1,6 @@
+{
+  "appId": "com.endlessdrive.app",
+  "appName": "Endless Drive",
+  "webDir": "dist",
+  "android": { "allowMixedContent": false }
+}

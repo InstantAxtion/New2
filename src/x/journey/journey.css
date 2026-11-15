@@ -1,0 +1,73 @@
+/* Journeys: road trips, today, milestones, trip computer, journal, moods */
+.jr-tabs { gap: 6px; margin-bottom: 10px; padding-bottom: 2px; }
+.jr-tabs .chip { white-space: nowrap; min-height: 38px; }
+.jr-card { background: linear-gradient(140deg, rgba(240,180,76,.16), rgba(255,255,255,.05)); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.jr-card small { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+.jr-card > b { font-size: 20px; font-weight: 800; overflow-wrap: anywhere; }
+.jr-card > span { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.jr-card .jr-dim, .jr-dim { color: var(--muted) !important; font-size: 12.5px; }
+.jr-card button { align-self: flex-start; margin-top: 6px; }
+.jr-bar { display: block; height: 6px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; margin: 5px 0 2px; }
+.jr-bar b { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.jr-body h3 small { text-transform: none; letter-spacing: 0; font-weight: 400; opacity: .8; margin-left: 4px; }
+.jr-dest { display: grid !important; grid-template-columns: 34px 1fr; column-gap: 8px; align-items: center; margin-bottom: 5px; padding: 9px 8px; min-height: 52px; }
+.jr-dest i { grid-row: span 2; font-style: normal; font-size: 24px; text-align: center; }
+.jr-row { display: grid; grid-template-columns: 30px 1fr auto; column-gap: 8px; align-items: center; padding: 7px 4px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.jr-row i { font-style: normal; font-size: 20px; text-align: center; }
+.jr-row b { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.jr-row span { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.jr-row.bar .jr-bar { grid-column: 2 / 4; }
+.jr-goal { display: grid; grid-template-columns: 34px 1fr; column-gap: 8px; align-items: center; background: rgba(255,255,255,.05); border-radius: 12px; padding: 9px 10px; margin-bottom: 6px; }
+.jr-goal > i { font-style: normal; font-size: 22px; text-align: center; }
+.jr-goal b { display: block; font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+.jr-goal span { font-size: 12.5px; color: var(--muted); }
+.jr-goal.done { background: rgba(61,220,132,.1); }
+.jr-goal.done span { color: var(--go); }
+.jr-cal { display: grid; grid-template-columns: repeat(14, 1fr); gap: 3px; margin: 4px 0; }
+.jr-cal div { display: flex; flex-direction: column; align-items: center; background: rgba(255,255,255,.05); border-radius: 8px; padding: 4px 0; }
+.jr-cal b { font-size: 13px; line-height: 1.1; color: var(--muted); }
+.jr-cal span { font-size: 10px; color: var(--muted); }
+.jr-cal .on b { color: var(--text); }
+.jr-cal .star b { color: var(--accent); }
+.jr-cal .now { outline: 1.5px solid var(--accent); }
+.jr-finds { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.jr-finds > div { display: grid; grid-template-columns: 30px 1fr; column-gap: 6px; align-items: center; background: rgba(255,255,255,.04); border-radius: 12px; padding: 8px; opacity: .6; }
+.jr-finds > div.got { opacity: 1; background: rgba(255,255,255,.08); }
+.jr-finds i { grid-row: span 2; font-style: normal; font-size: 22px; text-align: center; }
+.jr-finds b { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; line-height: 1.2; }
+.jr-finds span { font-size: 11.5px; color: var(--muted); }
+.jr-moods .rtile { min-height: 76px; }
+
+/* The trip line on the driving screen */
+.jr-line { position: absolute; left: 50%; top: calc(10px + var(--safe-t)); transform: translateX(-50%); max-width: min(46vw, 320px); background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+  padding: 4px 14px 6px; font-size: 12.5px; font-weight: 600; pointer-events: none !important; opacity: 0; transition: opacity .4s; white-space: nowrap; }
+.jr-line.on { opacity: 1; }
+.jr-line span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.jr-line i { display: block; height: 3px; border-radius: 3px; background: rgba(255,255,255,.16); margin-top: 3px; overflow: hidden; }
+.jr-line i b { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .3s; }
+body.zen .jr-line, body.minimal-hud .jr-line, body.theatre-on .jr-line, body.pip-mode .jr-line { display: none; }
+@media (orientation: portrait) {
+  .jr-line { top: calc(112px + var(--safe-t)); left: calc(12px + var(--safe-l)); transform: none; max-width: 70vw; }
+}
+
+/* In the garage */
+.jr-rank { margin-left: 10px; margin-right: auto; background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; pointer-events: auto; }
+.tile-row.jr-four { grid-template-columns: repeat(4, 1fr); }
+/* (no room beside the title on a narrow upright phone: the rank is on the Milestones page) */
+@media (max-width: 560px) { .jr-rank { display: none; } }
+
+/* After a drive */
+.jr-modal { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5,8,16,.5); padding: calc(12px + var(--safe-t)) 12px calc(12px + var(--safe-b)); pointer-events: auto; z-index: 30; }
+.jr-modal.on { display: flex; }
+.jr-sum { width: min(440px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; display: flex; flex-direction: column; gap: 4px; background: var(--panel-solid); }
+.jr-sum > small { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+.jr-big { font-size: 40px; font-weight: 800; line-height: 1.05; }
+.jr-sum h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 8px 0 2px; font-weight: 600; }
+.jr-sum-rows { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+.jr-sum-rows div { background: rgba(255,255,255,.06); border-radius: 12px; padding: 8px; min-width: 0; }
+.jr-sum-rows b { display: block; font-size: 15px; overflow-wrap: anywhere; }
+.jr-sum-rows span { font-size: 11.5px; color: var(--muted); }
+.jr-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.jr-tags span { background: rgba(255,255,255,.08); border-radius: 999px; padding: 4px 10px; font-size: 12.5px; }
+.jr-sum-btns { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.jr-shot img { width: 100%; border-radius: 12px; margin-top: 8px; -webkit-touch-callout: default; user-select: auto; -webkit-user-select: auto; }

@@ -1,0 +1,53 @@
+/* Photo mode */
+#photo-mode { position: absolute; inset: 0; display: none; z-index: 40; }
+body.photo-on #photo-mode { display: block; pointer-events: auto; }
+body.photo-on #hud > * { opacity: 0 !important; pointer-events: none !important; }
+.pm-stage { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+.pm-bar { position: absolute; left: 0; right: 0; height: 10%; background: #000; display: none; pointer-events: none; }
+.pm-bar.top { top: 0; } .pm-bar.bottom { bottom: 0; }
+#photo-mode.bars .pm-bar { display: block; }
+.pm-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.pm-flash.go { animation: pm-flash .45s ease-out; }
+@keyframes pm-flash { 0% { opacity: .85; } 100% { opacity: 0; } }
+.pm-top { position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); display: flex; justify-content: space-between; align-items: center; gap: 8px; pointer-events: none; }
+.pm-top > * { pointer-events: auto; }
+#pm-tip { opacity: .85; animation: pm-tip 6s forwards; pointer-events: none; }
+@keyframes pm-tip { 0%, 70% { opacity: .85; } 100% { opacity: 0; } }
+.pm-panel { position: absolute; right: max(10px, env(safe-area-inset-right)); top: 64px; bottom: 12px; width: 236px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; padding: 10px; transition: transform .25s, opacity .25s; }
+#photo-mode.panel-off .pm-panel { transform: translateX(120%); opacity: 0; pointer-events: none; }
+.pm-looks { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; flex: none; }
+.pm-looks .chip { font-size: 12.5px; padding: 6px 10px; flex: none; }
+.pm-row { display: grid; grid-template-columns: 74px 1fr auto; align-items: center; gap: 6px; font-size: 13px; }
+.pm-row input { width: 100%; min-width: 0; }
+.pm-row em { font-style: normal; font-size: 12px; opacity: .8; font-variant-numeric: tabular-nums; }
+.pm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pm-chips .chip { font-size: 12.5px; padding: 6px 10px; }
+.pm-shutter { position: absolute; left: max(18px, env(safe-area-inset-left)); top: 50%; transform: translateY(-50%); width: 68px; height: 68px; border-radius: 50%; background: rgba(255,255,255,.2); border: 3px solid #fff; display: grid; place-items: center; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.pm-shutter i { width: 50px; height: 50px; border-radius: 50%; background: #fff; display: block; transition: transform .1s; }
+.pm-shutter:active i { transform: scale(.86); }
+@media (orientation: portrait) {
+  .pm-panel { left: 10px; right: 10px; top: auto; bottom: max(96px, calc(env(safe-area-inset-bottom) + 96px)); width: auto; max-height: 38vh; }
+  #photo-mode.panel-off .pm-panel { transform: translateY(140%); }
+  .pm-shutter { left: 50%; top: auto; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); }
+}
+
+/* Cinematic camera: bars and the way-out hint */
+#cine-bars { position: absolute; inset: 0; pointer-events: none; display: none; z-index: 5; }
+#cine-bars.on { display: block; }
+#cine-bars i { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height .5s; }
+#cine-bars i:first-child { top: 0; } #cine-bars i:nth-child(2) { bottom: 0; }
+#cine-bars.bars i { height: 9%; }
+#cine-hint { position: absolute; left: 50%; bottom: 13%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; font-size: 13px; opacity: 0; transition: opacity .6s; white-space: nowrap; }
+#cine-hint.show { opacity: .95; }
+
+/* Album */
+.album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 6px; }
+.album-cell { position: relative; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden; padding: 0; background: #000; border: 1px solid var(--line); }
+.album-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.album-cell i { position: absolute; right: 4px; top: 3px; font-style: normal; font-size: 14px; }
+#album-view { position: absolute; inset: 0; background: rgba(4,6,10,.96); z-index: 60; display: none; }
+#album-view.on { display: block; pointer-events: auto; }
+#album-view img { position: absolute; inset: 0 0 64px 0; width: 100%; height: calc(100% - 64px); object-fit: contain; }
+.av-cap { position: absolute; left: 0; right: 60px; top: max(12px, env(safe-area-inset-top)); padding: 0 14px; font-size: 13px; color: var(--muted); }
+.av-btns { position: absolute; left: 0; right: 0; bottom: max(10px, env(safe-area-inset-bottom)); display: flex; justify-content: center; align-items: center; gap: 8px; }
+.av-close { position: absolute; right: max(10px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top)); }
