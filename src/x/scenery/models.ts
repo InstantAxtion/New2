@@ -850,32 +850,6 @@ function snowmen(w: World, s: Spec): Built {
   return { group };
 }
 
-function icehut(w: World, s: Spec): Built {
-  const group = new THREE.Group();
-  for (const side of [s.side, -s.side]) {
-    // Walk out until we're a little way onto the ice
-    let on = 0;
-    for (let u = 18; u < 150; u += 5) {
-      on = beside(w, s.z, side * u).y <= 0.02 ? on + 1 : 0;
-      if (on < 3) continue;
-      const p = beside(w, s.z, side * u);
-      const c = [0xc23b2e, 0x2d6fa8, 0xe0b23a, 0x3d8a5a][s.n % 4];
-      const g = solid([
-        box(2.2, 2.0, 2.6, c, 0, 1.0, 0), turned(box(2.5, 0.12, 1.6, 0x3a3a3e, 0, 0, 0), 0.45, 0, 0, 0, 2.3, -0.65), turned(box(2.5, 0.12, 1.6, 0x3a3a3e, 0, 0, 0), -0.45, 0, 0, 0, 2.3, 0.65),
-        cyl(0.09, 0.09, 0.9, 0x55585c, 0.6, 2.75, 0, 6), box(0.7, 1.5, 0.06, 0x4a3524, 0, 0.8, 1.31),
-        cyl(0.4, 0.4, 0.02, 0x16303f, 0, 0.02, 3.2, 10), box(0.4, 0.4, 0.4, 0x6b5138, 0, 0.2, 2.3),
-        ...personParts(s.n, 'sit').map((x) => x.translate(0, 0, 2.2)), beam([0.2, 1.0, 2.6], [0.1, 1.3, 3.3], 0.015, 0x222222, 4),
-        box(0.5, 0.12, 1.2, 0xb5462f, -1.6, 0.1, 1.5),
-      ]);
-      g.position.set(p.x, 0.04, p.z);
-      g.rotation.y = yawToRoad(w, s.z, side) + 0.4;
-      group.add(g);
-      return { group };
-    }
-  }
-  return { group };
-}
-
 // ---- Night: far-off village lights and radio masts ----
 
 function village(w: World, s: Spec): Built {
@@ -1057,7 +1031,6 @@ export function build(w: World, s: Spec): Built {
     case 'beach': return beach(w, s);
     case 'cablecar': case 'skilift': return lift(w, s);
     case 'snowmen': return snowmen(w, s);
-    case 'icehut': return icehut(w, s);
     case 'lights': return village(w, s);
     case 'mast': return mast(w, s);
     case 'detail': return detail(w, s);
@@ -1106,7 +1079,7 @@ export function dustDevilMesh(): THREE.Mesh {
 export function lanternPoints(n: number): THREE.Points {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3));
-  const p = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffa040, size: 2.6, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, map: glowTexture(), blending: THREE.AdditiveBlending, fog: false }));
+  const p = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffa040, size: 4, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, map: glowTexture(), blending: THREE.AdditiveBlending, fog: false }));
   p.frustumCulled = false;
   p.visible = false;
   return p;

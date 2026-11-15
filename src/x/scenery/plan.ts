@@ -8,7 +8,7 @@ import { hash1, rng } from '../../world/noise';
 
 export type Kind =
   | 'windfarm' | 'wires' | 'pylons' | 'farm' | 'billboard' | 'giant' | 'roadworks' | 'pumpjack' | 'beach'
-  | 'cablecar' | 'skilift' | 'snowmen' | 'icehut' | 'lights' | 'mast' | 'detail' | 'hikers' | 'angler';
+  | 'cablecar' | 'skilift' | 'snowmen' | 'lights' | 'mast' | 'detail' | 'hikers' | 'angler';
 
 export interface Spec {
   key: string;
@@ -242,13 +242,12 @@ export function specsBetween(w: World, z0: number, z1: number, detail: number): 
     if ((b === 'seaside' || b === 'tropical') && pick(7941) < 0.4 * detail && w.urban(zc) < 0.01 && w.bridge(zc) < 0.01) {
       out.push({ key: 'be' + c, kind: 'beach', z: zc, r: 120, side, u: 0, n: c, variant: 0 });
     }
-    // Snowmen by the road, and a fishing hut out on the ice
+    // Snowmen by the road
     if (b === 'winter') {
       if (pick(7951) < 0.3 * detail) {
         const z = c * CELL + 60 + pick(7952) * 280, u = w.roadHalf(z) + 4.5 + pick(7953) * 4;
         if (verge(w, z, side, u) && level(w, z, side, u, 2)) out.push({ key: 'sn' + c, kind: 'snowmen', z, r: 20, side, u, n: c, variant: 0 });
       }
-      if (pick(7954) < 0.3 && open(w, zc)) out.push({ key: 'ih' + c, kind: 'icehut', z: zc, r: 160, side, u: 0, n: c, variant: 0 });
     }
     // Lights of far-off villages on the hills at night
     if (DARK.includes(b) && pick(7961) < 0.3 && w.urban(zc) < 0.01) {
