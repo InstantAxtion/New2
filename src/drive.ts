@@ -90,8 +90,14 @@ export class Vehicle {
     return this.spec.axles[0] - this.spec.axles[1];
   }
   get vmax() {
-    return this.spec.top / 3.6;
+    return (this.spec.top / 3.6) * this.topK;
   }
+  /** Drive mode: share of the engine's pull, of the top speed, and how quick the steering is (1 = standard). */
+  powerK = 1;
+  topK = 1;
+  steerK = 1;
+  /** Hit or scraped something this step (for a little buzz in the hand). */
+  scraped = false;
 
   /** Auto-drive follows this instead of a lane (an off-road trail): lateral offset at z, world sense. */
   path: ((z: number) => number) | null = null;
@@ -218,7 +224,7 @@ export class Vehicle {
     const s = this.spec;
     const v = Math.max(this.v, 0);
     const need = 0.15 + 0.00042 * v * v + G * Math.sin(this.pitch) * 0.6 + (this.offroad ? 0.5 : 0);
-    const pull = s.accel * Math.max(0.05, 1 - (v / this.vmax) ** 2);
+    const pull = s.accel * this.powerK * Math.max(0.05, 1 - (v / this.vmax) ** 2);
     const hold = clamp(need / pull, 0, 1);
     const e = target - this.v;
     if (target < 0.3) return { throttle: 0, brake: this.v > 0.05 ? clamp(0.3 - e * 0.15, 0, maxBrake) : 0 };
@@ -256,14 +262,15 @@ export class Vehicle {
       }
     }
     // Steering wheel follows the input smoothly
-    const rate = (this.spec.handling?.steer ?? 3.2) * 1.4;
+    const rate = (this.spec.handling?.steer ?? 3.2) * 1.4 * this.steerK;
+    this.scraped = false;
     this.steer += clamp(steerIn - this.steer, -rate * dt, rate * dt);
 
     // Longitudinal
     const vmax = this.offroad ? this.vmax * 0.8 : this.vmax;
     let a = 0;
     if (c.throttle > 0) {
-      if (this.v >= -0.3) a += c.throttle * s.accel * Math.max(0, 1 - (this.v / vmax) ** 2);
+      if (this.v >= -0.3) a += c.throttle * s.accel * this.powerK * Math.max(0, 1 - (this.v / vmax) ** 2);
       else a += c.throttle * 10; // braking out of reverse
     }
     this.braking = c.brake > 0.05 && this.v > 0.3;
@@ -320,6 +327,7 @@ export class Vehicle {
       const along = Math.atan2(tx * dir, tz * dir);
       this.heading = wrap(along + clamp(wrap(this.heading - along), -0.05, 0.05));
       this.v *= 1 - dt * 0.6;
+      this.scraped = true;
       this.bump = Math.max(this.bump, 0.6);
       this.dist += ds;
       if (ds > 0) this.odometer += ds;
@@ -336,6 +344,7 @@ export class Vehicle {
       this.z -= tx * back;
       this.y = w.surface(this.x, this.z);
       this.v *= 1 - dt * 0.8;
+      this.scraped = true;
       this.bump = Math.max(this.bump, 0.35);
     } else {
       this.x = nx;

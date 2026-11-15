@@ -1,0 +1,70 @@
+/* Car and controls add-ons */
+
+/* The speed read-out takes a double-tap for the horn */
+.speedo { pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none; }
+body.zen .speedo, body.driver-view .speedo { pointer-events: auto; }
+
+/* Speed as a dial or a bar; gear and revs */
+#x-dial, #x-bar, #x-gear { display: none; }
+body.x-speedo-dial #x-dial { display: block; width: 150px; height: 88px; margin: 0 auto -34px; }
+body.x-speedo-dial .speedo b { font-size: 26px; }
+body.x-speedo-dial .speedo span { font-size: 11px; }
+body.x-speedo-bar #x-bar { display: block; width: 150px; height: 6px; border-radius: 3px; margin: 5px auto 3px; background: rgba(10, 13, 20, .45); overflow: hidden; border: 1px solid rgba(255, 255, 255, .18); }
+#x-bar i { display: block; height: 100%; background: linear-gradient(90deg, #fff, #f0b44c); transform-origin: left center; transform: scaleX(0); border-radius: 3px; }
+body.x-gear-on #x-gear { display: block; font-size: 12px; font-weight: 600; opacity: .85; font-variant-numeric: tabular-nums; min-height: 15px; }
+@media (orientation: portrait) {
+  body.x-speedo-dial #x-dial { width: 124px; height: 73px; margin-bottom: -28px; }
+  body.x-speedo-dial .speedo b { font-size: 22px; }
+  body.x-speedo-bar #x-bar { width: 120px; }
+}
+
+/* A steering wheel to drag */
+#x-wheel { display: none; width: 150px; height: 150px; border-radius: 50%; touch-action: none; margin-right: 12px; flex: none; }
+body.x-wheel-mode #x-wheel { display: block; }
+body.x-wheel-mode #steer-btns { display: none; }
+.xw-rim { position: relative; width: 100%; height: 100%; border-radius: 50%; border: 13px solid rgba(255, 255, 255, .5); background: rgba(10, 13, 20, .28); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); box-shadow: 0 2px 14px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 255, 255, .2); box-sizing: border-box; }
+.xw-rim i { position: absolute; left: 50%; top: 50%; width: 50%; height: 11px; margin-top: -5.5px; background: rgba(255, 255, 255, .5); transform-origin: left center; border-radius: 4px; }
+.xw-rim i:nth-child(1) { transform: rotate(180deg); }
+.xw-rim i:nth-child(2) { transform: rotate(0deg); }
+.xw-rim i:nth-child(3) { transform: rotate(90deg); }
+.xw-rim b { position: absolute; left: 50%; top: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%; background: rgba(255, 255, 255, .8); }
+.xw-rim::after { content: ''; position: absolute; left: 50%; top: -13px; width: 8px; height: 13px; margin-left: -4px; background: #f0b44c; border-radius: 2px; }
+@media (orientation: portrait) { #x-wheel { width: 128px; height: 128px; } }
+@media (max-height: 380px) and (orientation: landscape) { #x-wheel { width: 128px; height: 128px; } }
+
+/* Left-handed: pedals on the left, steering on the right */
+body.x-lefty .manual { flex-direction: row-reverse; }
+body.x-lefty .manual .steer, body.x-lefty #x-wheel { margin-right: 0; margin-left: 12px; }
+body.x-lefty .manual .mid-pads { margin: 0 0 0 auto; }
+
+/* Bigger buttons */
+body.x-bigpads .steer .pad { width: 104px; height: 104px; font-size: 32px; }
+body.x-bigpads .pedals .pad { width: 100px; font-size: 15px; }
+body.x-bigpads .pedals .gas { height: 138px; }
+body.x-bigpads .pedals .brake { height: 100px; }
+body.x-bigpads #x-wheel { width: 176px; height: 176px; }
+@media (orientation: portrait) {
+  body.x-bigpads .steer .pad { width: 88px; height: 88px; }
+  body.x-bigpads .pedals .pad { width: 86px; }
+  body.x-bigpads #x-wheel { width: 150px; height: 150px; }
+}
+
+/* Resting */
+#x-rest { position: absolute; left: 0; right: 0; bottom: calc(18px + var(--safe-b)); display: none; justify-content: center; pointer-events: none; z-index: 5; }
+body.x-pulling #x-rest, body.x-resting #x-rest { display: flex; }
+#x-rest > * { pointer-events: auto; display: none; }
+body.x-pulling .xr-pull { display: flex; align-items: center; gap: 12px; padding: 8px 10px 8px 16px; border-radius: 999px; background: rgba(10, 13, 20, .55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, .18); font-weight: 600; font-size: 14px; }
+body.x-resting .xr-card { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 16px 14px; border-radius: 20px; background: rgba(10, 13, 20, .5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, .16); text-align: center; max-width: calc(100vw - 28px); }
+.xr-card small { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; opacity: .7; }
+.xr-card b { font-size: 19px; font-weight: 800; }
+.xr-card span { font-size: 13px; opacity: .8; font-variant-numeric: tabular-nums; }
+.xr-card .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.xr-card .chip[disabled] { opacity: .5; }
+body.x-pulling .manual, body.x-pulling .take-over, body.x-pulling .cruise, body.x-pulling .speedo,
+body.x-resting .hud-tl, body.x-resting .hud-tr, body.x-resting .hud-menu, body.x-resting .speedo, body.x-resting .manual,
+body.x-resting .take-over, body.x-resting .cruise, body.x-resting .lyrics, body.x-resting .region-card { display: none !important; }
+body[data-screen="pause"] #x-rest, body.zen #x-rest .xr-pull { display: none; }
+
+/* Customise sheet: the two buttons at the foot */
+.cu-foot { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+.cu-foot .cu-reset, .cu-foot #cu-reset { margin-top: 0; }
