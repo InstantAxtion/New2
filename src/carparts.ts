@@ -638,6 +638,25 @@ export function buildExterior(b: THREE.Group, s: CarSpec, c: Custom, M: PartMats
   return { glows, wipers, lampY, front, poptop, flappers };
 }
 
+let letterTex: THREE.Texture | null = null;
+/** White lettering to go round a tyre's sidewall (repeats three times round the wheel). */
+function letterTexture(): THREE.Texture {
+  if (letterTex) return letterTex;
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 32;
+  const g = c.getContext('2d')!;
+  g.clearRect(0, 0, 512, 32);
+  g.fillStyle = '#fff';
+  g.font = '800 25px sans-serif';
+  g.textBaseline = 'middle';
+  for (let k = 0; k < 3; k++) g.fillText('ENDURA', 22 + k * 170.6, 17);
+  letterTex = new THREE.CanvasTexture(c);
+  letterTex.colorSpace = THREE.SRGBColorSpace;
+  letterTex.userData.shared = true;
+  return letterTex;
+}
+
 let tyreTex: THREE.Texture | null = null;
 /** Rubber: tread blocks across the face, a moulded ring and lettering on the sidewalls. */
 function tyreTexture(): THREE.Texture {
@@ -693,6 +712,23 @@ export function buildWheel(s: CarSpec, c: Custom, side: number, front: boolean, 
   const tyre = new THREE.Mesh(new THREE.LatheGeometry(profileTyre, pbr ? 28 : 14).rotateZ(Math.PI / 2), tyreM);
   tyre.castShadow = true;
   wheel.add(tyre);
+  // White-wall tyres, or raised white lettering: a band laid over the outer sidewall
+  if (c.tyre === 'white' || c.tyre === 'letters') {
+    const pts: THREE.Vector2[] = [];
+    const hw = c.rim === 'beadlock' ? 0.16 : 0.13;
+    const [a0, a1] = c.tyre === 'white' ? [0.2, 0.36] : [0.17, 0.4];
+    for (let i = 0; i <= 6; i++) {
+      // the same curve as the tyre, a few millimetres proud of it, on the side facing out
+      const t = a0 + ((a1 - a0) * i) / 6;
+      const a = (side > 0 ? t : 1 - t) * Math.PI;
+      pts.push(new THREE.Vector2(r * (1 - sidewall) + Math.sin(a) * (r * sidewall + 0.004), -Math.cos(a) * (hw + 0.004)));
+    }
+    const bandM = c.tyre === 'white'
+      ? (pbr ? new THREE.MeshStandardMaterial({ color: 0xf3f1ea, roughness: 0.7 }) : new THREE.MeshLambertMaterial({ color: 0xf3f1ea }))
+      : new THREE.MeshBasicMaterial({ map: letterTexture(), transparent: true, color: 0xdcdcd8, depthWrite: false, side: THREE.DoubleSide });
+    if (c.tyre === 'white') (bandM as THREE.Material).side = THREE.DoubleSide;
+    wheel.add(new THREE.Mesh(new THREE.LatheGeometry(pts, pbr ? 40 : 24).rotateZ(Math.PI / 2), bandM));
+  }
   const rimM = pbr
     ? new THREE.MeshStandardMaterial({ color: c.rimColor, metalness: 0.95, roughness: c.rimColor === 0x1d1e21 ? 0.45 : 0.22 })
     : new THREE.MeshPhongMaterial({ color: c.rimColor, shininess: 80 });

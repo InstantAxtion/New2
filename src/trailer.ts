@@ -5,7 +5,7 @@ import type { World } from './world/world';
 // Something towed behind the car: a caravan or a boat on a trailer. It hangs off the tow ball
 // and follows the car's path the way a real trailer does (the axle is dragged towards the hitch).
 
-export type TowKind = 'none' | 'caravan' | 'boat';
+export type TowKind = 'none' | 'caravan' | 'boat' | 'teardrop' | 'jetski';
 
 const std = (color: number, roughness = 0.6, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 
@@ -141,6 +141,113 @@ function boat(color: number): { g: THREE.Group; len: number } {
   return { g, len };
 }
 
+/** A little teardrop camper: a rounded aluminium shell with a porthole door and a galley hatch. */
+function teardrop(color: number): { g: THREE.Group; len: number } {
+  const g = new THREE.Group();
+  const len = 2.9;
+  const skin = std(0xd9dce0, 0.28, 0.75), paint = std(color, 0.35, 0.2), trim = std(0x2a2b2e, 0.5), glass = std(0x182028, 0.1, 0.2);
+  // The side profile: flat floor, a round nose and a long sloping tail (z forward, y up)
+  const sh = new THREE.Shape();
+  sh.moveTo(-1.55, 0.42);
+  sh.lineTo(1.05, 0.42);
+  sh.bezierCurveTo(1.5, 0.42, 1.55, 1.25, 1.0, 1.62);
+  sh.bezierCurveTo(0.55, 1.9, -0.2, 1.86, -0.75, 1.5);
+  sh.bezierCurveTo(-1.2, 1.2, -1.5, 0.8, -1.55, 0.42);
+  const W = 1.62;
+  const bodyG = new THREE.ExtrudeGeometry(sh, { depth: W - 0.12, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.06, bevelSegments: 3, curveSegments: 20 });
+  bodyG.translate(0, 0, -(W - 0.12) / 2);
+  bodyG.rotateY(-Math.PI / 2);
+  const body = new THREE.Mesh(bodyG, skin);
+  body.castShadow = true;
+  g.add(body);
+  // A painted band along the lower sides, mudguards over the wheels
+  for (const sd of [-1, 1]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.3, 2.45), paint);
+    band.position.set(sd * (W / 2 + 0.003), 0.66, -0.2);
+    const guard = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.07, 6, 14, Math.PI).rotateY(Math.PI / 2), paint);
+    guard.position.set(sd * (W / 2 + 0.1), 0.31, 0);
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.78), std(0xcfd2d6, 0.25, 0.75));
+    door.position.set(sd * (W / 2 + 0.006), 1.08, 0.35);
+    door.rotation.y = sd * Math.PI / 2;
+    const port = new THREE.Mesh(new THREE.CircleGeometry(0.16, 20), glass);
+    port.position.set(sd * (W / 2 + 0.009), 1.2, 0.35);
+    port.rotation.y = sd * Math.PI / 2;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.018, 6, 20).rotateY(Math.PI / 2), trim);
+    ring.position.copy(port.position);
+    g.add(band, guard, door, port, ring);
+    const tl = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.03, 12).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x8a1010, emissive: 0x500000 }));
+    tl.position.set(sd * 0.6, 0.62, -1.56);
+    g.add(tl);
+  }
+  const vent = new THREE.Mesh(new RoundedBoxGeometry(0.4, 0.07, 0.4, 2, 0.03), trim);
+  vent.position.set(0, 1.86, 0.2);
+  g.add(vent);
+  wheels(g, W / 2 + 0.1, 0.3);
+  drawbar(g, len, 0.45, 0.4);
+  return { g, len };
+}
+
+/** A jet-ski on a small single-axle trailer. */
+function jetski(color: number): { g: THREE.Group; len: number } {
+  const g = new THREE.Group();
+  const len = 3.0;
+  const steel = std(0x9aa0a8, 0.4, 0.7), white = std(0xf4f4f0, 0.25), paint = std(color, 0.3, 0.2), dark = std(0x1a1b1e, 0.6);
+  for (const sd of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 3.0), steel);
+    rail.position.set(sd * 0.42, 0.42, 0.2);
+    const bunk = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 1.9), dark);
+    bunk.position.set(sd * 0.3, 0.5, 0);
+    g.add(rail, bunk);
+  }
+  const cross = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.07), steel);
+  cross.position.set(0, 0.42, 0);
+  g.add(cross);
+  // Hull: a V-bottomed shell that comes to a point at the bow
+  const hs = new THREE.Shape();
+  hs.moveTo(-0.55, 0.42);
+  hs.lineTo(-0.42, 0.12);
+  hs.lineTo(0, 0);
+  hs.lineTo(0.42, 0.12);
+  hs.lineTo(0.55, 0.42);
+  hs.lineTo(-0.55, 0.42);
+  const hullG = new THREE.ExtrudeGeometry(hs, { depth: 2.9, bevelEnabled: false });
+  hullG.translate(0, 0, -1.45);
+  const p = hullG.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const t = Math.max(0, (p.getZ(i) - 0.5) / 0.95);
+    p.setX(i, p.getX(i) * (1 - t * 0.9));
+    p.setY(i, p.getY(i) + t * t * 0.22 * (p.getY(i) > 0.3 ? 0.2 : 1));
+  }
+  hullG.computeVertexNormals();
+  const hull = new THREE.Mesh(hullG, white);
+  hull.position.set(0, 0.55, 0.1);
+  hull.castShadow = true;
+  g.add(hull);
+  // Deck, bonnet, saddle and handlebars
+  const deck = new THREE.Mesh(new RoundedBoxGeometry(0.98, 0.16, 2.3, 3, 0.07), paint);
+  deck.position.set(0, 1.0, -0.15);
+  const dp = deck.geometry.attributes.position;
+  for (let i = 0; i < dp.count; i++) {
+    const t = Math.max(0, (dp.getZ(i) - 0.2) / 0.95);
+    dp.setX(i, dp.getX(i) * (1 - t * 0.7));
+  }
+  deck.geometry.computeVertexNormals();
+  const cowl = new THREE.Mesh(new RoundedBoxGeometry(0.6, 0.36, 1.0, 3, 0.14), paint);
+  cowl.position.set(0, 1.2, 0.55);
+  cowl.rotation.x = 0.12;
+  const seat = new THREE.Mesh(new RoundedBoxGeometry(0.4, 0.26, 1.15, 3, 0.1), dark);
+  seat.position.set(0, 1.2, -0.5);
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.3, 8), dark);
+  col.position.set(0, 1.47, 0.32);
+  col.rotation.x = -0.4;
+  const bars = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.7, 8).rotateZ(Math.PI / 2), dark);
+  bars.position.set(0, 1.6, 0.26);
+  g.add(deck, cowl, seat, col, bars);
+  wheels(g, 0.85, 0.27);
+  drawbar(g, len, 0.42, 0.4);
+  return { g, len };
+}
+
 export class Trailer {
   readonly group = new THREE.Group();
   kind: TowKind = 'none';
@@ -159,7 +266,7 @@ export class Trailer {
     this.placed = false;
     this.group.visible = kind !== 'none';
     if (kind === 'none') return;
-    const t = kind === 'caravan' ? caravan(color) : boat(color);
+    const t = kind === 'caravan' ? caravan(color) : kind === 'teardrop' ? teardrop(color) : kind === 'jetski' ? jetski(color) : boat(color);
     this.len = t.len;
     this.group.add(t.g);
   }

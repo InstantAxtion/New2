@@ -3,7 +3,7 @@ import { AppLauncher } from '@capacitor/app-launcher';
 import { App } from '@capacitor/app';
 import type { Game } from './game';
 import { CARS, COLORS } from './cars';
-import { AMBIENTS, LEATHERS, RIM_COLORS, STARTERS, UNLOCK_MILES, defaultCustom, type Custom } from './carspecs';
+import { AMBIENTS, LEATHERS, RIM_COLORS, STARTERS, UNLOCK_MILES, defaultCustom, surpriseLook, type Custom } from './carspecs';
 import { DECALS, defaultPlate } from './carextras';
 import { BIOMES, BIOME_IDS, type BiomeId } from './world/biomes';
 import type { TimeMode } from './sky';
@@ -434,20 +434,28 @@ export class UI {
       <div class="chips" data-cu="rim"><button class="chip" data-v="five">5-spoke</button><button class="chip" data-v="multi">Multi-spoke</button><button class="chip" data-v="turbine">Aero</button><button class="chip" data-v="steel">Classic steel</button><button class="chip" data-v="beadlock">Off-road</button></div>
       <h3>Rim colour</h3>
       <div class="swatches left">${RIM_COLORS.map((c) => `<button class="swatch" data-cu-rimcolor="${c}" style="background:${hex(c)}"></button>`).join('')}</div>
+      <h3>Tyres</h3>
+      <div class="chips" data-cu="tyre"><button class="chip" data-v="plain">Plain</button><button class="chip" data-v="white">White-wall</button><button class="chip" data-v="letters">White letters</button></div>
       <h3>Ride height</h3>
       <div class="range-row"><input type="range" id="cu-ride" min="-0.06" max="0.08" step="0.01" /><span id="cu-ride-lbl"></span></div>
     </div>
     <div class="cupage" data-cupage="style">
       <h3>Decals</h3>
       <div class="chips" data-cu="decal">${DECALS.map((d) => `<button class="chip" data-v="${d.id}">${d.name}</button>`).join('')}</div>
+      <h3>Window glass</h3>
+      <div class="chips" data-cu="tint"><button class="chip" data-v="dark">Dark</button><button class="chip" data-v="smoke">Smoked</button><button class="chip" data-v="light">Light</button></div>
+      <h3>Headlights</h3>
+      <div class="chips" data-cu="lamp"><button class="chip" data-v="warm">Warm</button><button class="chip" data-v="white">Bright white</button><button class="chip" data-v="ice">Ice blue</button></div>
+      <h3>Underglow <small>lights up at night</small></h3>
+      <div class="swatches left">${AMBIENTS.map((c) => `<button class="swatch${c ? '' : ' off'}" data-cu-underglow="${c}" style="background:${c ? hex(c) : '#2a2b2f'}">${c ? '' : '✕'}</button>`).join('')}</div>
       <h3>Number plate</h3>
       <div class="range-row"><input type="text" id="cu-plate" maxlength="9" autocomplete="off" spellcheck="false" placeholder="Your plate" /></div>
     </div>
     <div class="cupage" data-cupage="extras">
       <h3>Tow</h3>
-      <div class="chips" data-cu="tow"><button class="chip" data-v="none">Nothing</button><button class="chip" data-v="caravan">🚐 Caravan</button><button class="chip" data-v="boat">🚤 Boat</button></div>
+      <div class="chips" data-cu="tow"><button class="chip" data-v="none">Nothing</button><button class="chip" data-v="caravan">🚐 Caravan</button><button class="chip" data-v="teardrop">🏕️ Teardrop camper</button><button class="chip" data-v="boat">🚤 Boat</button><button class="chip" data-v="jetski">🌊 Jet-ski</button></div>
       <h3>Carry</h3>
-      <div class="chips" data-cu="rack"><button class="chip" data-v="none">Nothing</button><button class="chip" data-v="surf">🏄 Surfboards</button><button class="chip" data-v="bikes">🚲 Bikes</button></div>
+      <div class="chips" data-cu="rack"><button class="chip" data-v="none">Nothing</button><button class="chip" data-v="surf">🏄 Surfboards</button><button class="chip" data-v="box">🧳 Roof box</button><button class="chip" data-v="kayak">🛶 Kayak</button><button class="chip" data-v="bikes">🚲 Bikes</button></div>
       <p class="hint">Not on the motorbike.</p>
     </div>
     <div class="cupage" data-cupage="cabin">
@@ -458,7 +466,7 @@ export class UI {
       <h3>Ambient lighting <small>at night</small></h3>
       <div class="swatches left">${AMBIENTS.map((c) => `<button class="swatch${c ? '' : ' off'}" data-cu-ambient="${c}" style="background:${c ? hex(c) : '#2a2b2f'}">${c ? '' : '✕'}</button>`).join('')}</div>
     </div>
-    <button class="ghost small cu-reset" id="cu-reset">Reset to factory</button>
+    <div class="row cu-foot"><button class="ghost small" id="cu-surprise">🎲 Surprise me</button><button class="ghost small cu-reset" id="cu-reset">Reset to factory</button></div>
   </div>
 </aside>
 
@@ -842,6 +850,11 @@ export class UI {
     nums('cu-rimcolor', 'rimColor');
     nums('cu-leather', 'leather');
     nums('cu-ambient', 'ambient');
+    nums('cu-underglow', 'underglow');
+    $('#cu-surprise', r).onclick = () => {
+      const spec = CARS.find((c) => c.id === this.s.car) ?? CARS[0];
+      this.customise(surpriseLook(spec, Math.random));
+    };
     for (const g of $$('[data-cu]', r)) {
       const key = g.dataset.cu as keyof Custom;
       for (const b of $$('[data-v]', g)) b.onclick = () => this.customise({ [key]: b.dataset.v } as Partial<Custom>);
@@ -899,6 +912,7 @@ export class UI {
     mark('cu-rimcolor', cu.rimColor);
     mark('cu-leather', cu.leather);
     mark('cu-ambient', cu.ambient);
+    mark('cu-underglow', cu.underglow);
     for (const g of $$('[data-cu]')) {
       const key = g.dataset.cu as keyof Custom;
       for (const b of $$('[data-v]', g)) b.classList.toggle('on', String(cu[key]) === b.dataset.v);
@@ -1755,7 +1769,7 @@ export class UI {
       this.keys.add(e.key.toLowerCase());
       if (this.s.auto && this.game.phase === 'drive' && ['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd'].includes(e.key.toLowerCase())) this.setAuto(false);
       if (e.key === 'c') $('#cam-btn').click();
-      if (e.key === 'h') this.setZen(!this.zen);
+      if (e.key === 'z') this.setZen(!this.zen);
       if (e.key === 'm') this.open('music');
       if (e.key === ' ') this.setAuto(!this.s.auto);
       if (e.key === 'Escape') this.back();

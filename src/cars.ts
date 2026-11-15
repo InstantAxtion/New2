@@ -7,6 +7,12 @@ import { CARS, COLORS, defaultCustom, type CarSpec, type Custom } from './carspe
 import { buildExterior, buildWheel, type PartMats } from './carparts';
 import { buildCockpit, drawCluster, type Cockpit } from './cockpit';
 import { bikeCockpit, buildBike } from './bike';
+import { glowTexture } from './textures';
+
+/** Headlight colours you can choose. */
+const LAMP_COLOURS = { warm: 0xfff3dc, white: 0xffffff, ice: 0xcfe2ff } as const;
+/** Window glass tints (PBR colour, simple colour). */
+const TINTS = { dark: [0x04070a, 0x141b24], smoke: [0x1c2329, 0x2a333d], light: [0x3d5560, 0x4d6672] } as const;
 
 export { CARS, COLORS };
 export type { CarSpec, Custom };
@@ -119,12 +125,12 @@ function beamTexture(): THREE.Texture {
 }
 
 /** A roof rack with two surfboards, or a tow-bar bike rack with two bicycles. */
-function buildRack(s: CarSpec, kind: 'surf' | 'bikes', pbr: boolean): THREE.Group {
+function buildRack(s: CarSpec, kind: 'surf' | 'bikes' | 'box' | 'kayak', pbr: boolean): THREE.Group {
   const g = new THREE.Group();
   const P = profile(s);
   const m = (c: number, r = 0.5, me = 0) => (pbr ? new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: me }) : new THREE.MeshLambertMaterial({ color: c }));
   const black = m(0x1a1b1e, 0.5);
-  if (kind === 'surf') {
+  if (kind !== 'bikes') {
     const roofZ = s.open || s.bed ? (s.bed ? (P.rear + s.D) / 2 : -0.6) : (s.B + s.C) / 2;
     const y = s.open ? s.belt + 0.55 : s.bed ? s.belt + 0.55 : P.top(roofZ) + 0.08;
     const span = s.open || s.bed ? 1.0 : Math.max(0.8, Math.min(1.4, (s.B - s.C) * 0.7));
@@ -138,6 +144,47 @@ function buildRack(s: CarSpec, kind: 'surf' | 'bikes', pbr: boolean): THREE.Grou
         g.add(leg);
       }
     }
+    if (kind === 'box') {
+      // A long, low roof box: gloss black with a silver band and a lock
+      const len = Math.min(2.0, s.length * 0.42);
+      const box = new THREE.Mesh(new RoundedBoxGeometry(Math.min(0.86, s.width * 0.46), 0.3, len, 4, 0.13), m(0x16171a, 0.22, 0.2));
+      box.position.set(0, y + 0.18, roofZ - 0.05);
+      // (tapered towards the front, like the real thing)
+      const bp = box.geometry.attributes.position;
+      for (let i = 0; i < bp.count; i++) {
+        const t = Math.max(0, bp.getZ(i) / (len / 2));
+        if (bp.getY(i) > 0) bp.setY(i, bp.getY(i) * (1 - 0.45 * t * t));
+        bp.setX(i, bp.getX(i) * (1 - 0.18 * t * t));
+      }
+      box.geometry.computeVertexNormals();
+      const band = new THREE.Mesh(new THREE.BoxGeometry(Math.min(0.86, s.width * 0.46) + 0.006, 0.025, len * 0.82), m(0xb9bcc2, 0.3, 0.8));
+      band.position.set(0, y + 0.16, roofZ - 0.1);
+      const lock = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.02, 10).rotateZ(Math.PI / 2), m(0xd8dade, 0.3, 0.9));
+      lock.position.set(Math.min(0.86, s.width * 0.46) / 2 + 0.004, y + 0.16, roofZ - 0.1);
+      g.add(box, band, lock);
+    } else if (kind === 'kayak') {
+      // A sea kayak, upside down on the bars, strapped front and back
+      const len = Math.min(3.4, s.length * 0.8);
+      const hull = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, len - 0.6, 8, 18).rotateX(Math.PI / 2), m(0xe2622a, 0.3));
+      const hp = hull.geometry.attributes.position;
+      for (let i = 0; i < hp.count; i++) {
+        const t = Math.min(1, Math.abs(hp.getZ(i)) / (len / 2));
+        const taper = 1 - 0.75 * t * t * t;
+        hp.setX(i, hp.getX(i) * taper * 1.05);
+        // flat deck underneath (it rides upside down), rounded keel on top
+        hp.setY(i, (hp.getY(i) < 0 ? hp.getY(i) * 0.45 : hp.getY(i) * 0.95) * (0.35 + 0.65 * taper));
+      }
+      hull.geometry.computeVertexNormals();
+      hull.position.set(0, y + 0.16, roofZ - 0.1);
+      const keel = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, len * 0.7), m(0xf4f1e8, 0.4));
+      keel.position.set(0, y + 0.45, roofZ - 0.1);
+      g.add(hull, keel);
+      for (const dz of [-span / 2, span / 2]) {
+        const strap = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.012, 5, 16, Math.PI).scale(1.06, 1.02, 1), m(0x22252a, 0.7));
+        strap.position.set(0, y + 0.14, roofZ + dz);
+        g.add(strap);
+      }
+    } else {
     const cols = [0xf2c14e, 0x3fb6c9];
     cols.forEach((col, i) => {
       const board = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 2.0, 6, 14).rotateX(Math.PI / 2).scale(1, 0.12, 1), m(col, 0.25));
@@ -148,6 +195,7 @@ function buildRack(s: CarSpec, kind: 'surf' | 'bikes', pbr: boolean): THREE.Grou
       strap.position.set(0, y + 0.12, roofZ + span / 2);
       g.add(board, stripe, strap);
     });
+    }
   } else {
     // A rack on the tow bar with two bikes standing across the back
     const z = P.rear - 0.35;
@@ -264,9 +312,9 @@ export class CarModel {
     // Dark privacy tint
     const clear = seeThrough && !s.bike;
     const glass = pbr
-      ? new THREE.MeshPhysicalMaterial({ color: 0x04070a, metalness: 0, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.3,
+      ? new THREE.MeshPhysicalMaterial({ color: (TINTS[c.tint] ?? TINTS.dark)[0], metalness: 0, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.3,
           transparent: false, opacity: 1 })
-      : new THREE.MeshPhongMaterial({ color: 0x141b24, shininess: 120, specular: 0xaaaaaa, transparent: false, opacity: 1 });
+      : new THREE.MeshPhongMaterial({ color: (TINTS[c.tint] ?? TINTS.dark)[1], shininess: 120, specular: 0xaaaaaa, transparent: false, opacity: 1 });
     this.sideGlass = glass.clone();
     const dark = pbr ? new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.55 }) : new THREE.MeshLambertMaterial({ color: 0x1d1e22 });
     const chrome = pbr
@@ -274,7 +322,8 @@ export class CarModel {
       : new THREE.MeshPhongMaterial({ color: 0xd8dadd, shininess: 100, specular: 0xffffff });
     const lensM = (col: number, e: number) =>
       pbr ? new THREE.MeshStandardMaterial({ color: col, emissive: e, emissiveIntensity: 0.4, roughness: 0.1, metalness: 0.3 }) : new THREE.MeshBasicMaterial({ color: col });
-    this.head = lensM(0xdfe6ee, 0xfff4dc);
+    const lampCol = LAMP_COLOURS[c.lamp] ?? LAMP_COLOURS.warm;
+    this.head = lensM(0xdfe6ee, c.lamp && c.lamp !== 'warm' ? lampCol : 0xfff4dc);
     this.tail = lensM(0x6a0a0a, 0xff1a1a);
     const drl = pbr ? new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.2 }) : new THREE.MeshBasicMaterial({ color: 0xffffff });
     const M: PartMats = { paint: this.paint, second, dark, chrome, head: this.head, tail: this.tail, lens: drl, glass, pbr };
@@ -445,8 +494,54 @@ export class CarModel {
       });
     }
 
-    // Surfboards on the roof, or bikes on a rack on the back
+    // Surfboards, a roof box or a kayak on the roof, or bikes on a rack on the back
     if (!s.bike && c.rack !== 'none') b.add(buildRack(s, c.rack, pbr));
+
+    // Indicators at the four corners and white reversing lamps: small glows that blink
+    {
+      const tailY = s.bike ? lampY - 0.05 : Math.min(P.belt(P.rear + 0.25) - 0.09, s.tail - 0.06);
+      const noseY = s.bike ? lampY : Math.min(P.belt(P.front - 0.3) - 0.07, s.nose + 0.03);
+      const cornerZ = (x: number, from: number, step: number) => {
+        let z = from;
+        for (let k = 0; k < 60 && P.half(z) < Math.abs(x) + 0.03; k++) z += step;
+        return z;
+      };
+      const lampS = (col: number, size: number) => {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: col, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.95, toneMapped: false }));
+        sp.scale.setScalar(size);
+        sp.visible = false;
+        b.add(sp);
+        return sp;
+      };
+      for (const side of [-1, 1]) {
+        const x = s.bike ? side * 0.22 : side * W * 0.42;
+        const zf = s.bike ? front - 0.25 : cornerZ(x, P.front, -0.01) + 0.03;
+        const zr = s.bike ? -s.length / 2 + 0.25 : cornerZ(x, P.rear, 0.01) - 0.03;
+        const f = lampS(0xff9a1a, 0.34), r = lampS(0xff9a1a, 0.34);
+        f.position.set(x, noseY, zf);
+        r.position.set(x, tailY, zr);
+        // (the car's right-hand side is -x)
+        (side < 0 ? this.blinkR : this.blinkL).push(f, r);
+        if (!s.bike) {
+          const xr = side * W * 0.24;
+          const rev = lampS(0xffffff, 0.3);
+          rev.position.set(xr, tailY - 0.02, cornerZ(xr, P.rear, 0.01) - 0.04);
+          this.reverseLamps.push(rev);
+        }
+      }
+    }
+    // A glow on the road under the car
+    if (c.underglow && !s.bike) {
+      const ug = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.75, s.length * 1.3).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+        map: underglowTexture(), color: c.underglow, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+        polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3, toneMapped: false,
+      }));
+      ug.position.y = 0.05;
+      ug.renderOrder = 2;
+      ug.visible = false;
+      this.group.add(ug);
+      this.underglow = ug;
+    }
 
     // Cockpit
     this.cockpit = s.bike ? bikeCockpit(this.interior, this.eye, c, this.paint, pbr) : buildCockpit(this.interior, this.eye, s, c, pbr, chrome);
@@ -485,13 +580,15 @@ export class CarModel {
     this.group.add(shadow);
 
     // Dipped beam: a wide pool on the road reaching ~120 m, aimed a little down
-    this.headlight = new THREE.SpotLight(0xfff3dc, 0, 120, 0.5, 0.75, 1.3);
+    this.headlight = new THREE.SpotLight(lampCol, 0, 120, 0.5, 0.75, 1.3);
+    // (the lamp glows at the front take the chosen colour too)
+    if (c.lamp && c.lamp !== 'warm') this.glows.forEach((gl, i) => i % 2 === 0 && gl.material.color.setHex(lampCol));
     this.headlight.position.set(0, lampY + 0.1, front);
     this.headlight.target.position.set(0, -0.6, front + 30);
     b.add(this.headlight, this.headlight.target);
     // The pool of light the beams throw on the road ahead (shows on every graphics setting)
     this.lightPool = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
-      map: beamTexture(), color: 0xfff0d2, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+      map: beamTexture(), color: c.lamp && c.lamp !== 'warm' ? lampCol : 0xfff0d2, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false,
     }));
     const span = s.bike ? 22 : 34;
@@ -503,6 +600,34 @@ export class CarModel {
   }
 
   readonly lightPool: THREE.Mesh;
+  private blinkL: THREE.Sprite[] = [];
+  private blinkR: THREE.Sprite[] = [];
+  private reverseLamps: THREE.Sprite[] = [];
+  private underglow: THREE.Mesh | null = null;
+  /** What the signal lamps are showing (for the cabin tick and for tests). */
+  signals = { left: false, right: false, reverse: false };
+
+  /** Indicators (lit or not right now: the caller does the blinking) and reversing lamps. */
+  setSignals(left: boolean, right: boolean, reverse: boolean) {
+    const sg = this.signals;
+    if (sg.left !== left) for (const l of this.blinkL) l.visible = left;
+    if (sg.right !== right) for (const l of this.blinkR) l.visible = right;
+    if (sg.reverse !== reverse) for (const l of this.reverseLamps) l.visible = reverse;
+    sg.left = left;
+    sg.right = right;
+    sg.reverse = reverse;
+  }
+
+  /** The glow under the car, 0..1 (only if one is fitted). */
+  setUnderglow(k: number) {
+    const u = this.underglow;
+    if (!u) return;
+    u.visible = k > 0.01;
+    (u.material as THREE.MeshBasicMaterial).opacity = k;
+  }
+  get hasUnderglow() {
+    return !!this.underglow;
+  }
 
   /** Headlights on (0..1 brightness). */
   setLights(k: number) {
@@ -714,6 +839,32 @@ export class CarModel {
       }
     });
   }
+}
+
+let underTex: THREE.Texture | null = null;
+/** A soft rounded rectangle of light, brightest in a band round the sills. */
+function underglowTexture(): THREE.Texture {
+  if (underTex) return underTex;
+  const c = document.createElement('canvas');
+  c.width = 96; c.height = 160;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(96, 160);
+  for (let y = 0; y < 160; y++) {
+    for (let x = 0; x < 96; x++) {
+      const u = Math.abs((x / 95) * 2 - 1), v = Math.abs((y / 159) * 2 - 1);
+      // Distance outside a rounded box about the size of the car's floor
+      const dx = Math.max(0, u - 0.5), dy = Math.max(0, v - 0.68);
+      const d = Math.hypot(dx / 0.5, dy / 0.32);
+      const inner = Math.min(1, Math.max(u / 0.5, v / 0.68));
+      const k = d > 0 ? Math.pow(Math.max(0, 1 - d), 2.2) : 0.35 + 0.65 * inner * inner;
+      const val = Math.min(255, k * 255);
+      img.data.set([val, val, val, 255], (y * 96 + x) * 4);
+    }
+  }
+  g.putImageData(img, 0, 0);
+  underTex = new THREE.CanvasTexture(c);
+  underTex.userData.shared = true;
+  return underTex;
 }
 
 let sharedShadow: THREE.MeshBasicMaterial | null = null;

@@ -67,9 +67,17 @@ export interface Custom {
   /** Decal on the doors. */
   decal: 'none' | 'number' | 'flames' | 'stripe' | 'stars' | 'endless';
   /** What's towed behind. */
-  tow: 'none' | 'caravan' | 'boat';
-  /** Surfboards on the roof or bikes on the back. */
-  rack: 'none' | 'surf' | 'bikes';
+  tow: 'none' | 'caravan' | 'boat' | 'teardrop' | 'jetski';
+  /** Surfboards, a roof box or a kayak on the roof, or bikes on the back. */
+  rack: 'none' | 'surf' | 'bikes' | 'box' | 'kayak';
+  /** A glow under the car at night (0 = off). */
+  underglow: number;
+  /** Window glass: the standard dark tint, a lighter smoke, or a pale blue-green. */
+  tint: 'dark' | 'smoke' | 'light';
+  /** Headlight colour. */
+  lamp: 'warm' | 'white' | 'ice';
+  /** Tyre sidewalls. */
+  tyre: 'plain' | 'white' | 'letters';
 }
 
 const H = (roll: number, dive: number, steer: number, spring: number): Handling => ({ roll, dive, steer, spring });
@@ -290,5 +298,36 @@ export function defaultCustom(spec: CarSpec): Custom {
     decal: spec.id === 'rally' ? 'number' : 'none',
     tow: 'none',
     rack: 'none',
+    underglow: 0,
+    tint: 'dark',
+    lamp: 'warm',
+    tyre: 'plain',
+  };
+}
+
+/** Paint schemes that always look good together: body, second colour, finish, rim colour. */
+const LOOKS: [number, number, Finish, number][] = [
+  [0x1b2233, 0xf2f1ec, 'metallic', 0xc9ccd1], [0xb3121b, 0x1e1f22, 'solid', 0x1d1e21], [0xf2f1ec, 0x1e1f22, 'pearl', 0x1d1e21],
+  [0x3d4a3a, 0xf2f1ec, 'solid', 0xa7834d], [0x1e1f22, 0xb3121b, 'metallic', 0xa7834d], [0x8fc3d6, 0xf2f1ec, 'solid', 0xe6e7ea],
+  [0xa9aeb5, 0x1e1f22, 'metallic', 0x1d1e21], [0xe0701e, 0x1e1f22, 'solid', 0x1d1e21], [0x2a6fb5, 0xf2f1ec, 'metallic', 0xc9ccd1],
+  [0x6a4bb0, 0x1e1f22, 'pearl', 0xc9ccd1], [0x48505c, 0xe0701e, 'matte', 0x1d1e21], [0x3f8f86, 0xf2f1ec, 'solid', 0xe6e7ea],
+  [0xd9a21b, 0x1e1f22, 'solid', 0x1d1e21], [0x6b6a43, 0xf2f1ec, 'matte', 0xa7834d], [0xc85a8f, 0xf2f1ec, 'pearl', 0xc9ccd1],
+  [0x6fa8a0, 0xf2f1ec, 'metallic', 0xc9ccd1],
+];
+
+/** A random but tasteful paint, finish and wheel combination for a car (`rnd` gives 0..1). */
+export function surpriseLook(spec: CarSpec, rnd: () => number): Partial<Custom> {
+  const pick = <T>(list: T[]) => list[Math.min(list.length - 1, Math.floor(rnd() * list.length))];
+  const [color, color2, finish, rimColor] = pick(LOOKS);
+  const classic = spec.cabin === 'classic' || spec.cabin === 'van';
+  const rough = spec.features.includes('bullbar') || spec.features.includes('snorkel') || spec.id === 'offroad' || spec.id === 'nomad';
+  const rims: RimStyle[] = spec.bike ? [spec.rim] : classic ? ['steel', 'multi'] : rough ? ['beadlock', 'five'] : ['five', 'multi', 'turbine'];
+  const rim = pick(rims);
+  return {
+    color, color2, finish: classic && finish === 'matte' ? 'solid' : finish, rim,
+    rimColor: rim === 'steel' ? pick([0xe6e7ea, 0xc9ccd1]) : rim === 'beadlock' ? 0x1d1e21 : rimColor,
+    twoTone: !spec.bike && (classic ? rnd() < 0.7 : rnd() < 0.2),
+    stripes: !spec.bike && !classic && spec.cabin === 'sport' && rnd() < 0.3,
+    tyre: classic ? pick<Custom['tyre']>(['white', 'plain']) : rough ? pick<Custom['tyre']>(['letters', 'plain']) : 'plain',
   };
 }
