@@ -68,6 +68,13 @@ export function mountSkyTime(ctx: Ctx, group: HTMLElement) {
     refreshAll();
   }, true);
   if (p.changing) setChanging(true);
+  // A mood is a choice of weather: it takes over from weather that changes by itself
+  ctx.on('mood', () => {
+    if (!p.changing) return;
+    setChanging(false);
+    ctx.save();
+    refreshAll();
+  });
 
   let lineTimer = 0;
   ctx.use({

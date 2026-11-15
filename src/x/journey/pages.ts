@@ -303,6 +303,7 @@ export class Pages {
     s.weather = m.weather;
     // (a mood is a choice of weather: it wins over weather that changes by itself, for now)
     g.weatherOverride = null;
+    ctx.emit('mood', m);
     const season = s.season !== m.season;
     s.season = m.season;
     g.setThemes(s.themes);

@@ -208,6 +208,8 @@ export function mountHub(ctx: Ctx) {
     render();
     document.getElementById('hud-menu')?.classList.remove('on');
     ctx.open('hub');
+    body.scrollTop = 0;
+    (body.parentElement as HTMLElement).scrollTop = 0;
   };
   // Garage header, the drive menu and the pause screen each get a way in
   const top = document.querySelector('#garage .top-btns');

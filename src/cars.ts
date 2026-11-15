@@ -524,7 +524,7 @@ export class CarModel {
         (side < 0 ? this.blinkR : this.blinkL).push(f, r);
         if (!s.bike) {
           const xr = side * W * 0.24;
-          const rev = lampS(0xffffff, 0.3);
+          const rev = lampS(0xfff4e0, 0.17);
           rev.position.set(xr, tailY - 0.02, cornerZ(xr, P.rear, 0.01) - 0.04);
           this.reverseLamps.push(rev);
         }

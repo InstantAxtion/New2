@@ -54,7 +54,7 @@ function stampLabel(key: string): { icon: string; name: string } | null {
 }
 
 /** Shown in Settings. */
-const APP_VERSION = '1.0';
+const APP_VERSION = '2.0';
 
 /** A settings row: a label and a segmented control. */
 const seg = (label: string, key: string, opts: [string, string][]) =>

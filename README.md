@@ -3,7 +3,7 @@
 A relaxing driving game for Android. Pick a car and cruise an endless, generated world — or let it drive itself while you watch the scenery, listen to your Spotify playlist or the radio, or watch music videos on the car's dashboard screen. No goals, no scores: just driving.
 
 ## The world
-- An endless road through 15 regions that blend into each other: 🌊 Seaside · ⛰️ Rolling Hills · 🌾 Flatlands · 🏜️ Desert · 🌲 Forest · 🏔️ Alpine · 🍂 Autumn Valley · ❄️ Winter · 🌃 Neon City (always night: lit towers, neon billboards, street lamps) · 🌴 Rainforest (jungle, ferns, mist) · 🌉 Lakes & Bridges · 🪨 Canyon (red rock walls, hoodoos, arches, bridges over gorges) · 🌸 Spring Blossom (cherry trees, tulip fields, petals on the wind) · 🏝️ Tropical Islands (causeways between islands, turquoise water) · 🍇 Vineyards & Lavender (rows of vines, purple fields, cypresses, stone farmhouses). A title card welcomes you to each one.
+- An endless road through 21 regions that blend into each other: 🌊 Seaside · ⛰️ Rolling Hills · 🌾 Flatlands · 🏜️ Desert · 🌲 Forest · 🏔️ Alpine · 🍂 Autumn Valley · ❄️ Winter · 🌃 Neon City (always night: lit towers, neon billboards, street lamps) · 🌴 Rainforest (jungle, ferns, mist) · 🌉 Lakes & Bridges · 🪨 Canyon (red rock walls, hoodoos, arches, bridges over gorges) · 🌸 Spring Blossom (cherry trees, tulip fields, petals on the wind) · 🏝️ Tropical Islands (causeways between islands, turquoise water) · 🍇 Vineyards & Lavender (rows of vines, purple fields, cypresses, stone farmhouses) · 🌋 Volcanic Island (black sand, lava fields that glow at night, steaming vents, a smoking volcano) · 🏖️ Mediterranean Coast (white villages, olive groves, turquoise coves) · 🏴 Highland Moors (heather, lochs, dry-stone walls, highland cattle, mist) · 🐊 Bayou Wetlands (a causeway through cypress swamp, timber trestles, herons, fireflies) · plus the Pacific Northwest and the Night Metro. A title card welcomes you to each one.
 - Roads: four-lane highways with a central barrier, tunnels through mountain ridges, alpine hairpins, gravel roads that throw up dust, clifftop roads above the sea, great suspension bridges (lit at night), and cobbled old towns with stone gatehouses.
 - Landmarks: hilltop castles, abbey ruins and waterfalls. Town windows glow at night; a drive-in cinema shows a film after dark; sailing boats out on the water.
 - Seasons: each region's own look, or the whole world in spring, summer, autumn or winter (Settings).
@@ -15,6 +15,20 @@ A relaxing driving game for Android. Pick a car and cruise an endless, generated
 - Time of day: a full day/night cycle or fixed dawn, day, sunset or night.
 - Weather: clear, rain (wet shiny roads with puddles, street lights reflected at night, spray from traffic, wipers), thunderstorms (lightning and thunder), snow (it settles on the ground), fog, hail or sleet; desert sandstorms; wind in the trees with leaves and petals blowing; heat haze on hot afternoons.
 - Traffic: cars, campervans, lorries, coaches and motorbikes, oncoming and in your lane; density slider from empty to busy.
+
+## ✨ More (new in 2.0)
+Everything below sits behind the ✨ More button (garage, drive menu and pause screen) or in Settings, so the driving screen stays clear.
+
+- **📷 Photo mode & album**: stop the world, orbit the car, change the lens, tilt and time of day, add a caption, and save the picture to an album on your phone (share or delete from there).
+- **Picture styles**: Natural, Vivid, Film, Warm sunset, Cool blue, Faded retro, Black & white, Dreamy; film grain, dark corners and blur at speed (Settings → Picture).
+- **🎬 Cinematic camera & 🚁 drone view** for auto-drive; sliders for the chase camera's distance, height and field of view.
+- **🧭 Journeys**: road trips to real places up the road (towns, diners, castles, the next region…), a road of the day, three gentle ideas each day, 60 milestones and a road rank, a trip computer with a smoothness score, a shareable trip summary, a journal of every stamp, and one-tap 🎭 moods ("Rainy night city", "Golden hour coast"…). Nothing is locked and nothing can be failed.
+- **Car**: horn (double-tap the speed and hold, or H), indicators, hazards and reversing lamps, Eco / Comfort / Sport drive modes, tyre marks, exhaust vapour on cold mornings, tyre smoke; new customise options (underglow, window glass, headlight colour, tyre styles, roof box, kayak, teardrop camper, jet-ski, 🎲 Surprise me).
+- **Controls**: steering sensitivity, a steering-wheel touch control, left-handed layout, large buttons, game controllers, vibration; dial or bar speed displays; 🅿️ Rest here pulls over and lets time pass.
+- **Along the road**: wind farms, power lines, hay bales, tractors, scarecrows, funny billboards, giant roadside attractions, roadworks (auto-drive slows), tumbleweeds, pump jacks, dust devils, beach umbrellas, kites, surfers, cable cars, ski lifts, snowmen, sky lanterns, far-off village lights, mailboxes, bus shelters, fruit stalls, cyclists, hikers and anglers (Settings → Scenery for how much).
+- **Weather, sky & time**: weather that changes by itself with a forecast, time of day from your phone's clock, day length from 8 minutes to 2 hours, real moon phases, comets and satellites, wind gusts in storms.
+- **Sound**: separate levels for rain, wind, tyres, traffic and wildlife, a quiet-cabin switch, and 🛏️ sleep sounds for long auto-drives.
+- **Your phone**: battery saver (45 / 30 fps or automatic), picture dimming on long auto-drives, keep-screen-on, text size, backup & restore, a first-run welcome, 💡 tips and 🆕 what's new.
 
 ## Cars
 20 vehicles, each with its own speed, acceleration, grip, handling (body roll, dive, steering), engine sound and interior: Sprint GT, City Hatch, Trail SUV, Ranch Pickup, Breeze Roadster, Weekender Van, Thunder Muscle, Retro Bubble, Coastline '64, Volt Hatch (electric), Ridge Off-Roader, Tourer Estate, Apex V12, Strada Veloce, Halo Hyper (scissor doors), Starliner '57, Riviera Spider '62, Wanderer Camper (the roof pops up when you stop), Nomad Overlander (roof tent) — and the Horizon Tourer motorbike, which leans into the bends, with a rider's view over the bars.
@@ -64,5 +78,7 @@ npm run build && npx cap sync android && (cd android && ./gradlew assembleDebug)
 ```
 
 Icons and splash: `python3 resources/make_icons.py`. Credits: `public/textures/CREDITS.md`, `public/models/CREDITS.md`, `public/impostors/CREDITS.md`, `public/sounds/CREDITS.md`.
+
+Add-on features live in `src/x/` (one folder per group: `look`, `scenery`, `journey`, `carx`, `system`) and plug in through `src/x/core.ts`.
 
 Code map: `src/world/` (regions, road, terrain, towns, bridges), `src/chunks.ts` (terrain, road, bridges, scenery), `src/foliage.ts`, `src/props.ts`, `src/special.ts` (city), `src/carspecs.ts` + `src/carbody.ts` + `src/carparts.ts` + `src/cockpit.ts` + `src/cars.ts` (cars), `src/drive.ts` (physics, auto-drive), `src/traffic.ts` + `src/vehicles.ts`, `src/peds.ts`, `src/weather.ts`, `src/sky.ts`, `src/audio.ts`, `src/map.ts`, `src/music.ts` + `src/youtube.ts` + `src/video.ts` + `src/tracks.ts`, `src/radio.ts`, `src/stats.ts`, `src/ui.ts`, `src/game.ts`.
