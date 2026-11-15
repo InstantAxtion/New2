@@ -39,6 +39,7 @@ export function mountLook(ctx: Ctx) {
     if (cine.mode === 'off') return;
     cine.stop();
     bars.classList.remove('on', 'bars');
+    document.body.classList.remove('x-cine');
     game.rig.mode = game.settings.cam;
     game.rig.reset();
   };
@@ -49,6 +50,8 @@ export function mountLook(ctx: Ctx) {
     cine.start(mode);
     game.rig.mode = 'chase';
     bars.classList.add('on');
+    // On auto-drive the controls step aside for a clear picture (driving yourself, they stay)
+    document.body.classList.toggle('x-cine', game.settings.auto);
     bars.classList.toggle('bars', mode === 'cine' && prefs.bars);
     hint.textContent = mode === 'cine' ? '🎬 Tap the picture to go back' : '🚁 Tap the picture to go back';
     hint.classList.add('show');
