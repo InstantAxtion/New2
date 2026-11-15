@@ -60,8 +60,8 @@ export function lochAt(x: number, z: number, u: number, seed: number): number {
 
 /** Bayou channels: open water the road crosses on a trestle (0..1). `road` gives the bridge strength. */
 export function bayouChannel(z: number, seed: number, road = false): number {
-  const along = noise2(z / 360, 7.7, seed + 261);
-  return road ? smoothstep(0.24, 0.36, along) : smoothstep(0.16, 0.34, along);
+  const along = noise2(z / 210, 7.7, seed + 261);
+  return road ? smoothstep(0.4, 0.5, along) : smoothstep(0.34, 0.48, along);
 }
 
 /** Coastal cliffs: the seaside road climbs onto clifftops now and then (0..1). */
@@ -610,7 +610,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       set(out, 0.2 + n * 0.07, 0.19 + n * 0.06, 0.2 + n * 0.06);
       mix(out, 0.36, 0.2, 0.15, smoothstep(0.45, 0.8, noise2(x / 130, z / 130, 237)) * 0.55);
       // Moss creeping over old flows, then lush green higher up the slopes
-      mix(out, 0.36, 0.47, 0.2, smoothstep(0.1, 0.6, noise2(x / 60, z / 60, 238)) * 0.55 * smoothstep(1.5, 6, h));
+      mix(out, 0.33, 0.4, 0.2, smoothstep(0.3, 0.7, noise2(x / 60, z / 60, 238)) * 0.4 * smoothstep(1.5, 6, h));
       const green = smoothstep(7, 24, rel + noise2(x / 50, z / 50, 239) * 8);
       mix(out, 0.2 + n * 0.1, 0.5 + n * 0.08, 0.2, green * 0.92);
       if (h < 1.9) {
@@ -622,8 +622,8 @@ export const BIOMES: Record<BiomeId, Biome> = {
     },
     props: [
       { type: 'lavaRock', n: 9, u: [9, 90], scale: [0.6, 1.9], h: [1.2, 60] },
-      { type: 'vent', n: 0.9, u: [14, 70], scale: [0.8, 1.3], h: [2, 60] },
-      { type: 'lavaFlow', n: 1.1, u: [70, 420], scale: [0.9, 1.8], side: 'land', h: [3, 200] },
+      { type: 'vent', n: 0.22, u: [14, 70], scale: [0.8, 1.3], h: [2, 60] },
+      { type: 'lavaFlow', n: 1.6, u: [45, 380], scale: [0.9, 1.8], side: 'land', h: [3, 200] },
       { type: 'treeFern', n: 9, u: [11, 120], scale: [0.8, 1.3], h: [2.5, 200], cluster: 3 },
       { type: 'fern', n: 26, u: [8.5, 80], scale: [0.7, 1.5], h: [2.5, 200], cluster: 5 },
       { type: 'jungleTree', n: 12, u: [50, 320], scale: [0.9, 1.5], side: 'land', h: [8, 400], cluster: 6 },
@@ -677,7 +677,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
       { type: 'olive', n: 3, u: [10, 40], scale: [0.8, 1.1], side: 'sea', h: [3, 999] },
       { type: 'stonePine', n: 4, u: [10, 200], scale: [0.9, 1.4], h: [3, 999], cluster: 2 },
       { type: 'cypress', n: 4, u: [9, 160], scale: [0.8, 1.25], h: [3, 999], cluster: 3 },
-      { type: 'bougain', n: 5, u: [8.5, 40], scale: [0.7, 1.3], h: [3, 999] },
+      { type: 'bougain', n: 2, u: [8.5, 24], scale: [0.7, 1.3], h: [3, 999] },
       { type: 'bush', n: 4, u: [9, 120], scale: [0.5, 1], h: [3, 999] },
       { type: 'villa', n: 0.5, u: [16, 130], scale: [0.9, 1.15], h: [3, 999] },
       { type: 'chapel', n: 0.14, u: [14, 26], scale: [0.9, 1.1], side: 'sea', h: [5, 999] },
@@ -727,7 +727,7 @@ export const BIOMES: Record<BiomeId, Biome> = {
     id: 'bayou', name: 'Bayou Wetlands', emoji: '🐊', roadBase: 1.75, roadAmp: 0.25, relief: 0, fog: 0.7,
     height(x, z, c) {
       const mound = noise2(x / 75, z / 75, 263) * 0.5 + 0.5 + noise2(x / 22, z / 22, 264) * 0.12;
-      let h = -1.35 + smoothstep(0.56, 0.8, mound) * 2.5 + noise2(x / 30, z / 30, 265) * 0.2;
+      let h = -1.1 + smoothstep(0.44, 0.7, mound) * 2.3 + noise2(x / 30, z / 30, 265) * 0.2;
       const ch = bayouChannel(z, c.seed ?? 0);
       if (ch > 0) h += (Math.min(h, -2.6) - h) * ch;
       return h;

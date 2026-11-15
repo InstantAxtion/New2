@@ -1068,7 +1068,7 @@ export class Life {
       const top = Math.max(0, Math.min(1, (f - 0.72) / 0.25));
       const gully = 0.85 + 0.15 * Math.sin(a * 9 + Math.sin(a * 3) * 2);
       col[i * 3] = (0.2 + (0.2 - 0.2) * g1 + top * 0.16) * gully;
-      col[i * 3 + 1] = (0.19 + (0.36 - 0.19) * g1 + top * 0.02) * gully;
+      col[i * 3 + 1] = (0.19 + (0.27 - 0.19) * g1 + top * 0.02) * gully;
       col[i * 3 + 2] = (0.2 + (0.16 - 0.2) * g1) * gully;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -1108,14 +1108,14 @@ export class Life {
       const g = this.volcano!;
       g.visible = true;
       const zc = (k + 0.5) * SEGMENT;
-      const u = -w.seaSide(k) * 1750;
+      const u = -w.seaSide(k) * 2050;
       const [tx, tz] = w.tangent(zc);
       g.position.set(w.roadX(zc) - tz * u, 0, zc + tx * u);
       // Haze it into the distance by hand (it stands beyond the fog's reach)
       const fog = (this.group.parent as THREE.Scene | null)?.fog as THREE.Fog | undefined;
       const mat = this.volcanoMat!;
-      const haze = 0.52 + env.cover * 0.2 + (1 - env.fog) * 0.25;
-      mat.color.setScalar(1 - Math.min(0.9, haze));
+      const haze = 0.38 + env.cover * 0.2 + (1 - env.fog) * 0.3;
+      mat.color.setScalar((1 - Math.min(0.9, haze)) * (1 - env.night * 0.75));
       if (fog) mat.emissive.copy(fog.color).multiplyScalar(Math.min(0.9, haze));
       const H = g.userData.h as number;
       // Smoke rolls up out of the crater and leans away on the wind

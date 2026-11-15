@@ -598,7 +598,7 @@ function buildParts(type: PropType): THREE.BufferGeometry {
     }
     // ---- Highland moors ----
     case 'heather':
-      return merge([blob(0.6, 0x5a6a3a, 0, 0.2, 0, 0.25, 0.55), blob(0.55, 0x9a5a9c, 0.05, 0.36, 0, 0.35, 0.5), blob(0.42, 0x8a4f94, 0.55, 0.3, 0.3, 0.35, 0.5), blob(0.38, 0xa868a8, -0.5, 0.28, -0.25, 0.35, 0.5)]);
+      return merge([blob(0.6, 0x5a6a3a, 0, 0.2, 0, 0.25, 0.55), blob(0.55, 0x86558a, 0.05, 0.36, 0, 0.35, 0.5), blob(0.42, 0x774a80, 0.55, 0.3, 0.3, 0.35, 0.5), blob(0.38, 0x906094, -0.5, 0.28, -0.25, 0.35, 0.5)]);
     case 'gorse':
       return merge([blob(0.9, 0x3f6a34, 0, 0.6, 0, 0.3, 0.85), blob(0.5, 0xe6c22e, 0.3, 1.05, 0.2, 0.4, 0.6), blob(0.4, 0xf0d040, -0.5, 0.85, -0.2, 0.4, 0.6), blob(0.6, 0x4a7a3a, 0.75, 0.45, -0.3, 0.3, 0.8)]);
     case 'stoneWall': {
@@ -764,7 +764,7 @@ export function litGeometry(type: PropType): THREE.BufferGeometry {
         const l = 1.1 + (i % 3) * 0.3;
         const nx = x + Math.cos(dir) * l, nz = z + Math.sin(dir) * l;
         const y = 1.25 * 0.9 * Math.max(0.2, 1 - Math.hypot((x + nx) / 2, (z + nz) / 2) / 7.5) + 0.25;
-        panes.push(new THREE.PlaneGeometry(l * 1.1, 0.2 + (i % 2) * 0.1).rotateX(-Math.PI / 2).rotateY(-dir).translate((x + nx) / 2, y, (z + nz) / 2));
+        panes.push(new THREE.PlaneGeometry(l * 1.1, 0.42 + (i % 2) * 0.22).rotateX(-Math.PI / 2).rotateY(-dir).translate((x + nx) / 2, y, (z + nz) / 2));
         x = nx; z = nz;
         dir += ((i * 7 + len) % 5 - 2) * 0.32;
       }

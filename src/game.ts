@@ -796,6 +796,9 @@ export class Game {
       const wc = (this.water.material as THREE.MeshPhongMaterial).color;
       if (this.tier === 'pbr') wc.setRGB(0.02 + winter * 0.6 + tropic * 0.0, 0.18 + winter * 0.5 + tropic * 0.3, 0.26 + winter * 0.55 + tropic * 0.12);
       else wc.setRGB(0.17 + winter * 0.55 - tropic * 0.1, 0.5 + winter * 0.32 + tropic * 0.25, 0.68 + winter * 0.22 - tropic * 0.02);
+      // Swamp water is dark and still
+      const swamp = this.world.weights(v.z).reduce((m, x) => m + (x.biome.id === 'bayou' ? x.w : 0), 0);
+      if (swamp > 0) wc.lerp(new THREE.Color(0.05, 0.085, 0.06), swamp * 0.85);
       // Clear tropical water lets the sand show through
       (this.water.material as THREE.Material).opacity = 0.93 - tropic * 0.25;
     }

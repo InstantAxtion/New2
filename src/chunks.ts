@@ -996,7 +996,7 @@ export class ChunkManager {
       // Long crossings become a great suspension bridge: two towers, sweeping main cables
       // and hangers, lit up at night
       const span = this.bridgeSpan(z0 + CHUNK / 2);
-      if (span && span.len > 280) {
+      if (span && span.len > 280 && !timber) {
         const steel: THREE.BufferGeometry[] = [];
         const lamps: THREE.BufferGeometry[] = [];
         const t1 = span.start + span.len * 0.22, t2 = span.end - span.len * 0.22;

@@ -1098,7 +1098,9 @@ export class World {
     }
     // Lake shores
     if (h < 0.7) {
-      const t = smoothstep(0.7, 0.2, h);
+      // (not in the swamp or by a peaty loch: their banks are mud, not sand)
+      const muddy = this.weights(z).reduce((m, x) => m + (x.biome.id === 'bayou' || x.biome.id === 'moors' ? x.w : 0), 0);
+      const t = smoothstep(0.7, 0.2, h) * (1 - muddy);
       for (let i = 0; i < 6; i++) out[i] *= 1 - t;
       out[3] += t;
     }
