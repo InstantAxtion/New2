@@ -104,6 +104,10 @@ export class CameraRig {
 
   /** Field of view outside the driver's seat (set on resize). */
   baseFov = 58;
+  /** The player's own 3rd-person camera: wider or narrower view, further back, higher up. */
+  fovBias = 0;
+  distK = 1;
+  heightK = 1;
 
   update(v: Vehicle, dt: number) {
     this.focusT += ((this.mode === 'hood' && this.screenFocus ? 1 : 0) - this.focusT) * (1 - Math.exp(-dt * 4));
@@ -113,7 +117,7 @@ export class CameraRig {
     this.speedK += (sp - this.speedK) * (1 - Math.exp(-dt * 1.5));
     const kick = (this.calm ? 5 : 10) * this.speedK * this.speedK;
     const hz = this.mode === 'hood' ? this.zoom : 1;
-    const fov = Math.round(((this.mode === 'hood' ? (hoodFov + kick * 0.7) * hz + (24 - (hoodFov + kick * 0.7) * hz) * this.focusT : this.baseFov + kick)) * 20) / 20;
+    const fov = Math.round(((this.mode === 'hood' ? (hoodFov + kick * 0.7) * hz + (24 - (hoodFov + kick * 0.7) * hz) * this.focusT : this.baseFov + kick + (this.mode === 'chase' ? this.fovBias : 0))) * 20) / 20;
     // In the cabin things are a hand's width away, so let the camera see that close
     const near = this.mode === 'hood' ? 0.03 : 0.1;
     if (this.cam.fov !== fov || this.cam.near !== near) {
@@ -139,8 +143,8 @@ export class CameraRig {
       case 'far': {
         const far = this.mode === 'far';
         // Closer and lower than before (more of the road rushing past); pulls back a touch with speed
-        const d = (far ? 15 : 5.4 + this.speedK * 1.2) * (1 + this.pitch * 0.3) * this.zoom;
-        const h = ((far ? 6.5 : 1.85 - this.speedK * 0.15) + this.pitch * 6) * (0.6 + 0.4 * this.zoom);
+        const d = (far ? 15 : (5.4 + this.speedK * 1.2) * this.distK) * (1 + this.pitch * 0.3) * this.zoom;
+        const h = ((far ? 6.5 : (1.85 - this.speedK * 0.15) * this.heightK) + this.pitch * 6) * (0.6 + 0.4 * this.zoom);
         // The camera swings round after the car rather than being bolted to it, so in a turn
         // you see the car itself rotate into the bend (and a little of its side)
         if (this.first) {
