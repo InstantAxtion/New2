@@ -70,6 +70,14 @@ export class EngineSound {
   duck = 1;
   /** Mixer level for the world around you (ambience, animals, rain, tyres). */
   world = 1;
+  /** Finer mixer levels (1 = as recorded): rain on the roof, wind, tyres on the road, passing traffic, wildlife. */
+  levels = { roof: 1, wind: 1, tyres: 1, traffic: 1, wildlife: 1 };
+  /** A better-insulated cabin: road, wind and rain come through more softly. */
+  quietCabin = false;
+  /** Sleep sounds: a fixed mix of ambient loops instead of the sounds of the place (null = match the place). */
+  mixOverride: Partial<AmbientMix> | null = null;
+  /** Engine level on top of the volume (sleep sounds can turn the hum down). */
+  engineScale = 1;
   /** Inside the cabin with the windows shut: outside sounds are muffled. */
   sealed = false;
   private profile: Profile = PROFILES.i4;
@@ -439,9 +447,18 @@ export class EngineSound {
   whoosh(level: number) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    const v = Math.max(this.volume, 0.25) * this.duck * Math.min(1, level);
+    const v = Math.max(this.volume, 0.25) * this.duck * Math.min(1, level) * this.levels.traffic * (this.quietCabin ? 0.6 : 1);
     this.burst(t, 0.7, 'bandpass', 500, 1500, 0.22 * v, this.cabin, 1.2);
     this.burst(t + 0.25, 0.6, 'bandpass', 1400, 350, 0.16 * v, this.cabin, 1.2);
+  }
+
+  /** A gust of wind buffeting the car. */
+  gust(level = 1) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const v = Math.max(this.volume, 0.25) * this.duck * this.world * this.levels.wind * Math.min(1, level) * (this.sealed ? 0.6 : 1) * (this.quietCabin ? 0.6 : 1);
+    this.burst(t, 1.1, 'bandpass', 260, 620, 0.3 * v, this.cabin, 0.7);
+    this.burst(t + 0.5, 1.3, 'bandpass', 600, 200, 0.22 * v, this.cabin, 0.7);
   }
 
   /** A call from an animal out in the world: an owl's hoot, a gull, an eagle's cry. */
@@ -450,7 +467,7 @@ export class EngineSound {
     if (!ctx) return;
     const t0 = ctx.currentTime;
     const out = ctx.createGain();
-    out.gain.value = Math.max(this.volume, 0.3) * this.duck * level * this.world;
+    out.gain.value = Math.max(this.volume, 0.3) * this.duck * level * this.world * this.levels.wildlife;
     out.connect(this.cabin);
     const note = (type: OscillatorType, f0: number, f1: number, t: number, dur: number, peak: number, vib = 0) => {
       const o = ctx.createOscillator();
@@ -516,7 +533,9 @@ export class EngineSound {
     const t = this.ctx.currentTime;
     const p = this.profile;
     const s = Math.abs(speed);
-    const v = (running ? this.volume : 0) * this.duck;
+    const v = (running ? this.volume : 0) * this.duck * this.engineScale;
+    const lv = this.levels;
+    const quiet = this.quietCabin ? 0.6 : 1;
     const e = this.eng;
     if (p.electric) {
       const f = 180 + (s / vmax) * 1500;
@@ -577,12 +596,12 @@ export class EngineSound {
       const crunchy = this.surface !== 'road';
       const sq = running && !crunchy && s > 6 ? Math.max(0, Math.min(1, (this.slip - 0.72) / 0.25)) : 0;
       this.squeal.osc.frequency.setTargetAtTime(820 + Math.sin(t * 23) * 60 + Math.sin(t * 7.3) * 40 + this.slip * 120, t, 0.03);
-      this.squeal.gain.gain.setTargetAtTime(sq * 0.05 * Math.max(this.volume, 0.25) * this.world * (1 - this.wet * 0.7), t, 0.06);
+      this.squeal.gain.gain.setTargetAtTime(sq * 0.05 * Math.max(this.volume, 0.25) * this.world * lv.tyres * (1 - this.wet * 0.7), t, 0.06);
       // Stones flicking up off a gravel road
       this.stoneTimer -= dt;
       if (running && this.surface === 'gravel' && s > 4 && this.stoneTimer <= 0) {
         this.stoneTimer = 0.04 + Math.random() * 0.4 / Math.min(1, s / 15);
-        this.burst(t, 0.02, 'bandpass', 2400 + Math.random() * 3000, 2000, 0.05 * Math.max(this.volume, 0.25) * this.world * (this.sealed ? 0.7 : 1), this.cabin, 4);
+        this.burst(t, 0.02, 'bandpass', 2400 + Math.random() * 3000, 2000, 0.05 * Math.max(this.volume, 0.25) * this.world * lv.tyres * quiet * (this.sealed ? 0.7 : 1), this.cabin, 4);
       }
     }
     // From the driver's seat the engine comes through the bulkhead: deeper, softer
@@ -597,31 +616,36 @@ export class EngineSound {
     const roll = Math.min(1, s / 30);
     this.tyres.filter.frequency.setTargetAtTime(crunch ? 900 + s * 20 : 180 + s * 6 + this.wet * 1600, t, 0.2);
     this.tyres.filter.Q.value = crunch ? 0.6 : this.wet > 0.3 ? 0.4 : 1.2;
-    this.tyres.gain.gain.setTargetAtTime((running ? 1 : 0) * Math.max(this.volume, 0.25) * roll * (0.05 + crunch * 0.12 + this.wet * 0.08) * (this.sealed ? 0.6 : 1), t, 0.2);
+    this.tyres.gain.gain.setTargetAtTime((running ? 1 : 0) * Math.max(this.volume, 0.25) * roll * (0.05 + crunch * 0.12 + this.wet * 0.08) * (this.sealed ? 0.6 : 1) * lv.tyres * quiet, t, 0.2);
     // Rain on the roof: louder inside, with the odd heavier drop
-    this.roof.gain.setTargetAtTime(this.roofRain * (this.sealed ? 0.12 : 0.04) * Math.max(this.volume, 0.3) * this.world, t, 0.4);
+    this.roof.gain.setTargetAtTime(this.roofRain * (this.sealed ? 0.12 : 0.04) * Math.max(this.volume, 0.3) * this.world * lv.roof * quiet, t, 0.4);
     this.roofTimer -= dt;
     if (this.roofRain > 0.1 && this.roofTimer <= 0) {
       this.roofTimer = 0.03 + Math.random() * 0.2 / this.roofRain;
-      this.burst(t, 0.03, 'bandpass', 1800 + Math.random() * 2500, 1500, 0.04 * this.roofRain * Math.max(this.volume, 0.3) * (this.sealed ? 1 : 0.4), this.out, 3);
+      this.burst(t, 0.03, 'bandpass', 1800 + Math.random() * 2500, 1500, 0.04 * this.roofRain * Math.max(this.volume, 0.3) * (this.sealed ? 1 : 0.4) * lv.roof * quiet, this.out, 3);
     }
     // Wind grows with speed, and much louder with the windows open
     const open = this.sealed ? 0.35 : 1;
-    this.wind.gain.gain.setTargetAtTime(v * Math.min(0.16, (s / 40) ** 2 * 0.12) * open, t, 0.3);
+    this.wind.gain.gain.setTargetAtTime(v * Math.min(0.16, (s / 40) ** 2 * 0.12) * open * lv.wind * quiet, t, 0.3);
     this.wind.filter.frequency.setTargetAtTime(400 + s * 15, t, 0.3);
-    this.cabin.frequency.setTargetAtTime(this.sealed ? 900 : 18000, t, 0.2);
+    this.cabin.frequency.setTargetAtTime(this.sealed ? (this.quietCabin ? 650 : 900) : 18000, t, 0.2);
 
     // The world around you
+    if (mix && this.mixOverride) {
+      // Sleep sounds: the player's own mix, wherever the road goes
+      const o = this.mixOverride;
+      mix = { waves: o.waves ?? 0, birds: o.birds ?? 0, insects: o.insects ?? 0, wind: o.wind ?? 0, city: o.city ?? 0, crickets: o.crickets ?? 0, rain: o.rain ?? 0 };
+    }
     if (mix) {
       const a = Math.max(this.volume, 0.25) * this.duck * this.world;
       const set = (k: keyof AmbientMix, level: number) => this.amb[k].gain.setTargetAtTime(mix[k] * level * a, t, 0.8);
       set('waves', 0.35);
-      set('insects', 0.04);
-      set('wind', 0.25);
-      set('city', 0.3);
-      set('rain', 0.22);
-      this.amb.birds.gain.setTargetAtTime(mix.birds * 0.5 * a, t, 0.8);
-      this.amb.crickets.gain.setTargetAtTime(mix.crickets * 0.35 * a, t, 0.8);
+      set('insects', 0.04 * lv.wildlife);
+      set('wind', 0.25 * lv.wind);
+      set('city', 0.3 * lv.traffic);
+      set('rain', 0.22 * lv.roof);
+      this.amb.birds.gain.setTargetAtTime(mix.birds * 0.5 * a * lv.wildlife, t, 0.8);
+      this.amb.crickets.gain.setTargetAtTime(mix.crickets * 0.35 * a * lv.wildlife, t, 0.8);
       this.birdTimer -= dt;
       if (this.birdTimer <= 0) {
         this.birdTimer = 0.6 + Math.random() * 2.5;

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { rng } from './world/noise';
 
-export type WeatherKind = 'clear' | 'rain' | 'snow' | 'storm' | 'fog' | 'hail' | 'sleet';
+export type WeatherKind = 'clear' | 'rain' | 'snow' | 'storm' | 'fog' | 'hail' | 'sleet' | 'cloudy';
 
 /** What a kind of weather does to the world. */
 export interface WeatherLook {
@@ -25,6 +25,8 @@ export const LOOKS: Record<WeatherKind, WeatherLook> = {
   snow: { cover: 0.7, rain: 0, snow: 1, wet: 0.2, fog: 0.55, lightning: false },
   fog: { cover: 0.55, rain: 0, snow: 0, wet: 0.3, fog: 0.28, lightning: false },
   hail: { cover: 0.9, rain: 0.25, snow: 0, wet: 0.8, fog: 0.65, lightning: false, hail: 1 },
+  // A grey spell with no rain (changing weather passes through it)
+  cloudy: { cover: 0.6, rain: 0, snow: 0, wet: 0, fog: 0.9, lightning: false },
   sleet: { cover: 0.8, rain: 0.45, snow: 0.55, wet: 0.9, fog: 0.6, lightning: false, hail: 0 },
 };
 
