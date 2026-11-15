@@ -1,0 +1,44 @@
+/* Weather & time, sound, phone, welcome */
+.xs-forecast { margin: 2px 0 8px; }
+.xs-off { opacity: .4; pointer-events: none; }
+.xs-wx-now { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.05); margin-bottom: 12px; }
+.xs-wx-now i { font-style: normal; font-size: 40px; line-height: 1; }
+.xs-wx-now b { display: block; font-size: 20px; }
+.xs-wx-now span { color: var(--muted); font-size: 13px; }
+.xs-wx-mode { margin-bottom: 4px; }
+.xs-list { margin: 6px 0 12px; padding-left: 20px; line-height: 1.45; font-size: 14px; }
+.xs-list li { margin: 6px 0; }
+.xs-news .xs-list { margin-top: 2px; }
+.xs-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.xs-code { width: 100%; box-sizing: border-box; min-height: 64px; max-height: 120px; resize: none; font: 11px/1.3 ui-monospace, monospace; color: var(--text); background: rgba(0,0,0,.3); border: 1px solid var(--line); border-radius: 10px; padding: 8px; word-break: break-all; }
+.xs-good { color: #8fd694 !important; }
+.xs-confirm { border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px 6px; background: rgba(255,120,90,.1); margin-bottom: 8px; font-size: 14px; }
+.sgroup.advanced[open] > summary { margin-bottom: 4px; }
+
+/* Dimmed picture on long auto-drives: any touch brings it back */
+#xs-dim { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 2.5s; z-index: 9000; }
+#xs-dim.on { opacity: .82; }
+
+#xs-fps { position: fixed; left: 50%; bottom: 2px; transform: translateX(-50%); font: 600 10px/1 Inter, system-ui, sans-serif; color: rgba(255,255,255,.55); text-shadow: 0 1px 2px #000; pointer-events: none; z-index: 50; display: none; font-variant-numeric: tabular-nums; }
+#xs-fps.on { display: block; }
+body.pip-mode #xs-fps, body.pip-mode #xs-dim, body.pip-mode #xs-welcome { display: none !important; }
+
+/* Welcome cards */
+#xs-welcome { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(6,9,16,.72); z-index: 9500; padding: 16px; }
+#xs-welcome.on { display: flex; }
+.xs-wcard { width: min(360px, 100%); max-height: 100%; overflow-y: auto; text-align: center; padding: 20px 20px 16px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.xs-wcard i { font-style: normal; font-size: 46px; line-height: 1.1; }
+.xs-wcard h2 { font-size: 22px; margin: 0; }
+.xs-wcard p { color: var(--muted); font-size: 15px; line-height: 1.45; margin: 2px 0 6px; }
+.xs-dots { display: flex; gap: 6px; margin: 2px 0 8px; }
+.xs-dots span { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.22); }
+.xs-dots span.on { background: #fff; }
+.xs-wbtns { display: flex; justify-content: space-between; width: 100%; gap: 10px; }
+@media (max-height: 380px) { .xs-wcard { flex-direction: row; flex-wrap: wrap; justify-content: center; padding: 12px 16px; } .xs-wcard i { font-size: 34px; } .xs-wcard p { flex-basis: 100%; } }
+
+/* Bigger text: sheets, cards and pop-ups grow; the driving controls stay put */
+:root { --xs-zoom: 1; }
+:root.xs-text-l { --xs-zoom: 1.14; }
+:root.xs-text-xl { --xs-zoom: 1.28; }
+.sheet, .toast, .region-card, .pause-card, .xs-wcard, .gpanel, .lyrics, .trip-card { zoom: var(--xs-zoom); }
+:root.xs-text-l .sheet, :root.xs-text-xl .sheet { width: min(420px, calc(100vw / var(--xs-zoom))); }

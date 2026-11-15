@@ -61,6 +61,11 @@ uniform float stormAz;
 uniform float bolt;
 uniform float boltOff;
 uniform float boltSeed;
+uniform float moonPhase;
+uniform float comet;
+uniform vec3 cometDir;
+uniform float sat;
+uniform vec3 satDir;
 varying vec3 vDir;
 
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -97,9 +102,33 @@ void main() {
     float disc = smoothstep(1.0, 0.92, length(mp));
     float seas = smoothstep(0.45, 0.62, fbm(mp * 1.6 + 4.0)) * 0.35 + smoothstep(0.6, 0.8, n(mp * 7.0)) * 0.1;
     vec3 mc = mix(vec3(1.0, 0.68, 0.42), vec3(0.93, 0.95, 1.0), smoothstep(0.02, 0.22, mdir.y));
-    col = mix(col, mc * (1.15 - seas) * (0.55 + 0.6 * night), disc * moonUp * (0.35 + 0.65 * night));
+    // The phase: sunlight falls on the moon's globe from one side (0.5 = full, 0 and 1 = new);
+    // the dark part still shows faintly, lit by the Earth
+    float pa = moonPhase * 6.2831853;
+    vec3 mn = vec3(mp, sqrt(max(0.0, 1.0 - dot(mp, mp))));
+    float lit = smoothstep(-0.04, 0.12, dot(mn, vec3(sin(pa), 0.0, -cos(pa))));
+    float shade = mix(0.05 * night, 1.0, lit);
+    col = mix(col, mc * (1.15 - seas) * (0.55 + 0.6 * night), disc * moonUp * (0.35 + 0.65 * night) * shade);
   }
-  col += mix(vec3(1.0, 0.75, 0.5), vec3(0.75, 0.8, 1.0), smoothstep(0.02, 0.22, mdir.y)) * pow(md, 300.0) * 0.3 * night * moonUp;
+  float moonLit = 0.5 - 0.5 * cos(moonPhase * 6.2831853);
+  col += mix(vec3(1.0, 0.75, 0.5), vec3(0.75, 0.8, 1.0), smoothstep(0.02, 0.22, mdir.y)) * pow(md, 300.0) * 0.3 * night * moonUp * moonLit;
+  // A comet: a bright head and a long, faint tail streaming away from the sun
+  if (comet > 0.01 && d.y > 0.0) {
+    vec3 cd = normalize(cometDir);
+    vec3 away = -normalize(sunDir);
+    vec3 tv = normalize(away - cd * dot(away, cd));
+    vec3 rel = d - cd;
+    float along = dot(rel, tv);
+    float across = length(rel - tv * along);
+    float head = pow(max(dot(d, cd), 0.0), 60000.0) * 1.6 + pow(max(dot(d, cd), 0.0), 6000.0) * 0.35;
+    float tail = smoothstep(-0.004, 0.012, along) * exp(-along * 7.0) * exp(-across * across / (0.00004 + along * along * 0.012)) * 0.5;
+    col += vec3(0.8, 0.9, 1.0) * (head + tail) * comet * night * (1.0 - cover);
+  }
+  // A satellite: one steady point of light gliding across the stars
+  if (sat > 0.01) {
+    float sdv = max(dot(d, normalize(satDir)), 0.0);
+    col += vec3(1.0, 0.98, 0.92) * smoothstep(0.999985, 0.999997, sdv) * sat * night * (1.0 - cover);
+  }
   // Stars, coming out at dusk; and the evening star low in the west soon after sunset
   float dusk = max(night, smoothstep(0.02, -0.1, sunDir.y) * 0.75);
   if (dusk > 0.01 && d.y > 0.0) {
@@ -274,6 +303,11 @@ export class Sky {
       bolt: { value: 0 },
       boltOff: { value: 0 },
       boltSeed: { value: 0 },
+      moonPhase: { value: 0.5 },
+      comet: { value: 0 },
+      cometDir: { value: new THREE.Vector3(-0.5, 0.45, 0.74).normalize() },
+      sat: { value: 0 },
+      satDir: { value: new THREE.Vector3(0, 1, 0) },
     };
     const mat = new THREE.ShaderMaterial({
       uniforms: this.uniforms,
@@ -308,6 +342,12 @@ export class Sky {
   aurora = 0;
   rainbow = 0;
   meteors = 0;
+
+  /** The moon's phase: 0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter. */
+  moonPhase = 0.5;
+  /** A comet in the night sky (0..1), and satellites passing over now and then. */
+  comet = 0;
+  satellites = false;
 
   /** A storm far off on the horizon (0..1): set by the weather; evenings sometimes bring one too. */
   stormFar = 0;
@@ -374,6 +414,23 @@ export class Sky {
     this.sun.target.updateMatrixWorld();
     lerpHex(a.sun, b.sun, t, this.sun.color);
     this.sun.intensity = THREE.MathUtils.lerp(a.sunI, b.sunI, t);
+    // Moonlight follows the phase: bright under a full moon, dim under a new one
+    u.moonPhase.value = this.moonPhase;
+    if (lightDir !== dir) this.sun.intensity *= 0.4 + 0.6 * (0.5 - 0.5 * Math.cos(this.moonPhase * Math.PI * 2));
+    u.comet.value = this.comet;
+    // A satellite pass every couple of minutes: 45 seconds from one side of the sky to the other
+    {
+      const per = 140, slot = Math.floor(elapsed / per), ph = (elapsed % per) / 45;
+      const on = this.satellites && ph < 1 && this.night > 0.6;
+      u.sat.value = on ? Math.min(1, ph * 8, (1 - ph) * 8) * 0.9 : 0;
+      if (on) {
+        const az = slot * 2.399, tilt = 0.25 + (Math.abs(Math.sin(slot * 12.9898) * 43758.5453) % 1) * 0.5;
+        const ang2 = (ph - 0.5) * 2.2;
+        // An arc passing near the top of the sky, leaning to one side
+        const x = Math.sin(ang2), y = Math.cos(ang2) * Math.cos(tilt), z = Math.cos(ang2) * Math.sin(tilt);
+        u.satDir.value.set(x * Math.cos(az) - z * Math.sin(az), y, x * Math.sin(az) + z * Math.cos(az));
+      }
+    }
     lerpHex(a.hemiSky, b.hemiSky, t, this.hemi.color);
     lerpHex(a.hemiGround, b.hemiGround, t, this.hemi.groundColor);
     // With sky reflections lighting the scene, the hemisphere light only fills in
