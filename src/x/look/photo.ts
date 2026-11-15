@@ -143,7 +143,8 @@ export class PhotoMode {
     const g = this.ctx.game;
     this.yaw = g.vehicle.heading + 0.7;
     this.pitch = 0.16;
-    this.dist = Math.max(7, g.vehicle.spec.length * 1.7);
+    // (a tall screen sees less to each side: stand further back)
+    this.dist = Math.max(7, g.vehicle.spec.length * 1.7) * (g.camera.aspect < 1 ? 1.9 : 1);
     this.lift = 0.8;
     this.fov = 45;
     this.roll = 0;

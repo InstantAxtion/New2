@@ -56,17 +56,27 @@ export class CineCam {
     this.t = 0;
     this.len = shotLength(Math.random());
     this.side = Math.random() < 0.5 ? -1 : 1;
+    // On a highway the barrier down the middle would hide the car: film from the car's own side
+    if (w.highwayAt(v.z) > 0.3) {
+      const lat = w.lateral(v.x, v.z);
+      const fx = Math.sin(v.heading), fz = Math.cos(v.heading);
+      const one = w.lateral(v.x + fz * 20, v.z - fx * 20);
+      if (Math.abs(lat) > 0.5) this.side = Math.sign(one - lat) === Math.sign(lat) ? 1 : -1;
+    }
     this.first = true;
     this.blocked = 0;
     if (this.shot === 'flyby') {
       // Stand by the road ahead and watch the car come past
       const dir = Math.cos(v.heading) >= 0 ? 1 : -1;
-      const ahead = Math.max(45, Math.abs(v.v) * 4.5);
+      const ahead = Math.max(40, Math.abs(v.v) * 3);
       const z = v.z + ahead * dir;
       // Not if that spot is in a tunnel or a town street
       if (w.covered(z) > 0.05 || Math.abs(v.v) < 6) return this.next();
       const [tx, tz] = w.tangent(z);
-      const o = (8 + Math.random() * 4) * this.side;
+      // (beside the road on the car's side of it, clear of the lanes)
+      const lat = w.lateral(v.x, v.z);
+      const hw = w.highwayAt(z) > 0.3;
+      const o = (hw ? 15 + Math.random() * 3 : 8 + Math.random() * 4) * (hw && Math.abs(lat) > 0.5 ? Math.sign(lat) : this.side);
       const x = w.roadX(z) - tz * o;
       const zz = z + tx * o;
       this.anchor.set(x, Math.max(w.floorAt(x, zz), w.roadY(z) - 0.5) + 1.3 + Math.random() * 1.2, zz);
