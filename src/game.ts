@@ -9,7 +9,7 @@ import { CameraRig } from './camera';
 import { Traffic } from './traffic';
 import { Pedestrians } from './peds';
 import { nightGlow } from './special';
-import { Weather } from './weather';
+import { Weather, type WeatherKind } from './weather';
 import { Effects } from './effects';
 import { Life } from './life';
 import { Drift } from './drift';
@@ -39,6 +39,9 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { Settings } from './settings';
 
 export type Phase = 'garage' | 'drive' | 'paused';
+
+/** Add-on features hook into the frame through these (see src/x/core.ts). */
+import type { Extra, Ctx } from './x/core';
 
 /** Everything 3D: the world, the car, the camera and the frame loop. */
 export class Game {
@@ -94,6 +97,40 @@ export class Game {
   input: Controls = { throttle: 0, brake: 0, steer: 0 };
   hour = 9;
   elapsed = 0;
+  /** Add-on features taking part in the frame, and the bus they talk over. */
+  readonly extras: Extra[] = [];
+  bus: Ctx | null = null;
+  /** Game time runs at this rate (0 freezes the world, for photo mode). */
+  timeScale = 1;
+  /** Minutes a full day takes on the day/night cycle, and an outside clock (real time) if set. */
+  dayMinutes = 16;
+  hourSource: (() => number | null) | null = null;
+  /** Weather chosen by an add-on (changing weather) instead of the setting. */
+  weatherOverride: WeatherKind | null = null;
+  /** Extra speed limits (roadworks…): each returns a limit in m/s or null. */
+  readonly limitHooks: ((z: number) => number | null)[] = [];
+  /** Frames per second to hold to (0 = as fast as the screen). */
+  fpsCap = 0;
+  private lastFrameAt = 0;
+  private prevPhase: Phase = 'garage';
+  private shots: ((canvas: HTMLCanvasElement) => void)[] = [];
+  /** Run once, right after the next frame is drawn (the only moment the canvas can be read). */
+  snapshot(fn: (canvas: HTMLCanvasElement) => void) {
+    this.shots.push(fn);
+  }
+  /** The post-processing passes, when the graphics level has them. */
+  get post() {
+    return { composer: this.composer, atmos: this.atmos };
+  }
+  /** The weather in force right now. */
+  get weatherNow(): WeatherKind {
+    return this.weatherOverride ?? this.settings.weather;
+  }
+  private each(fn: (e: Extra) => void) {
+    for (const e of this.extras) {
+      try { fn(e); } catch (err) { console.warn('Extra error', err); }
+    }
+  }
   seed: number;
   region: Biome | null = null;
   onRegion: (b: Biome) => void = () => {};
@@ -524,6 +561,12 @@ export class Game {
   /** One frame. Always asks for the next one, so a stray error can't freeze the game. */
   frame = () => {
     try {
+      const t = performance.now();
+      if (this.fpsCap > 0 && t - this.lastFrameAt < 1000 / this.fpsCap - 2) {
+        requestAnimationFrame(this.frame);
+        return;
+      }
+      this.lastFrameAt = t;
       this.tickFrame();
     } catch (e) {
       console.warn('Frame error', e);
@@ -539,16 +582,24 @@ export class Game {
       return;
     }
     const now = performance.now();
-    const dt = Math.min(0.05, (now - this.last) / 1000);
+    const rdt = Math.min(0.05, (now - this.last) / 1000);
+    const dt = rdt * this.timeScale;
     this.last = now;
-    this.fps += (1 / Math.max(dt, 1e-3) - this.fps) * 0.05;
+    this.fps += (1 / Math.max(rdt, 1e-3) - this.fps) * 0.05;
+    if (this.phase !== this.prevPhase) {
+      const prev = this.prevPhase;
+      this.prevPhase = this.phase;
+      this.bus?.emit('phase', { phase: this.phase, prev });
+    }
     this.elapsed += dt;
     shared.time.value = this.elapsed;
     const s = this.settings;
     const v = this.vehicle;
 
     if (s.time === 'cycle') {
-      if (this.phase !== 'paused') this.hour = (this.hour + dt * (24 / (16 * 60))) % 24;
+      const outside = this.hourSource?.() ?? null;
+      if (outside !== null) this.hour = outside;
+      else if (this.phase !== 'paused') this.hour = (this.hour + dt * (24 / (Math.max(1, this.dayMinutes) * 60))) % 24;
     } else this.hour = TIME_PRESETS[s.time];
 
     if (this.phase === 'drive') {
@@ -576,6 +627,7 @@ export class Game {
       }
       // Out of fuel: limp along gently to the next station
       if (this.fuel <= 0 && Math.abs(v.v) > 11) c = { ...c, throttle: 0 };
+      for (const e of this.extras) if (e.controls) c = e.controls(c, dt);
       this.applied = c;
       // Manual driving: let go of the wheel and the assist eases you back to the right, unless you're passing someone
       const ahead = this.traffic.leader(v, 1);
@@ -706,12 +758,14 @@ export class Game {
     }
     this.lastOdo = v.odometer;
 
+    this.each((e) => e.update?.(dt, rdt));
     this.rig.calm = this.settings.reduceMotion;
     if (this.phase === 'garage') this.rig.orbit(v, dt, this.elapsed, false);
     else {
       this.rig.clearOffset();
       this.rig.update(v, dt);
     }
+    this.each((e) => e.camera?.(dt, rdt));
 
     this.chunks.update(v.z, this.phase === 'drive' ? 1 : 2);
     const cp = this.camera.position;
@@ -728,6 +782,7 @@ export class Game {
       if (b !== this.region) {
         this.region = b;
         this.onRegion(b);
+        this.bus?.emit('region', b);
       }
       if (this.phase === 'drive') this.passport(v);
       let r = 0, g = 0, bl = 0, a = 0;
@@ -757,7 +812,7 @@ export class Game {
     this.fogScale = this.world.fogAt(v.z);
     // Weather: rain, snow, fog and storms
     const wx = this.weather;
-    wx.kind = this.settings.weather;
+    wx.kind = this.weatherNow;
     wx.update(dt, this.elapsed, this.camera.position);
     this.sky.cover = wx.look.cover;
     this.sky.flash = wx.flash;
@@ -950,9 +1005,17 @@ export class Game {
     this.glass.mesh.visible = gv;
     this.flare.visible = this.flareOn;
     const stage = this.phase === 'garage' ? this.showroom.scene : this.scene;
+    this.each((e) => e.preRender?.(dt, rdt));
     if (this.renderPass) this.renderPass.scene = stage;
-    if (this.composer) this.composer.render(dt);
+    if (this.composer) this.composer.render(rdt);
     else this.renderer.render(stage, this.camera);
+    if (this.shots.length) {
+      const shots = this.shots;
+      this.shots = [];
+      for (const fn of shots) {
+        try { fn(this.renderer.domElement); } catch (err) { console.warn('Snapshot error', err); }
+      }
+    }
     this.placeVideo();
     this.updateCarScreen(dt);
     // The dash screen is a small map display, and grows to full size while a video plays on it
@@ -1004,7 +1067,12 @@ export class Game {
   /** Speed limit at z (towns), m/s. */
   speedLimit(z: number): number {
     const w = this.world as unknown as { speedLimit?: (z: number) => number };
-    return w.speedLimit ? w.speedLimit(z) : Infinity;
+    let lim = w.speedLimit ? w.speedLimit(z) : Infinity;
+    for (const h of this.limitHooks) {
+      const x = h(z);
+      if (x !== null && x < lim) lim = x;
+    }
+    return lim;
   }
 
   /** Is the road ahead straight enough to overtake? */
@@ -1034,7 +1102,11 @@ export class Game {
   private passport(v: Vehicle) {
     const st = this.stats, w = this.world;
     if (this.region) st.track(v.x, v.z, this.region.id, v.spec.id, Math.abs(v.v));
-    const stamp = (key: string) => st.stamp(key) && this.onStamp(key);
+    const stamp = (key: string) => {
+      if (!st.stamp(key)) return;
+      this.onStamp(key);
+      this.bus?.emit('stamp', key);
+    };
     if (this.region) stamp('region:' + this.region.id);
     for (const lm of w.landmarks(v.z - 60, v.z + 260)) stamp('landmark:' + lm.kind);
     const stop = w.stopNear(v.z, 0);

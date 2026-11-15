@@ -156,7 +156,7 @@ export class UI {
     }
   }
 
-  private save() {
+  save() {
     saveSettings(this.s);
   }
 
@@ -538,12 +538,12 @@ export class UI {
     }
   }
 
-  private open(id: string) {
+  open(id: string) {
     for (const s of $$('.sheet', this.root)) s.classList.toggle('hidden', s.id !== id);
     this.docked();
   }
 
-  private close(id: string) {
+  close(id: string) {
     $('#' + id).classList.add('hidden');
     if (id === 'custom' && this.game.openState.door && this.cuTabId === 'cabin') this.game.setOpen('door', false);
     this.docked();
@@ -567,17 +567,17 @@ export class UI {
     void App.exitApp();
   }
 
-  private pause() {
+  pause() {
     this.game.pause();
     this.show('pause');
   }
 
-  private resume() {
+  resume() {
     this.game.startDrive();
     this.show('hud');
   }
 
-  private toast(html: string) {
+  toast(html: string) {
     const t = $('#toast');
     t.innerHTML = html;
     t.classList.add('on');
@@ -585,7 +585,7 @@ export class UI {
     this.toastTimer = window.setTimeout(() => t.classList.remove('on'), 3200);
   }
 
-  private setZen(on: boolean) {
+  setZen(on: boolean) {
     this.zen = on;
     document.body.classList.toggle('zen', on);
     if (on && !this.s.auto) {
@@ -667,7 +667,7 @@ export class UI {
   }
 
   /** Off we go, in whichever mode is set. */
-  private start() {
+  start() {
     this.game.stats.newTrip();
     this.game.startDrive();
     this.game.ignition();
@@ -985,7 +985,7 @@ export class UI {
     $('#sum-road').textContent = d < 0.01 ? 'No traffic' : d < 0.35 ? 'Quiet' : d < 0.7 ? 'Some traffic' : 'Busy';
   }
 
-  private refreshGarage() {
+  refreshGarage() {
     const spec = CARS.find((c) => c.id === this.s.car) ?? CARS[0];
     $('#car-name').textContent = spec.name;
     $('#car-blurb').textContent = spec.blurb;
@@ -1300,7 +1300,7 @@ export class UI {
   private sleepMin = 0;
   private sleepVol = 1;
 
-  private setAuto(on: boolean) {
+  setAuto(on: boolean) {
     this.s.auto = on;
     this.game.ccOn = false;
     const v = this.game.vehicle;
@@ -1463,7 +1463,7 @@ export class UI {
     for (const el of $$('.traffic-label')) el.textContent = label;
   }
 
-  private refreshHud() {
+  refreshHud() {
     $('#cam-label').textContent = CAM_LABEL[this.s.cam];
     $('#assist-btn').classList.toggle('on', this.s.assist);
     $('#assist-lbl').textContent = this.s.assist ? 'Assist on' : 'Assist off';
@@ -2396,7 +2396,7 @@ export class UI {
     this.refreshSettings();
   }
 
-  private applySetting(key: keyof Settings) {
+  applySetting(key: keyof Settings) {
     const g = this.game;
     if (key === 'quality') g.setQuality(this.s.quality);
     if (key === 'season') {
@@ -2423,7 +2423,7 @@ export class UI {
     else void ScreenOrientation.lock({ orientation: o }).catch(() => {});
   }
 
-  private refreshSettings() {
+  refreshSettings() {
     for (const group of $$('[data-set]', this.root)) {
       const key = group.dataset.set as keyof Settings;
       for (const b of $$('[data-v]', group)) b.classList.toggle('on', String(this.s[key]) === b.dataset.v);

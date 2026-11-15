@@ -3,6 +3,21 @@ import type { TimeMode } from './sky';
 import type { CamMode } from './camera';
 import type { Custom } from './carspecs';
 import type { WeatherKind } from './weather';
+import { LOOK_DEFAULTS, type LookPrefs } from './x/look/prefs';
+import { SCENERY_DEFAULTS, type SceneryPrefs } from './x/scenery/prefs';
+import { JOURNEY_DEFAULTS, type JourneyPrefs } from './x/journey/prefs';
+import { CARX_DEFAULTS, type CarxPrefs } from './x/carx/prefs';
+import { SYSTEM_DEFAULTS, type SystemPrefs } from './x/system/prefs';
+
+/** Choices saved by the add-on feature groups (src/x). */
+export interface XPrefs {
+  look: LookPrefs;
+  scenery: SceneryPrefs;
+  journey: JourneyPrefs;
+  carx: CarxPrefs;
+  system: SystemPrefs;
+}
+const X_DEFAULTS = (): XPrefs => structuredClone({ look: LOOK_DEFAULTS, scenery: SCENERY_DEFAULTS, journey: JOURNEY_DEFAULTS, carx: CARX_DEFAULTS, system: SYSTEM_DEFAULTS });
 
 export interface Settings {
   car: string;
@@ -64,6 +79,8 @@ export interface Settings {
   /** Sound mixer: the world around you, and music/podcasts (engine is `volume`). */
   volWorld: number;
   volMusic: number;
+  /** Add-on feature groups' own settings. */
+  x: XPrefs;
 }
 
 export interface SavedDrive {
@@ -130,12 +147,20 @@ export const DEFAULTS: Settings = {
   hud: true,
   volWorld: 1,
   volMusic: 1,
+  x: X_DEFAULTS(),
 };
 
 export function loadSettings(): Settings {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || '{}');
     const s: Settings = { ...DEFAULTS, ...raw, colors: { ...(raw.colors || {}) }, custom: { ...(raw.custom || {}) }, favourites: [...(raw.favourites || [])] };
+    // Add-on settings: fill in anything new since the save was made
+    {
+      const d = X_DEFAULTS() as unknown as Record<string, Record<string, unknown>>;
+      const have = (raw.x || {}) as Record<string, Record<string, unknown>>;
+      for (const g of Object.keys(d)) d[g] = { ...d[g], ...(have[g] || {}) };
+      s.x = d as unknown as XPrefs;
+    }
     // Colours picked before customisation existed
     for (const [id, color] of Object.entries(s.colors)) s.custom[id] = { color, ...(s.custom[id] || {}) };
     // The game switched to mph; move older saves over once (they can switch back)
@@ -164,7 +189,7 @@ export function loadSettings(): Settings {
     if (raw.trafficDensity === undefined && raw.traffic === false) s.trafficDensity = 0;
     return s;
   } catch {
-    return { ...DEFAULTS };
+    return { ...DEFAULTS, x: X_DEFAULTS() };
   }
 }
 

@@ -6,11 +6,14 @@ import { Game } from './game';
 import { UI } from './ui';
 import { loadSettings } from './settings';
 import { loadAssets } from './assets';
+import { mountExtras } from './x';
 
 await loadAssets();
 document.getElementById('loading')?.remove();
 const game = new Game(document.getElementById('view') as HTMLCanvasElement, loadSettings());
-(window as unknown as { ui: UI }).ui = new UI(game);
+const ui = new UI(game);
+(window as unknown as { ui: UI }).ui = ui;
+mountExtras(game, ui);
 requestAnimationFrame(game.frame);
 (window as unknown as { game: Game }).game = game;
 
