@@ -40,6 +40,8 @@ const REGION_LINES: Partial<Record<BiomeId, string>> = {
   rainforest: 'Mist, ferns and birdsong', lakes: 'Bridges over still water', canyon: 'Red rock and deep gorges',
   blossom: 'Petals on the breeze', tropical: 'White sand and turquoise water', vineyard: 'Vines, lavender and long lunches',
   pnw: 'Giant trees in the mist', metro: 'City lights and an open highway',
+  volcanic: 'Black sand, steam and green slopes', riviera: 'White villages over turquoise coves',
+  moors: 'Heather, lochs and big grey skies', bayou: 'Still water under the cypress trees',
 };
 
 /** A passport stamp's icon and name. */

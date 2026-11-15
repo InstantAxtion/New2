@@ -79,7 +79,7 @@ describe('world', () => {
 
 describe('autopilot', () => {
   it('drives kilometres in its lane without leaving the road', () => {
-    for (const themes of [[], ['alpine'], ['seaside']] as const) {
+    for (const themes of [[], ['alpine'], ['seaside'], ['volcanic'], ['riviera'], ['moors'], ['bayou']] as const) {
       const w = new World(1234, [...themes]);
       const v = new Vehicle(w, CARS[0]);
       v.place(100);
@@ -139,6 +139,26 @@ describe('auto-drive with traffic', () => {
 });
 
 describe('new worlds', () => {
+  it('carries the bayou road over its channels on trestles and keeps it out of the water', () => {
+    const w = new World(21, ['bayou']);
+    let bridged = 0;
+    for (let z = 0; z < 30000; z += 10) {
+      if (w.bridge(z) > 0.9) bridged++;
+      expect(w.roadY(z)).toBeGreaterThan(1.2);
+      // Off a bridge the road sits on a causeway: solid ground under both edges
+      if (w.bridge(z) < 0.01) expect(w.height(w.roadX(z) + 5, z)).toBeGreaterThan(1);
+    }
+    expect(bridged).toBeGreaterThan(20);
+  });
+
+  it('keeps lochs beside the highland road, never across it', () => {
+    const w = new World(21, ['moors']);
+    for (let z = 0; z < 30000; z += 10) {
+      expect(w.bridge(z)).toBeLessThan(0.01);
+      for (const o of [-20, 20]) expect(w.height(w.roadX(z) + o, z)).toBeGreaterThan(0.5);
+    }
+  });
+
   it('builds bridges over lakes and keeps the road dry', () => {
     const w = new World(21, ['lakes']);
     let bridged = 0;

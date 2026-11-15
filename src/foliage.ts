@@ -6,7 +6,7 @@ import type { PropType } from './world/biomes';
 // Realistic trees for the good-graphics tiers: bark-textured trunks and branches, and
 // foliage made of many alpha-cut "cards" painted with leaves or needles.
 
-export type FoliageMat = 'leaf' | 'leafAutumn' | 'leafBlossom' | 'leafJungle' | 'fern' | 'needle' | 'needleSnow' | 'frond' | 'bark' | 'palmBark';
+export type FoliageMat = 'leaf' | 'leafAutumn' | 'leafBlossom' | 'leafJungle' | 'fern' | 'needle' | 'needleSnow' | 'frond' | 'bark' | 'palmBark' | 'leafOlive' | 'moss' | 'reed';
 
 function canvas(w: number, h: number) {
   const c = document.createElement('canvas');
@@ -172,6 +172,49 @@ function fernTexture(): THREE.Texture {
   return finish(c);
 }
 
+/** Spanish moss: grey-green strands hanging from a branch. */
+function mossTexture(): THREE.Texture {
+  const W = 128, H = 256;
+  const { c, g } = canvas(W, H);
+  const r = rng(72);
+  for (let i = 0; i < 70; i++) {
+    const x = 8 + r() * (W - 16);
+    const len = 60 + r() * 185;
+    g.strokeStyle = `hsl(${88 + r() * 22},${12 + r() * 10}%,${46 + r() * 22}%)`;
+    g.lineWidth = 1.5 + r() * 2.5;
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.bezierCurveTo(x + (r() - 0.5) * 16, len * 0.3, x + (r() - 0.5) * 16, len * 0.7, x + (r() - 0.5) * 10, len);
+    g.stroke();
+  }
+  return finish(c);
+}
+
+/** A clump of reeds: tall thin blades, some with brown seed heads. */
+function reedTexture(): THREE.Texture {
+  const W = 256, H = 256;
+  const { c, g } = canvas(W, H);
+  const r = rng(73);
+  for (let i = 0; i < 46; i++) {
+    const x = 20 + r() * (W - 40);
+    const top = 10 + r() * 110;
+    const lean = (r() - 0.5) * 50;
+    g.strokeStyle = `hsl(${68 + r() * 34},${38 + r() * 20}%,${30 + r() * 20}%)`;
+    g.lineWidth = 2.5 + r() * 2.5;
+    g.beginPath();
+    g.moveTo(x, H);
+    g.quadraticCurveTo(x, H * 0.5, x + lean, top);
+    g.stroke();
+    if (r() < 0.3) {
+      g.fillStyle = '#5a3d24';
+      g.beginPath();
+      g.ellipse(x + lean, top + 14, 4.5, 16, lean / 120, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  return finish(c);
+}
+
 const texCache = new Map<FoliageMat, THREE.Texture>();
 export function foliageTexture(m: FoliageMat): THREE.Texture | null {
   if (texCache.has(m)) return texCache.get(m)!;
@@ -181,6 +224,9 @@ export function foliageTexture(m: FoliageMat): THREE.Texture | null {
   if (m === 'leafBlossom') t = leafTexture([[340, 72, 84], [332, 62, 78], [350, 80, 90], [345, 40, 94], [330, 55, 70]], 64);
   if (m === 'leafJungle') t = leafTexture([[110, 55, 18], [100, 50, 22], [125, 45, 16], [95, 60, 26]], 63);
   if (m === 'fern') t = fernTexture();
+  if (m === 'leafOlive') t = leafTexture([[85, 22, 44], [95, 18, 50], [78, 20, 38], [100, 14, 58]], 65);
+  if (m === 'moss') t = mossTexture();
+  if (m === 'reed') t = reedTexture();
   if (m === 'needle') t = needleTexture(false);
   if (m === 'needleSnow') t = needleTexture(true);
   if (m === 'frond') t = frondTexture();
@@ -475,6 +521,86 @@ export function foliageParts(type: PropType): Part[] | null {
       t.wood.scale(0.75, 0.7, 0.75);
       t.leaves.scale(1.05, 0.6, 1.05).translate(0, -0.6, 0);
       parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leafAutumn' }];
+      break;
+    }
+    case 'olive': {
+      // Squat and wide with a twisted trunk and silver-green leaves
+      const t = broadleaf(41);
+      t.wood.scale(1.25, 0.62, 1.25);
+      t.leaves.scale(1.05, 0.62, 1.05).translate(0, -0.75, 0);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leafOlive' }];
+      break;
+    }
+    case 'stonePine': {
+      // Umbrella pine: a tall bare trunk under a wide, flat parasol of needles
+      const t = broadleaf(42);
+      t.wood.scale(0.95, 1.55, 0.95);
+      t.leaves.scale(1.55, 0.42, 1.55).translate(0, 5.6, 0);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'leafJungle' }];
+      break;
+    }
+    case 'scotsPine': {
+      // A wind-shaped old pine: tall red trunk, a rough crown held high
+      const t = broadleaf(43);
+      t.wood.scale(0.9, 1.7, 0.9);
+      t.leaves.scale(1.15, 0.7, 1.15).translate(0, 5.2, 0);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'needle' }];
+      break;
+    }
+    case 'treeFern': {
+      // A short shaggy trunk with a rosette of long fronds
+      const t = palm(44);
+      t.wood.scale(1.5, 0.42, 1.5);
+      t.leaves.scale(0.85, 0.85, 0.85).translate(0.14, -3.3, 0);
+      parts = [{ geo: t.wood, mat: 'bark' }, { geo: t.leaves, mat: 'fern' }];
+      break;
+    }
+    case 'swampCypress': {
+      // Bald cypress: a flared buttress foot in the water, a feathery crown, moss hanging from the boughs
+      const r = rng(45);
+      const wood: G[] = [limb(new THREE.Vector3(0, -0.4, 0), new THREE.Vector3(0, 2.6, 0), 1.05, 0.36, 9), limb(new THREE.Vector3(0, 2.6, 0), new THREE.Vector3(0.1, 11, 0), 0.36, 0.1, 7)];
+      const leaves: G[] = [];
+      const moss: G[] = [];
+      const crown = new THREE.Vector3(0, 9.5, 0);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + r();
+        const y = 6 + r() * 3.5;
+        const end = new THREE.Vector3(Math.cos(a) * (2.6 + r()), y + 0.6, Math.sin(a) * (2.6 + r()));
+        wood.push(limb(new THREE.Vector3(0, y, 0), end, 0.13, 0.05, 5));
+        // Curtains of moss under each bough
+        for (let k = 0; k < 2; k++) {
+          const f = 0.45 + k * 0.45;
+          const len = 1.8 + r() * 1.6;
+          const g = new THREE.PlaneGeometry(1.1, len).translate(0, -len / 2, 0).rotateY(r() * Math.PI);
+          g.translate(end.x * f, y + 0.6 * f, end.z * f);
+          const nor = g.attributes.normal;
+          for (let n = 0; n < nor.count; n++) nor.setXYZ(n, 0, 1, 0);
+          moss.push(g);
+        }
+      }
+      for (let i = 0; i < 30; i++) {
+        const u = r() * Math.PI * 2, vv = Math.acos(2 * r() - 1), d = 0.5 + Math.pow(r(), 0.5) * 0.5;
+        const p = new THREE.Vector3(Math.sin(vv) * Math.cos(u) * 3.2 * d, Math.cos(vv) * 2.6 * d, Math.sin(vv) * Math.sin(u) * 3.2 * d).add(crown);
+        leaves.push(card(p, 2.1 + r() * 0.9, crown, r));
+      }
+      parts = [
+        { geo: prep(mergeGeometries(wood)!, () => 0), mat: 'bark' },
+        { geo: prep(mergeGeometries(leaves)!, (p) => Math.max(0, p.y - 5) * 0.4, (p) => 0.55 + 0.45 * Math.min(1, Math.max(0, (p.y - 7) / 4))), mat: 'needle' },
+        { geo: prep(mergeGeometries(moss)!, (p) => Math.max(0, 9 - p.y) * 0.45, () => 0.9), mat: 'moss' },
+      ];
+      break;
+    }
+    case 'reeds': {
+      const r = rng(46);
+      const cards: G[] = [];
+      for (let i = 0; i < 5; i++) {
+        const g = new THREE.PlaneGeometry(1.5, 1.9).translate(0, 0.9, 0).rotateY((i / 5) * Math.PI + r() * 0.4);
+        g.translate((r() - 0.5) * 0.9, 0, (r() - 0.5) * 0.9);
+        const nor = g.attributes.normal;
+        for (let n = 0; n < nor.count; n++) nor.setXYZ(n, 0, 1, 0);
+        cards.push(g);
+      }
+      parts = [{ geo: prep(mergeGeometries(cards)!, (p) => p.y * 0.5, (p) => 0.6 + 0.4 * Math.min(1, p.y / 1.6)), mat: 'reed' }];
       break;
     }
   }

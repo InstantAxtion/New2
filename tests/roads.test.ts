@@ -58,8 +58,8 @@ describe('terrain under the road', () => {
     return null;
   };
 
-  it('never pokes up through the tarmac', () => {
-    const w = new World(9, ['alpine', 'forest', 'seaside', 'city', 'desert']);
+  it.each([[['alpine', 'forest', 'seaside', 'city', 'desert']], [['volcanic', 'riviera', 'moors', 'bayou', 'alpine']]] as const)('never pokes up through the tarmac (%j)', (themes) => {
+    const w = new World(9, [...themes]);
     let worst = -1;
     for (let z = 0; z < 120000; z += 11) {
       if (w.bridge(z) > 0.01 || w.tunnelAt(z) > 0.05) continue;

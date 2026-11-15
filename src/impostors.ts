@@ -23,12 +23,13 @@ export const IMPOSTOR_SETS: Partial<Record<PropType, [string, number][]>> = {
   treeAutumn: [['broad1', 7.5], ['broad3', 9], ['broad2', 7]],
   cherry: [['broad1', 6.5], ['broad2', 6]],
   maple: [['broad3', 9], ['broad1', 7.5]],
+  olive: [['broad2', 5.2], ['broad1', 5]],
   pine: [['fir1', 11], ['fir2', 9.5], ['fir3', 9.5]],
   pine2: [['fir2', 10], ['fir3', 10], ['fir1', 12]],
 };
 
 /** Leaf colour per kind (bark keeps its own colour). */
-const LEAF_TINT: Partial<Record<PropType, number>> = { treeAutumn: 0xf0a040, cherry: 0xffc6d8 };
+const LEAF_TINT: Partial<Record<PropType, number>> = { treeAutumn: 0xf0a040, cherry: 0xffc6d8, olive: 0xc4cdb4 };
 
 const impostors = new Map<string, Impostor>();
 export const hasImpostors = () => impostors.size > 0;
