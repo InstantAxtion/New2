@@ -408,7 +408,7 @@ export function mountCarx(ctx: Ctx) {
       // Underglow: at night on the road, and always in the showroom so you can see what you chose
       if (car.hasUnderglow) {
         const k = game.phase === 'garage' ? 0.7 : Math.min(1, Math.max(0, game.sky.night - 0.25) * 2.5);
-        car.setUnderglow(k * (0.92 + 0.08 * Math.sin(game.elapsed * 2.2)));
+        car.setUnderglow(k * 0.8 * (0.92 + 0.08 * Math.sin(game.elapsed * 2.2)));
       }
 
       // Tyre marks and smoke when the tyres let go; a little vapour from the exhaust in the cold

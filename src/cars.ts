@@ -172,16 +172,16 @@ function buildRack(s: CarSpec, kind: 'surf' | 'bikes' | 'box' | 'kayak', pbr: bo
         const taper = 1 - 0.75 * t * t * t;
         hp.setX(i, hp.getX(i) * taper * 1.05);
         // flat deck underneath (it rides upside down), rounded keel on top
-        hp.setY(i, (hp.getY(i) < 0 ? hp.getY(i) * 0.3 : hp.getY(i) * 0.8) * taper);
+        hp.setY(i, (hp.getY(i) < 0 ? hp.getY(i) * 0.45 : hp.getY(i) * 0.95) * (0.35 + 0.65 * taper));
       }
       hull.geometry.computeVertexNormals();
-      hull.position.set(0, y + 0.1, roofZ - 0.1);
+      hull.position.set(0, y + 0.16, roofZ - 0.1);
       const keel = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, len * 0.7), m(0xf4f1e8, 0.4));
-      keel.position.set(0, y + 0.345, roofZ - 0.1);
+      keel.position.set(0, y + 0.45, roofZ - 0.1);
       g.add(hull, keel);
       for (const dz of [-span / 2, span / 2]) {
-        const strap = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.012, 5, 16, Math.PI).scale(1.05, 0.82, 1), m(0x22252a, 0.7));
-        strap.position.set(0, y + 0.08, roofZ + dz);
+        const strap = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.012, 5, 16, Math.PI).scale(1.06, 1.02, 1), m(0x22252a, 0.7));
+        strap.position.set(0, y + 0.14, roofZ + dz);
         g.add(strap);
       }
     } else {
@@ -500,6 +500,7 @@ export class CarModel {
     // Indicators at the four corners and white reversing lamps: small glows that blink
     {
       const tailY = s.bike ? lampY - 0.05 : Math.min(P.belt(P.rear + 0.25) - 0.09, s.tail - 0.06);
+      const noseY = s.bike ? lampY : Math.min(P.belt(P.front - 0.3) - 0.07, s.nose + 0.03);
       const cornerZ = (x: number, from: number, step: number) => {
         let z = from;
         for (let k = 0; k < 60 && P.half(z) < Math.abs(x) + 0.03; k++) z += step;
@@ -517,9 +518,10 @@ export class CarModel {
         const zf = s.bike ? front - 0.25 : cornerZ(x, P.front, -0.01) + 0.03;
         const zr = s.bike ? -s.length / 2 + 0.25 : cornerZ(x, P.rear, 0.01) - 0.03;
         const f = lampS(0xff9a1a, 0.34), r = lampS(0xff9a1a, 0.34);
-        f.position.set(x, lampY, zf);
+        f.position.set(x, noseY, zf);
         r.position.set(x, tailY, zr);
-        (side < 0 ? this.blinkL : this.blinkR).push(f, r);
+        // (the car's right-hand side is -x)
+        (side < 0 ? this.blinkR : this.blinkL).push(f, r);
         if (!s.bike) {
           const xr = side * W * 0.24;
           const rev = lampS(0xffffff, 0.3);
